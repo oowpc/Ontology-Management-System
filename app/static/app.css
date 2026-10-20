@@ -138,3 +138,13 @@ table.diff td{font:13px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap
 tr.diff-add{background:#dcfce7}
 tr.diff-del{background:#fee2e2}
 tr.diff-ctx{color:var(--muted)}
+
+/* Issue 管理 */
+.badge.issue-st-open{background:#dbeafe;color:#1d4ed8}
+.badge.issue-st-discussing{background:#fef3c7;color:var(--warn)}
+.badge.issue-st-resolved{background:#dcfce7;color:var(--ok)}
+.badge.issue-st-escalated{background:#e0e7ff;color:#3730a3}
+.badge.issue-st-archived{background:#e5e7eb;color:var(--gray)}
+.form-row{display:flex;gap:12px;flex-wrap:wrap}
+.form-row>label{flex:1;min-width:180px}
+pre.ke-block{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:10px;font:13px/1.7 ui-monospace,Consolas,monospace;white-space:pre-wrap;margin:4px 0}

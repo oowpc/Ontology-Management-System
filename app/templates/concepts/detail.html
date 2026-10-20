@@ -54,6 +54,29 @@
   {% endfor %}
   </tbody>
 </table>
+<details class="panel" style="margin-top:8px" {{ 'open' if related_issues }}>
+  <summary><strong>相关 Issue（{{ related_issues|length }}）</strong>
+    <a class="btn" style="margin-left:8px" href="/issues/new?entity_type=concept&entity_id={{ c.id }}">提 issue</a>
+  </summary>
+  {% if related_issues %}
+  <table class="data" style="margin-top:8px">
+    <tbody>
+    {% for i in related_issues %}
+    <tr>
+      <td><a href="/issues/{{ i.id }}"><code>{{ i.code }}</code></a></td>
+      <td><a href="/issues/{{ i.id }}">{{ i.title }}</a></td>
+      <td><span class="chip">{{ i.type_tag }}</span></td>
+      <td><span class="badge issue-st-{{ i.status }}">{{ i.status_label }}</span></td>
+      <td class="muted">{{ i.updated_at|dt }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:8px 0 0">暂无未结案 issue</p>
+  {% endif %}
+</details>
+
 <details class="panel" style="margin-top:8px">
   <summary><strong>使用此概念的题目（{{ linked_questions|length }}）</strong></summary>
   {% if linked_questions %}

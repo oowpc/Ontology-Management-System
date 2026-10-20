@@ -281,5 +281,58 @@ def list_history(entity_type: str = "", limit: int = 50) -> dict:
     return api("GET", "/api/history", params=params)
 
 
+# ---------------- Issue 闭环 ----------------
+
+@mcp.tool()
+def list_issues(status: str = "", domain: str = "", type_tag: str = "", q: str = "") -> dict:
+    """Issue 列表（状态/领域/类型/关键字筛选；未结案在前）。"""
+    params = {k: v for k, v in {"status": status, "domain": domain,
+                                "type_tag": type_tag, "q": q}.items() if v}
+    return api("GET", "/api/issues", params=params)
+
+
+@mcp.tool()
+def issue_create(title: str, type_tag: str, description: str, cases: list[dict],
+                 domain: str = "通用", group_name: str = "", importance: str = "",
+                 urgency: str = "", entity_link: dict | None = None) -> dict:
+    """创建 issue。cases 至少 1 条：{original_text 必填, variant_a/b 至少一个, source?, diff_note?}。
+    entity_link 可带关联：{"entity_type": "concept|operator|question|ke_version|gold_item", "entity_id": 1}"""
+    return api("POST", "/api/issues", json={
+        "title": title, "type_tag": type_tag, "description": description,
+        "domain": domain, "group_name": group_name,
+        "importance": importance or None, "urgency": urgency or None,
+        "cases": cases, "entity_link": entity_link,
+    })
+
+
+@mcp.tool()
+def issue_comment(issue_id: int, body: str) -> dict:
+    """给 issue 追加评论（讨论流水）。"""
+    return api("POST", f"/api/issues/{issue_id}/comments", json={"body": body})
+
+
+@mcp.tool()
+def issue_close(issue_id: int, conclusion: str, scope: str, open_items: str = "",
+                impacts: list[dict] | None = None, impact_none: bool = False) -> dict:
+    """结案：结论+适用范围必填；impacts=[{entity_type, entity_id, action?}]；
+    无受影响条目必须 impact_none=True。结案后生成回填清单。"""
+    return api("POST", f"/api/issues/{issue_id}/close", json={
+        "conclusion": conclusion, "scope": scope, "open_items": open_items,
+        "impacts": impacts or [], "impact_none": impact_none,
+    })
+
+
+@mcp.tool()
+def issue_list_impacts(issue_id: int) -> dict:
+    """某 issue 的受影响条目与完成进度（回填清单）。"""
+    return api("GET", f"/api/issues/{issue_id}/impacts")
+
+
+@mcp.tool()
+def issue_reopen(issue_id: int) -> dict:
+    """重新打开已结案 issue（状态回 discussing，留痕）。"""
+    return api("POST", f"/api/issues/{issue_id}/reopen")
+
+
 if __name__ == "__main__":
     mcp.run()  # stdio

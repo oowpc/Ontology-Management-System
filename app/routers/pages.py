@@ -138,6 +138,7 @@ def concept_detail_page(cid: int, request: Request, db: Session = Depends(get_db
         .where(QuestionConcept.concept_id == cid)
         .order_by(Question.updated_at.desc()).limit(20)
     ).all()
+    from ..issues.service import related_issues
     return templates.TemplateResponse(request=request, name="concepts/detail.html", context={
         "request": request, "user": user, "c": c, "children": children, "operators": ops,
         "parent_name": names.get(c.parent_id) if c.parent_id else None,
@@ -148,6 +149,7 @@ def concept_detail_page(cid: int, request: Request, db: Session = Depends(get_db
         "linked_questions": [{"id": q.id, "ext_id": q.ext_id, "text": (q.text or "")[:60],
                               "status": q.status, "note": note}
                              for q, note in linked_questions],
+        "related_issues": related_issues(db, "concept", cid),
     })
 
 
@@ -265,6 +267,21 @@ async def operator_new(request: Request, db: Session = Depends(get_db),
             "concepts": _parent_options(db), "error": e.detail,
         }, status_code=400)
     return RedirectResponse(f"/operators?ok=算子已创建", status_code=303)
+
+
+@router.get("/operators/{oid}")
+def operator_detail_page(oid: int, request: Request, db: Session = Depends(get_db),
+                         user: dict = Depends(current_user)):
+    """算子详情页（Issue 集成入口之一；纯增量）。"""
+    o = get_operator_or_404(db, oid)
+    names = name_map(db, [o.subject_concept_id, o.owner_concept_id])
+    from ..issues.service import related_issues
+    return templates.TemplateResponse(request=request, name="operators/detail.html", context={
+        "request": request, "user": user, "o": o,
+        "subject_name": names.get(o.subject_concept_id),
+        "owner_name": names.get(o.owner_concept_id or o.subject_concept_id),
+        "related_issues": related_issues(db, "operator", oid),
+    })
 
 
 @router.get("/operators/{oid}/edit")

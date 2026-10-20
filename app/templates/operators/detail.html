@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ o.name }} · 算子详情{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1><code>{{ o.name }}({{ (o.param_types or [])|join(', ') }}) : {{ o.return_type }}</code>
+    <span class="badge {{ o.status }}">{{ STATUS_LABELS.get(o.status, o.status) }}</span></h1>
+  <div>
+    {% if user.role in ['reviewer','admin'] %}<a class="btn" href="/operators/{{ o.id }}/edit">编辑</a>{% endif %}
+    <a class="btn" href="/operators">返回列表</a>
+  </div>
+</div>
+<div class="panel">
+  <table class="kv">
+    <tr><th>ID</th><td>{{ o.id }}</td></tr>
+    <tr><th>主体概念</th><td><a href="/concepts/{{ o.subject_concept_id }}">{{ subject_name }}</a></td></tr>
+    <tr><th>所属概念</th><td>{{ owner_name }}</td></tr>
+    <tr><th>参数类型</th><td>{{ (o.param_types or [])|join('、') or '—' }}</td></tr>
+    <tr><th>返回类型</th><td>{{ o.return_type }}</td></tr>
+    <tr><th>创建</th><td>{{ o.created_by }} · {{ o.created_at|dt }}</td></tr>
+  </table>
+</div>
+
+<details class="panel" {{ 'open' if related_issues }}>
+  <summary><strong>相关 Issue（{{ related_issues|length }}）</strong>
+    <a class="btn" style="margin-left:8px" href="/issues/new?entity_type=operator&entity_id={{ o.id }}">提 issue</a>
+  </summary>
+  {% if related_issues %}
+  <table class="data" style="margin-top:8px">
+    <tbody>
+    {% for i in related_issues %}
+    <tr>
+      <td><a href="/issues/{{ i.id }}"><code>{{ i.code }}</code></a></td>
+      <td><a href="/issues/{{ i.id }}">{{ i.title }}</a></td>
+      <td><span class="chip">{{ i.type_tag }}</span></td>
+      <td><span class="badge issue-st-{{ i.status }}">{{ i.status_label }}</span></td>
+      <td class="muted">{{ i.updated_at|dt }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:8px 0 0">暂无未结案 issue</p>
+  {% endif %}
+</details>
+{% endblock %}

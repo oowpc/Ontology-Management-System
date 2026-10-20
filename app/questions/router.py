@@ -192,11 +192,13 @@ def question_detail(qid: int, request: Request, v1: int | None = None, v2: int |
         service.versions_for_diff(db, q, None, None)
     concepts = db.scalars(select(Concept).where(Concept.status == "approved").order_by(Concept.id)).all()
     operators = db.scalars(select(Operator).where(Operator.status == "approved").order_by(Operator.id)).all()
+    from ..issues.service import related_issues
     return templates.TemplateResponse(request=request, name="questions/detail.html", context={
         "request": request, "user": user, "p": payload, "diff": diff,
         "all_concepts": concepts, "all_operators": operators,
         "statuses": QUESTION_STATUS, "status_labels": STATUS_LABELS,
         "review_statuses": service.REVIEW_STATUSES,
+        "related_issues": related_issues(db, "question", qid),
     })
 
 

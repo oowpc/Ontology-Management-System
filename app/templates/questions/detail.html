@@ -126,6 +126,24 @@
 
 <!-- e. issue 面板 -->
 <h2>issue（{{ p.issues|length }}）</h2>
+<div class="panel" style="margin-bottom:8px">
+  <strong>相关正式 Issue（{{ related_issues|length }}）</strong>
+  <a class="btn" style="margin-left:8px" href="/issues/new?entity_type=question&entity_id={{ q.id }}">提 issue</a>
+  {% if related_issues %}
+  <table class="data" style="margin-top:8px">
+    <tbody>
+    {% for i in related_issues %}
+    <tr>
+      <td><a href="/issues/{{ i.id }}"><code>{{ i.code }}</code></a></td>
+      <td><a href="/issues/{{ i.id }}">{{ i.title }}</a></td>
+      <td><span class="chip">{{ i.type_tag }}</span></td>
+      <td><span class="badge issue-st-{{ i.status }}">{{ i.status_label }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted" style="margin:6px 0 0">暂无（下方为本题便签）</p>{% endif %}
+</div>
 {% for i in p.issues %}
 <div class="panel history-entry" {% if i.stale %}style="border-color:var(--bad)"{% endif %}>
   <div class="review-head">

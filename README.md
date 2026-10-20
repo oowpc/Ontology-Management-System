@@ -37,6 +37,7 @@ python -m uvicorn app.main:app --reload
 | M14 | 领域分组：Concept.domain（默认通用，存量自动迁移）· 列表/图/导入导出/提交审核带领域 · 体检新增「跨领域近义对」（验收自洽口径） | ✅ 本次交付 |
 | M15 | 粘贴识别：粘贴 KEOL 文本 → 自动识别 concept/op/const/KE 事实 → 报告（新/已存在/相似/无效+行级原因）→ 勾选导入（概念算子进本体库·可选领域，事实入成品库） | ✅ 本次交付 |
 | M16 | 题目级视图：一题一页工作台（原文/CO/KE版本 diff/issue/审计尾）· `scripts/backfill_questions.py` 从 ke_tasks 幂等回填 · 概念详情反向入口 · 列表筛选+CSV | ✅ 本次交付 |
+| M17 | Issue 管理闭环：分歧→讨论→结论→回填（7 表：issue+cases+待讨论+观点+评论+关联+影响清单）· IS 编号 · 结案强校验 · 重开留痕 · 概念/算子/题目页「相关 Issue」+ 预填提单 · MCP +5 工具 | ✅ 本次交付 |
 
 ## M12 · Agent 可操控性补全
 
@@ -51,8 +52,15 @@ python -m uvicorn app.main:app --reload
 
 - 验证：`tests/test_agent.py`——Token 签发/吊销、manifest 结构、MCP 工具注册数、agent 经 MCP 完成「提交→审核→回填」全流程
 
-## M16 · 题目级视图（一题一页工作台）
+## M17 · Issue 管理（分歧闭环）
 
+- **闭环**：编号 IS-xxxx → 问题描述（例子→矛盾→提问）+ 对照案例（原文/写法一/写法二/差异）→ 待讨论问题与各方观点 → 结案（结论+适用范围+影响清单强校验）→ 回填清单勾选完成（进度 x/y）→ 重开留痕（结案不锁定）
+- **校验**：标题以「关于/讨论/记录」开头被拒（引导写成问句）；每条 Case 需原文+至少一种写法；新建至少 1 条 Case；结案影响清单为空须显式声明「无受影响条目」
+- **集成**：概念详情 / 算子详情（本模块新增）/ 题目详情各有「相关 Issue」块 + 「提 issue」预填链接；MCP 增加 issue_create / issue_comment / issue_close / issue_list_impacts / issue_reopen / list_issues
+- **边界**：gold/issues 与题目便签是模块内轻量记录（未改动）；本模块是跨对象正式分歧体系
+- 全部写操作 `entity_type='issue'` 留痕；页面动作与 `/api/issues/*` 对称
+
+## M16 · 题目级视图（一题一页工作台）
 - **回填**：`python scripts/backfill_questions.py` 从 ke_tasks 生成题目（`--no-link` 关 CO 自动关联）；ext_id 幂等（跨组重号消歧为 `组/题号`），重复运行零新建；页面/API 也可点「从 KE 上传同步」
 - **详情五块**：题目头（状态流转，过审/退回仅 reviewer+）→ 原文+命中概念 → CO 面板（概念带「被多少题使用」、算子带签名；可添加关联，二选一约束）→ KE 面板（当前版等宽保留换行、任意两版 difflib 逐行 diff、另存新版本仅 annotator/admin）→ issue 面板（未解决在前、停留>3 天高亮）→ 审计尾（最近 10 条变动）
 - **列表**：领域/组/状态/未解决 issue/关键字筛选，默认「未解决 issue 在前 + 更新时间倒序」，50/页，当前筛选可导 CSV

@@ -41,18 +41,20 @@ def _sync(client):
 
 
 def test_backfill_and_idempotent(client):
-    """验收1：回填后题目数 == ke_tasks 行数；重复运行数量不变。"""
+    """验收1：回填后每个任务行都有题（覆盖）；重复运行零新建。
+    注意：共享库中可能存在「任务行被 M7 重传覆盖而留下的孤儿题」（by design 不删），
+    故用增量断言而非总数相等。"""
+    _, questions_before = _counts()
+    tasks_before, _ = _counts()
     _seed_ke_tasks([
         {"id": "T-001", "summary": "试验题一：1+1=?", "status": "已完成", "person": "王芳"},
         {"id": "T-002", "summary": "试验题二：水的化学式", "status": "标注中"},
         {"id": "T-003", "summary": "试验题三：光的折射", "status": "待复核"},
     ])
-    tasks_before, _ = _counts()
     stats = _sync(client)
     tasks_after, questions_after = _counts()
-    assert tasks_after == tasks_before
-    assert questions_after == tasks_after  # 一题一行
-    assert stats["created"] >= 3
+    assert tasks_after == tasks_before + 3
+    assert questions_after - questions_before == stats["created"] >= 3
     # 状态映射正确
     items = client.get("/api/questions", params={"q": "T-00"}).json()["items"]
     by_ext = {i["ext_id"]: i for i in items}
@@ -60,11 +62,11 @@ def test_backfill_and_idempotent(client):
     assert by_ext["T-002"]["status"] == "drafting"
     assert by_ext["T-003"]["status"] == "pending_review"
     assert by_ext["T-001"]["assignee"] == "王芳"
-    # 重复运行：零新建
+    # 重复运行：零新建零变化
     stats2 = _sync(client)
     assert stats2["created"] == 0
     _, questions_final = _counts()
-    assert questions_final == tasks_after
+    assert questions_final == questions_after
 
 
 def test_ext_id_collision(client):

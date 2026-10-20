@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Issue · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Issue（{{ total }}）</h1>
+  <div>
+    <a class="btn" href="/issues/export.csv?domain={{ domain or '' }}&status={{ status or '' }}&type_tag={{ type_tag or '' }}&importance={{ importance or '' }}&urgency={{ urgency or '' }}&closed={{ '' if closed is none else closed }}&q={{ q or '' }}">导出 CSV</a>
+    <a class="btn primary" href="/issues/new">+ 新建 Issue</a>
+  </div>
+</div>
+<form class="filters" method="get" action="/issues">
+  <select name="domain"><option value="">全部领域</option>
+    {% for d in domains %}<option value="{{ d }}" {{ 'selected' if domain == d }}>{{ d }}</option>{% endfor %}
+  </select>
+  <select name="status"><option value="">全部状态</option>
+    {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ status_labels[s] }}</option>{% endfor %}
+  </select>
+  <select name="type_tag"><option value="">全部类型</option>
+    {% for t in type_tags %}<option value="{{ t }}" {{ 'selected' if type_tag == t }}>{{ t }}</option>{% endfor %}
+  </select>
+  <select name="importance"><option value="">重要性不限</option>
+    {% for l in levels %}<option value="{{ l }}" {{ 'selected' if importance == l }}>{{ l }}</option>{% endfor %}
+  </select>
+  <select name="urgency"><option value="">紧急度不限</option>
+    {% for l in levels %}<option value="{{ l }}" {{ 'selected' if urgency == l }}>{{ l }}</option>{% endfor %}
+  </select>
+  <select name="closed">
+    <option value="">结案不限</option>
+    <option value="false" {{ 'selected' if closed == false }}>只看未结案</option>
+    <option value="true" {{ 'selected' if closed == true }}>只看已结案</option>
+  </select>
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="编号 / 标题 / 描述">
+  <button class="btn" type="submit">过滤</button>
+</form>
+<table class="data">
+  <thead>
+    <tr><th>编号</th><th>标题</th><th>类型标签</th><th>重要/紧急</th><th class="num">关联对象</th><th class="num">待回填</th><th>状态</th><th>负责人</th><th>更新时间</th></tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td><a href="/issues/{{ r.id }}"><code>{{ r.code }}</code></a></td>
+    <td><a href="/issues/{{ r.id }}">{{ r.title }}</a></td>
+    <td><span class="chip">{{ r.type_tag }}</span></td>
+    <td class="muted">{{ r.importance or '—' }} / {{ r.urgency or '—' }}</td>
+    <td class="num">{{ r.link_count }}</td>
+    <td class="num">{% if r.undone_count %}<strong style="color:var(--bad)">待回填 {{ r.undone_count }}</strong>{% else %}0{% endif %}</td>
+    <td><span class="badge issue-st-{{ r.status }}">{{ r.status_label }}</span></td>
+    <td>{{ r.owner or r.created_by }}</td>
+    <td class="muted">{{ r.updated_at|dt }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="9" class="empty">暂无 issue（点「新建 Issue」登记第一条分歧）</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="btn" href="?page={{ page - 1 }}&domain={{ domain or '' }}&status={{ status or '' }}&q={{ q or '' }}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ pages }} 页</span>
+  {% if page < pages %}<a class="btn" href="?page={{ page + 1 }}&domain={{ domain or '' }}&status={{ status or '' }}&q={{ q or '' }}">下一页</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

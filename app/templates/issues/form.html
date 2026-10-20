@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑 Issue' if i else '新建 Issue' }}{% endblock %}
+{% block content %}
+<h1>{{ '编辑 Issue' if i else '新建 Issue' }}</h1>
+{% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+<form class="form wide" method="post">
+  {% if prefill and prefill.entity_type %}
+  <input type="hidden" name="entity_type" value="{{ prefill.entity_type }}">
+  <input type="hidden" name="entity_id" value="{{ prefill.entity_id }}">
+  <p class="muted">将自动关联：{{ prefill.entity_type }} #{{ prefill.entity_id }}</p>
+  {% endif %}
+  <label>标题（需要决定的问题，勿用「关于/讨论/记录」开头）*
+    <input name="title" value="{{ i.title if i else '' }}" required placeholder="例：「跨省居住地与户籍地不一致」应如何建模？">
+  </label>
+  <div class="form-row">
+    <label>类型标签 *
+      <input name="type_tag" value="{{ i.type_tag if i else '' }}" list="type-tag-list" required>
+      <datalist id="type-tag-list">{% for t in type_tags %}<option value="{{ t }}">{% endfor %}</datalist>
+    </label>
+    <label>领域
+      <input name="domain" value="{{ i.domain if i else '通用' }}">
+    </label>
+    <label>组
+      <input name="group_name" value="{{ i.group_name if i else '' }}">
+    </label>
+  </div>
+  <div class="form-row">
+    <label>重要性
+      <select name="importance"><option value="">—</option>
+        {% for l in levels %}<option value="{{ l }}" {{ 'selected' if i and i.importance == l }}>{{ l }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>紧急程度
+      <select name="urgency"><option value="">—</option>
+        {% for l in levels %}<option value="{{ l }}" {{ 'selected' if i and i.urgency == l }}>{{ l }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>负责人
+      <input name="owner" value="{{ i.owner if i else user.username }}">
+    </label>
+  </div>
+  <label>问题描述（先例子、再矛盾、最后提问）*
+    <textarea name="description" rows="5" required>{{ i.description if i else '' }}</textarea>
+  </label>
+  {% if i %}
+  <label>尚未解决
+    <textarea name="open_items" rows="2">{{ i.open_items or '' }}</textarea>
+  </label>
+  {% endif %}
+
+  {% if not i %}
+  <h2 style="margin-top:8px">对照案例（至少 1 条；每条需原文 + 至少一种写法）</h2>
+  {% for n in [1, 2, 3] %}
+  <div class="panel">
+    <strong>Case {{ n }}</strong>
+    <div class="form-row">
+      <label>原文出处（文件/题号/链接）<input name="case_{{ n }}_source"></label>
+    </div>
+    <label>原文<textarea name="case_{{ n }}_original" rows="2"></textarea></label>
+    <div class="form-row">
+      <label>写法一（KE 代码）<textarea name="case_{{ n }}_a" rows="3" style="font-family:ui-monospace,Consolas,monospace"></textarea></label>
+      <label>写法二<textarea name="case_{{ n }}_b" rows="3" style="font-family:ui-monospace,Consolas,monospace"></textarea></label>
+    </div>
+    <label>差异说明<textarea name="case_{{ n }}_diff" rows="2"></textarea></label>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <div class="actions">
+    <button class="btn primary" type="submit">保存</button>
+    <a class="btn" href="{{ '/issues/' ~ i.id if i else '/issues' }}">取消</a>
+  </div>
+</form>
+{% endblock %}

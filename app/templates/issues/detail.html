@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}{{ p.issue.code }} · Issue{% endblock %}
+{% block content %}
+{% set i = p.issue %}
+<!-- a. 头部 -->
+<div class="page-head">
+  <h1><code>{{ i.code }}</code> {{ i.title }} <span class="badge issue-st-{{ i.status }}">{{ i.status_label }}</span></h1>
+  <div>
+    <a class="btn" href="/issues/{{ i.id }}/edit">编辑</a>
+    <a class="btn" href="/issues">返回列表</a>
+  </div>
+</div>
+<div class="panel">
+  <table class="kv">
+    <tr><th>类型标签</th><td><span class="chip">{{ i.type_tag }}</span></td></tr>
+    <tr><th>重要性 / 紧急度</th><td>{{ i.importance or '未填写' }} / {{ i.urgency or '未填写' }}</td></tr>
+    <tr><th>领域 / 组</th><td>{{ i.domain }} · {{ i.group_name or '未填写' }}</td></tr>
+    <tr><th>负责人</th><td>{{ i.owner or '未填写' }}</td></tr>
+    <tr><th>创建</th><td>{{ i.created_by }} · {{ i.created_at|dt }}</td></tr>
+    {% if i.resolved_at %}<tr><th>结案时间</th><td>{{ i.resolved_at|dt }}</td></tr>{% endif %}
+    <tr><th>状态流转</th><td>
+      <form class="filters" method="post" action="/issues/{{ i.id }}/status" style="margin:0">
+        <select name="status">
+          {% for s in statuses if s != 'resolved' %}
+          <option value="{{ s }}" {{ 'selected' if i.status == s }}>{{ status_labels[s] }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn" type="submit">变更</button>
+        <span class="muted">（结案走下方表单）</span>
+      </form>
+    </td></tr>
+  </table>
+</div>
+
+<!-- b. 问题描述 -->
+<h2>问题描述</h2>
+<div class="panel"><p style="white-space:pre-wrap;margin:0">{{ i.description or '未填写' }}</p></div>
+
+<!-- c. Cases -->
+<h2>对照案例（{{ p.cases|length }}）</h2>
+{% for c in p.cases %}
+<details class="panel" {{ 'open' if loop.first }}>
+  <summary><strong>Case {{ c.seq }}</strong>{% if c.source %}<span class="muted"> · 出处：{{ c.source }}</span>{% endif %}</summary>
+  <table class="kv" style="margin-top:8px">
+    <tr><th>原文</th><td style="white-space:pre-wrap">{{ c.original_text }}</td></tr>
+    <tr><th>写法一</th><td>{% if c.variant_a %}<pre class="ke-block">{{ c.variant_a }}</pre>{% else %}未填写{% endif %}</td></tr>
+    <tr><th>写法二</th><td>{% if c.variant_b %}<pre class="ke-block">{{ c.variant_b }}</pre>{% else %}未填写{% endif %}</td></tr>
+    <tr><th>差异说明</th><td style="white-space:pre-wrap">{{ c.diff_note or '未填写' }}</td></tr>
+  </table>
+</details>
+{% else %}<div class="panel empty">未填写</div>{% endfor %}
+<details class="panel">
+  <summary>+ 添加案例</summary>
+  <form method="post" action="/issues/{{ i.id }}/cases" class="form" style="margin-top:8px">
+    <label>原文出处<input name="source"></label>
+    <label>原文 *<textarea name="original_text" rows="2" required></textarea></label>
+    <div class="form-row">
+      <label>写法一<textarea name="variant_a" rows="3" style="font-family:ui-monospace,Consolas,monospace"></textarea></label>
+      <label>写法二<textarea name="variant_b" rows="3" style="font-family:ui-monospace,Consolas,monospace"></textarea></label>
+    </div>
+    <label>差异说明<textarea name="diff_note" rows="2"></textarea></label>
+    <div class="actions"><button class="btn" type="submit">添加案例</button></div>
+  </form>
+</details>
+
+<!-- d. 待讨论问题 -->
+<h2>待讨论问题（{{ p.questions|length }}）</h2>
+<div class="panel">
+  <ul style="margin:0;padding-left:20px">
+    {% for q in p.questions %}
+    <li>{{ q.text }} <span class="badge {{ 'issue-st-open' if q.source == 'human' else 'issue-st-escalated' }}">{{ '人' if q.source == 'human' else 'AI' }}</span></li>
+    {% else %}<li class="muted">未填写</li>{% endfor %}
+  </ul>
+  <form class="filters" method="post" action="/issues/{{ i.id }}/questions" style="margin-top:8px">
+    <input name="text" placeholder="待讨论问题" style="width:320px" required>
+    <select name="source"><option value="human">人</option><option value="ai">AI</option></select>
+    <button class="btn" type="submit">添加</button>
+  </form>
+</div>
+
+<!-- e. 各方观点 -->
+<h2>各方观点（{{ p.viewpoints|length }} 人）</h2>
+{% for g in p.viewpoints %}
+<div class="panel">
+  <strong>{{ g.person }}</strong>
+  {% for v in g['items'] %}
+  <p style="margin:6px 0"><span class="chip">{{ v.stance }}</span> <span style="white-space:pre-wrap">{{ v.body }}</span></p>
+  {% endfor %}
+</div>
+{% else %}<div class="panel empty">未填写</div>{% endfor %}
+<details class="panel">
+  <summary>+ 添加观点</summary>
+  <form method="post" action="/issues/{{ i.id }}/viewpoints" class="filters" style="margin-top:8px;align-items:flex-start">
+    <input name="person" placeholder="人（用户名或外部人名）" value="{{ user.username }}" required>
+    <select name="stance"><option>观点一</option><option>观点二</option><option selected>补充</option></select>
+    <textarea name="body" rows="2" placeholder="观点正文" style="flex:1;min-width:220px" required></textarea>
+    <button class="btn" type="submit">添加</button>
+  </form>
+</details>
+
+<!-- f. 结论 / 适用范围 / 尚未解决 -->
+<h2>结论与范围</h2>
+<div class="panel">
+  <table class="kv">
+    <tr><th>结论</th><td style="white-space:pre-wrap">{{ i.conclusion or '未填写' }}</td></tr>
+    <tr><th>适用范围</th><td style="white-space:pre-wrap">{{ i.scope or '未填写' }}</td></tr>
+    <tr><th>尚未解决</th><td style="white-space:pre-wrap">{{ i.open_items or '未填写' }}</td></tr>
+  </table>
+</div>
+
+<!-- g. 关联对象 -->
+<h2>关联对象（{{ p.links|length }}）</h2>
+<div class="panel">
+  {% for l in p.links %}
+  <span class="chip">
+    {% if l.url %}<a href="{{ l.url }}">{{ l.label }}</a>{% else %}{{ l.label }}{% endif %}
+    <span class="muted">（{{ l.entity_type }}）</span>
+  </span>
+  {% else %}<span class="muted">未填写</span>{% endfor %}
+  <form class="filters" method="post" action="/issues/{{ i.id }}/links" style="margin-top:8px">
+    <select name="entity_type">
+      {% for t in entity_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+    </select>
+    <input name="entity_id" placeholder="对象 ID" size="8" required>
+    <input name="note" placeholder="备注（可空）">
+    <button class="btn" type="submit">添加关联</button>
+  </form>
+</div>
+
+<!-- h. 影响与回填 -->
+<h2>影响与回填（{{ p.impact_progress.done }}/{{ p.impact_progress.total }}）</h2>
+<div class="panel">
+  {% if p.impacts %}
+  <table class="data">
+    <thead><tr><th>完成</th><th>对象</th><th>动作</th><th>处理人</th><th>处理时间</th></tr></thead>
+    <tbody>
+    {% for im in p.impacts %}
+    <tr class="{{ '' if im.done else 'row-warn' }}">
+      <td>
+        <form method="post" action="/issues/{{ i.id }}/impacts/{{ im.impact_id }}/toggle">
+          <button class="link" type="submit">{{ '✅' if im.done else '⬜' }}</button>
+        </form>
+      </td>
+      <td>{% if im.url %}<a href="{{ im.url }}">{{ im.label }}</a>{% else %}{{ im.label }}{% endif %}</td>
+      <td><span class="badge {{ 'issue-st-resolved' if im.action == '无需改' else ('issue-st-open' if im.action == '需修改' else 'issue-st-discussing') }}">{{ im.action }}</span></td>
+      <td class="muted">{{ im.done_by or '—' }}</td>
+      <td class="muted">{{ im.done_at|dt }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% elif i.impact_none %}
+  <p class="muted" style="margin:0">结案时显式声明：无受影响条目。</p>
+  {% else %}
+  <p class="muted" style="margin:0">未填写（结案时生成回填清单）</p>
+  {% endif %}
+</div>
+
+{% if i.status != 'resolved' %}
+<details class="panel">
+  <summary><strong>结案</strong>（结论 + 适用范围 + 影响清单必填校验）</summary>
+  <form method="post" action="/issues/{{ i.id }}/close" class="form" style="margin-top:8px">
+    <label>结论 *<textarea name="conclusion" rows="3" required></textarea></label>
+    <label>适用范围 *<textarea name="scope" rows="2" required></textarea></label>
+    <label>尚未解决<textarea name="open_items" rows="2"></textarea></label>
+    <div class="panel" style="margin:0">
+      <strong>受影响条目</strong>（从关联对象勾选；每条选动作）
+      {% for l in p.links %}
+      <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+        <input type="checkbox" name="impact_ref" value="{{ l.entity_type }}|{{ l.entity_id }}" id="imp_{{ l.link_id }}">
+        <label for="imp_{{ l.link_id }}">{{ l.label }}（{{ l.entity_type }}）</label>
+        <select name="action_{{ l.entity_type }}_{{ l.entity_id }}">
+          {% for a in actions %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+        </select>
+      </div>
+      {% else %}<p class="muted" style="margin:4px 0 0">暂无关联对象（先在上方「关联对象」添加）</p>{% endfor %}
+      <label style="margin-top:6px;display:flex;gap:6px;align-items:center">
+        <input type="checkbox" name="impact_none"> 无受影响条目（显式声明）
+      </label>
+    </div>
+    <div class="actions"><button class="btn primary" type="submit">结案并生成回填清单</button></div>
+  </form>
+</details>
+{% else %}
+<div class="panel">
+  <form method="post" action="/issues/{{ i.id }}/reopen" onsubmit="return confirm('重新打开后状态回到「讨论中」，结论与回填清单保留但可再改。确认？')">
+    <button class="btn" type="submit">重新打开（结案不锁定）</button>
+  </form>
+</div>
+{% endif %}
+
+<!-- i. 评论流水 -->
+<h2>评论（{{ p.comments|length }}）</h2>
+{% for c in p.comments %}
+<div class="panel history-entry">
+  <div class="review-head"><strong>{{ c.author }}</strong><span class="muted">{{ c.created_at|dt }}</span></div>
+  <div style="white-space:pre-wrap">{{ c.body }}</div>
+</div>
+{% else %}<div class="panel empty">暂无评论</div>{% endfor %}
+<div class="panel">
+  <form method="post" action="/issues/{{ i.id }}/comments">
+    <p style="margin:0 0 8px"><textarea name="body" rows="3" style="width:100%" placeholder="追加评论" required></textarea></p>
+    <button class="btn" type="submit">评论</button>
+  </form>
+</div>
+
+<!-- j. 变更历史 -->
+<h2>变更历史（最近 {{ p.audit_tail|length }} 条）</h2>
+<table class="data">
+  <thead><tr><th>动作</th><th>操作人</th><th>时间</th><th>变动</th></tr></thead>
+  <tbody>
+  {% for h in p.audit_tail %}
+  <tr>
+    <td><span class="badge action-update">{{ h.action }}</span></td>
+    <td>{{ h.actor }}</td>
+    <td class="muted">{{ h.created_at|dt }}</td>
+    <td class="muted">{% for d in h.diff %}{{ d.field }}: {{ d.before|dj }} → {{ d.after|dj }}{% if not loop.last %}；{% endif %}{% else %}—{% endfor %}</td>
+  </tr>
+  {% else %}<tr><td colspan="4" class="empty">暂无</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}
