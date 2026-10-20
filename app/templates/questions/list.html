@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}题目 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>题目（{{ total }}）</h1>
+  <div>
+    {% if user.role in ['reviewer','admin'] %}
+    <form class="inline" method="post" action="/questions/sync"><button class="btn" type="submit">从 KE 上传同步</button></form>
+    {% endif %}
+    <a class="btn" href="/questions/export.csv?domain={{ domain or '' }}&group_name={{ group_name or '' }}&status={{ status or '' }}&has_open_issue={{ 'true' if has_open_issue else '' }}&q={{ q or '' }}">导出 CSV</a>
+  </div>
+</div>
+<form class="filters" method="get" action="/questions">
+  <select name="domain">
+    <option value="">全部领域</option>
+    {% for d in domains %}<option value="{{ d }}" {{ 'selected' if domain == d }}>{{ d }}</option>{% endfor %}
+  </select>
+  <select name="group_name">
+    <option value="">全部组</option>
+    {% for g in groups %}<option value="{{ g }}" {{ 'selected' if group_name == g }}>{{ g }}</option>{% endfor %}
+  </select>
+  <select name="status">
+    <option value="">全部状态</option>
+    {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ status_labels[s] }}</option>{% endfor %}
+  </select>
+  <label style="display:flex;gap:4px;align-items:center">
+    <input type="checkbox" name="has_open_issue" value="true" {{ 'checked' if has_open_issue }}> 只看有未解决 issue
+  </label>
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="题号 / 原文">
+  <button class="btn" type="submit">过滤</button>
+</form>
+<table class="data">
+  <thead>
+    <tr><th>题号</th><th>原文摘要</th><th>领域</th><th>组</th><th class="num">CO</th><th class="num">KE版</th><th class="num">未解issue</th><th>状态</th><th>负责人</th><th>更新时间</th></tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td><a href="/questions/{{ r.id }}">{{ r.ext_id }}</a></td>
+    <td class="muted">{{ r.summary60 }}{% if r.text|length > 60 %}…{% endif %}</td>
+    <td>{{ r.domain }}</td>
+    <td>{{ r.group_name }}</td>
+    <td class="num">{{ r.co_count }}</td>
+    <td class="num">{{ r.ke_versions }}</td>
+    <td class="num">{% if r.open_issues %}<strong style="color:var(--bad)">{{ r.open_issues }}</strong>{% else %}0{% endif %}</td>
+    <td><span class="badge q-{{ r.status }}">{{ r.status_label }}</span></td>
+    <td>{{ r.assignee or '—' }}</td>
+    <td class="muted">{{ r.updated_at|dt }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="10" class="empty">暂无题目（可先上传 KE CSV 后点「从 KE 上传同步」）</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="btn" href="?domain={{ domain or '' }}&group_name={{ group_name or '' }}&status={{ status or '' }}&has_open_issue={{ 'true' if has_open_issue else '' }}&q={{ q or '' }}&page={{ page - 1 }}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ pages }} 页</span>
+  {% if page < pages %}<a class="btn" href="?domain={{ domain or '' }}&group_name={{ group_name or '' }}&status={{ status or '' }}&has_open_issue={{ 'true' if has_open_issue else '' }}&q={{ q or '' }}&page={{ page + 1 }}">下一页</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

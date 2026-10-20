@@ -15,6 +15,7 @@ from .gold.items import router as gold_items_router
 from .gold.router import router as gold_router
 from .ke.review import router as ke_review_router
 from .ke.router import router as ke_router
+from .questions.router import router as questions_router
 from .routers import (agent, auth, concepts, graph, health, io, llm,
                       operators, pages, paste, similarity, submissions, tmp,
                       tokens, users)
@@ -87,6 +88,7 @@ app.include_router(ke_router)
 app.include_router(ke_review_router)
 app.include_router(gold_router)
 app.include_router(gold_items_router)
+app.include_router(questions_router)
 app.include_router(pages.router)
 
 

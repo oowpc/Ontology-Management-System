@@ -17,7 +17,8 @@ from ..healthcheck import KIND_LABELS, run_health
 from ..importer import csv_to_payload, import_payload, parse_field_map
 from ..llm import enabled as llm_enabled
 from ..models import (AuditLog, BackfillRecord, Concept, HealthReport,
-                      Operator, Submission, TmpMapping)
+                      Operator, Question, QuestionConcept, Submission,
+                      TmpMapping)
 from ..review import (SUB_STATUS, approve, batch_action, create_submission,
                       get_submission_or_404, merge, reject, submission_dict)
 from ..security import current_user
@@ -131,6 +132,12 @@ def concept_detail_page(cid: int, request: Request, db: Session = Depends(get_db
         select(Submission).where(Submission.concept_id == cid).order_by(Submission.id.desc())
     ).all()
     hist = entity_history(db, "concept", cid, limit=50)
+    linked_questions = db.execute(
+        select(Question, QuestionConcept.note)
+        .join(QuestionConcept, QuestionConcept.question_id == Question.id)
+        .where(QuestionConcept.concept_id == cid)
+        .order_by(Question.updated_at.desc()).limit(20)
+    ).all()
     return templates.TemplateResponse(request=request, name="concepts/detail.html", context={
         "request": request, "user": user, "c": c, "children": children, "operators": ops,
         "parent_name": names.get(c.parent_id) if c.parent_id else None,
@@ -138,6 +145,9 @@ def concept_detail_page(cid: int, request: Request, db: Session = Depends(get_db
         "submissions": [submission_dict(db, s) for s in subs],
         "history": [{"entry": h, "diff": diff_entries(h.before, h.after) if h.action != "create" else []}
                     for h in hist],
+        "linked_questions": [{"id": q.id, "ext_id": q.ext_id, "text": (q.text or "")[:60],
+                              "status": q.status, "note": note}
+                             for q, note in linked_questions],
     })
 
 

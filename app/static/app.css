@@ -126,3 +126,15 @@ td.cell-empty{background:#fafafa}
 #concept-graph .node.st-disabled rect{stroke:#dc2626;opacity:.55}
 #concept-graph .node.st-disabled text{opacity:.55}
 .graph-toolbar{display:flex;gap:8px}
+
+/* 题目级视图 */
+.badge.q-not_started{background:#e5e7eb;color:var(--gray)}
+.badge.q-drafting{background:#dbeafe;color:#1d4ed8}
+.badge.q-pending_review{background:#fef3c7;color:var(--warn)}
+.badge.q-approved{background:#dcfce7;color:var(--ok)}
+.badge.q-rejected{background:#fee2e2;color:var(--bad)}
+pre.ke-content{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:12px;font:13px/1.7 ui-monospace,Consolas,monospace;white-space:pre-wrap;margin:0}
+table.diff td{font:13px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap}
+tr.diff-add{background:#dcfce7}
+tr.diff-del{background:#fee2e2}
+tr.diff-ctx{color:var(--muted)}

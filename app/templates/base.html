@@ -24,6 +24,7 @@
     <a href="/tmp" class="{{ 'active' if request.url.path.startswith('/tmp') }}">TMP 回填</a>
     <a href="/ke/dashboard" class="{{ 'active' if request.url.path.startswith('/ke/dashboard') }}">KE 看板</a>
     <a href="/ke/upload" class="{{ 'active' if request.url.path.startswith('/ke/upload') }}">KE 上传</a>
+    <a href="/questions" class="{{ 'active' if request.url.path.startswith('/questions') }}">题目</a>
     <a href="/gold" class="{{ 'active' if request.url.path.startswith('/gold') }}">GOLD</a>
     <a href="/gold/items" class="{{ 'active' if request.url.path == '/gold/items' }}">成品库</a>
     {% if user.role in ['reviewer','admin'] %}

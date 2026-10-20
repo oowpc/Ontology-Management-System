@@ -54,9 +54,29 @@
   {% endfor %}
   </tbody>
 </table>
+<details class="panel" style="margin-top:8px">
+  <summary><strong>使用此概念的题目（{{ linked_questions|length }}）</strong></summary>
+  {% if linked_questions %}
+  <table class="data" style="margin-top:8px">
+    <thead><tr><th>题号</th><th>摘要</th><th>状态</th><th>备注</th></tr></thead>
+    <tbody>
+    {% for q in linked_questions %}
+    <tr>
+      <td><a href="/questions/{{ q.id }}">{{ q.ext_id }}</a></td>
+      <td class="muted">{{ q.text }}</td>
+      <td><span class="badge q-{{ q.status }}">{{ q.status }}</span></td>
+      <td class="muted">{{ q.note or '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:8px 0 0">暂无题目关联此概念</p>
+  {% endif %}
+</details>
+
 {% if submissions %}
-<h2>关联提交单（{{ submissions|length }}）</h2>
-<table class="data">
+<h2>关联提交单（{{ submissions|length }}）</h2><table class="data">
   <thead><tr><th>ID</th><th>状态</th><th>TMP</th><th>提交人</th><th>审核意见</th><th>提交时间</th></tr></thead>
   <tbody>
   {% for s in submissions %}

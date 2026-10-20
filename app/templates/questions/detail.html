@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}{{ p.question.ext_id }} · 题目{% endblock %}
+{% block content %}
+{% set q = p.question %}
+<div class="page-head">
+  <h1>{{ q.ext_id }} <span class="badge q-{{ q.status }}">{{ q.status_label }}</span></h1>
+  <a class="btn" href="/questions">返回列表</a>
+</div>
+
+<!-- a. 题目头 -->
+<div class="panel">
+  <table class="kv">
+    <tr><th>题号</th><td><code>{{ q.ext_id }}</code></td></tr>
+    <tr><th>领域 / 组</th><td>{{ q.domain }} · {{ q.group_name or '—' }}</td></tr>
+    <tr><th>负责人</th><td>{{ q.assignee or '—' }}</td></tr>
+    <tr><th>复核人</th><td>{{ q.reviewer or '—' }}</td></tr>
+    <tr><th>难度</th><td>{{ q.difficulty or '—' }}</td></tr>
+    <tr><th>更新</th><td>{{ q.updated_at|dt }}（创建 {{ q.created_at|dt }}）</td></tr>
+    <tr><th>状态流转</th><td>
+      <form class="filters" method="post" action="/questions/{{ q.id }}/status" style="margin:0">
+        <select name="status">
+          {% for s in statuses %}
+          {% if s not in review_statuses or user.role in ['reviewer','admin'] %}
+          <option value="{{ s }}" {{ 'selected' if q.status == s }}>{{ status_labels[s] }}</option>
+          {% endif %}
+          {% endfor %}
+        </select>
+        <button class="btn" type="submit">变更</button>
+        {% if user.role not in ['reviewer','admin'] %}<span class="muted">（通过/退回需审核员）</span>{% endif %}
+      </form>
+    </td></tr>
+  </table>
+</div>
+
+<!-- b. 原文 -->
+<h2>题目原文</h2>
+<div class="panel">
+  <p style="white-space:pre-wrap;margin:0 0 8px">{{ q.text or '（暂无原文）' }}</p>
+  {% if p.concepts %}
+  <div>命中概念：
+    {% for c in p.concepts %}<a class="chip" href="/concepts/{{ c.id }}">{{ c.name }}</a>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- c. CO 面板 -->
+<h2>涉及概念与算子（CO）</h2>
+<table class="data">
+  <thead><tr><th>概念</th><th>父类</th><th>状态</th><th class="num">被多少题使用</th><th>备注</th></tr></thead>
+  <tbody>
+  {% for c in p.concepts %}
+  <tr>
+    <td><a href="/concepts/{{ c.id }}">{{ c.name }}</a></td>
+    <td class="muted">{{ c.parent_name or '—' }}</td>
+    <td><span class="badge {{ c.status }}">{{ STATUS_LABELS.get(c.status, c.status) }}</span></td>
+    <td class="num">{{ c.used_by }}</td>
+    <td class="muted">{{ c.note or '—' }}</td>
+  </tr>
+  {% else %}<tr><td colspan="5" class="empty">未关联概念</td></tr>{% endfor %}
+  </tbody>
+</table>
+<table class="data" style="margin-top:8px">
+  <thead><tr><th>算子签名</th><th>所属概念</th><th>备注</th></tr></thead>
+  <tbody>
+  {% for o in p.operators %}
+  <tr>
+    <td><code>{{ o.signature }}</code></td>
+    <td>{{ o.subject_name or '—' }}</td>
+    <td class="muted">{{ o.note or '—' }}</td>
+  </tr>
+  {% else %}<tr><td colspan="3" class="empty">未关联算子</td></tr>{% endfor %}
+  </tbody>
+</table>
+<div class="panel" style="margin-top:8px">
+  <form class="filters" method="post" action="/questions/{{ q.id }}/concepts" style="margin:0">
+    <select name="kind">
+      <option value="concept">概念</option>
+      <option value="operator">算子</option>
+    </select>
+    <select name="target_id">
+      {% for c in all_concepts %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+    </select>
+    <input name="note" placeholder="备注（可空）" style="width:200px">
+    <button class="btn" type="submit">添加概念/算子</button>
+  </form>
+</div>
+
+<!-- d. KE 面板 -->
+<h2>KE（{{ p.versions|length }} 个版本）</h2>
+{% if p.current_version %}
+<pre class="ke-content">{{ p.current_version.content }}</pre>
+<p class="muted">当前版本：v{{ p.current_version.version }} · {{ p.current_version.author }} · {{ p.current_version.created_at|dt }}</p>
+{% else %}
+<div class="panel empty">暂无 KE 版本</div>
+{% endif %}
+
+{% if p.versions %}
+<form class="filters" method="get" action="/questions/{{ q.id }}">
+  <span>对比版本</span>
+  <select name="v1">{% for v in p.versions %}<option value="{{ v.version }}">v{{ v.version }} · {{ v.author }}</option>{% endfor %}</select>
+  <span>与</span>
+  <select name="v2">{% for v in p.versions %}<option value="{{ v.version }}">v{{ v.version }} · {{ v.author }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">对比</button>
+</form>
+{% endif %}
+
+{% if diff %}
+<table class="data diff" style="margin-top:8px">
+  <thead><tr><th>v{{ diff.v1.version }}（{{ diff.v1.author }}） → v{{ diff.v2.version }}（{{ diff.v2.author }}）</th></tr></thead>
+  <tbody>
+  {% for line in diff.lines %}
+  <tr class="diff-{{ line.kind }}"><td>{{ '+' if line.kind == 'add' else ('-' if line.kind == 'del' else ' ') }} {{ line.text }}</td></tr>
+  {% else %}<tr><td class="empty">两版内容一致</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if user.role in ['annotator','admin'] %}
+<div class="panel" style="margin-top:8px">
+  <form method="post" action="/questions/{{ q.id }}/ke-versions">
+    <p style="margin:0 0 8px"><textarea name="content" rows="5" style="width:100%" placeholder="另存为新版本（KE 全文，换行保留）" required></textarea></p>
+    <button class="btn primary" type="submit">另存为新版本</button>
+  </form>
+</div>
+{% endif %}
+
+<!-- e. issue 面板 -->
+<h2>issue（{{ p.issues|length }}）</h2>
+{% for i in p.issues %}
+<div class="panel history-entry" {% if i.stale %}style="border-color:var(--bad)"{% endif %}>
+  <div class="review-head">
+    <span class="badge issue-{{ i.status }}">{{ {'open':'开放','resolved':'已解决','escalated':'已上会'}[i.status] }}</span>
+    <strong>{{ i.title }}</strong>
+    {% for t in i.tags %}<span class="chip">{{ t }}</span>{% endfor %}
+    <span class="muted">{{ i.author }} · {{ i.created_at|dt }} · 停留 {{ i.days_open }} 天{% if i.stale %}（超 3 天）{% endif %}</span>
+    {% if i.status == 'open' %}
+    <form class="inline" method="post" action="/questions/{{ q.id }}/issues/{{ i.id }}/resolve"><button class="link" type="submit">标记解决</button></form>
+    {% endif %}
+  </div>
+  {% if i.body %}<div class="muted" style="white-space:pre-wrap">{{ i.body }}</div>{% endif %}
+</div>
+{% else %}
+<div class="panel empty">暂无 issue</div>
+{% endfor %}
+<div class="panel">
+  <form class="filters" method="post" action="/questions/{{ q.id }}/issues" style="align-items:flex-start">
+    <input name="title" placeholder="issue 标题" style="width:260px" required>
+    <input name="tags" placeholder="标签（逗号分隔）" style="width:160px">
+    <textarea name="body" rows="2" placeholder="内容（思考过程）" style="flex:1;min-width:220px"></textarea>
+    <button class="btn" type="submit">新建 issue</button>
+  </form>
+</div>
+
+<!-- f. 审计尾 -->
+<h2>审计尾（最近 {{ p.audit_tail|length }} 条）</h2>
+<table class="data">
+  <thead><tr><th>动作</th><th>操作人</th><th>时间</th><th>变动</th></tr></thead>
+  <tbody>
+  {% for h in p.audit_tail %}
+  <tr>
+    <td><span class="badge action-update">{{ h.action }}</span></td>
+    <td>{{ h.actor }}</td>
+    <td class="muted">{{ h.created_at|dt }}</td>
+    <td class="muted">{% for d in h.diff %}{{ d.field }}: {{ d.before|dj }} → {{ d.after|dj }}{% if not loop.last %}；{% endif %}{% else %}—{% endfor %}</td>
+  </tr>
+  {% else %}<tr><td colspan="4" class="empty">暂无变动记录</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}
