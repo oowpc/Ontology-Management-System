@@ -38,6 +38,7 @@ python -m uvicorn app.main:app --reload
 | M15 | 粘贴识别：粘贴 KEOL 文本 → 自动识别 concept/op/const/KE 事实 → 报告（新/已存在/相似/无效+行级原因）→ 勾选导入（概念算子进本体库·可选领域，事实入成品库） | ✅ 本次交付 |
 | M16 | 题目级视图：一题一页工作台（原文/CO/KE版本 diff/issue/审计尾）· `scripts/backfill_questions.py` 从 ke_tasks 幂等回填 · 概念详情反向入口 · 列表筛选+CSV | ✅ 本次交付 |
 | M17 | Issue 管理闭环：分歧→讨论→结论→回填（7 表：issue+cases+待讨论+观点+评论+关联+影响清单）· IS 编号 · 结案强校验 · 重开留痕 · 概念/算子/题目页「相关 Issue」+ 预填提单 · MCP +5 工具 | ✅ 本次交付 |
+| M18 | KE 看板 UI 迁移：Python 字符串模板（ke/template.py）→ Jinja 模板 `templates/ke/dashboard.html`，结构/样式/口径文字全部可直接编辑；metrics/service 数据逻辑零改动 | ✅ 本次交付 |
 
 ## M12 · Agent 可操控性补全
 

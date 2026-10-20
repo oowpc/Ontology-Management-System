@@ -1,48 +1,4 @@
-"""段2移植：五屏看板页面模板（纯 SVG、零外部依赖，与独立版 generate_report.py 同源）。
-
-网页版相比独立版多三个注入点：
-- __HEADER_EXTRA__：应用导航（返回本体系统）+ 组别选择器
-- __KE_BANNER__：今日各组上传状态横幅（未上传提醒）
-- 其余同：__DATA_JSON__（指标数据）、__FOOTER__（校验与口径栏）
-"""
-from __future__ import annotations
-
-import html as html_mod
-import json
-
-
-def build_footer(data, gen_time):
-    """页脚数据校验栏：读入概况 + 校验提示 + 口径说明。"""
-    warns = "".join(f"<li>{html_mod.escape(w)}</li>" for w in data["warnings"]) or "<li>无异常</li>"
-    notes = [
-        "完成率 = 已完成 ÷ 总题数；日产能 / 燃尽 / 预计完成日均按「完成时间」统计",
-        "近 7 日均产能 = 最近 7 个自然日完成条数均值（含当天）；预计完成日 = 剩余 ÷ 近 7 日均产能，从当天往后推",
-        "返工率为近似口径（无流转日志）：（已退回 或 标签含「返工」）÷ 已完成",
-        "未关闭问题 = 问题标签非空且状态 ≠ 已完成；「卡了几天」按创建时间算",
-        "复核结论以系统复核（KE 复核页）为准，CSV 自报兜底；上传重灌时系统结论自动重放",
-        "屏 1 / 屏 2 与周报文字随日期选择器切换；屏 3 / 4 / 5 为最近上传口径",
-        "数据来自各组每日全量上传，重复上传以最新一次为准",
-    ]
-    notes_html = "".join(f"<li>{n}</li>" for n in notes)
-    return (f"<p>数据截至 <strong>{data['export_day']}</strong> · 截止日 <strong>{data['deadline']}</strong>"
-            f" · 生成时间 {gen_time} · 读入 {data['total']} 行，"
-            f"校验提示 {len(data['warnings'])} 条</p>"
-            f"<div class='ft-cols'><div><h4>校验提示</h4><ul>{warns}</ul></div>"
-            f"<div><h4>统计口径</h4><ul>{notes_html}</ul></div></div>")
-
-
-def render_dashboard(data, gen_time, header_extra="", banner=""):
-    payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    return (TEMPLATE
-            .replace("__DATA_JSON__", payload)
-            .replace("__FOOTER__", build_footer(data, gen_time))
-            .replace("__HEADER_EXTRA__", header_extra)
-            .replace("__KE_BANNER__", banner))
-
-
-# ---------- 页面模板（CSS + JS + 纯SVG图表，无任何外部引用） ----------
-
-TEMPLATE = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
@@ -133,7 +89,13 @@ footer ul{padding-left:18px}
 <body>
 <header>
   <h1>KE 标注项目 · 进度看板</h1>
-  <span class="meta" id="metaLine"></span>__HEADER_EXTRA__
+  <span class="meta" id="metaLine"></span>
+  {# 注入点①（原 __HEADER_EXTRA__）：应用导航 + 组别选择器 #}
+  <a class="backlink" href="/concepts">← 本体系统</a>
+  <select class="gselect" id="groupPick" title="切换查看组别">
+    <option value="">全部组</option>
+    {% for g in groups %}<option value="{{ g }}" {{ 'selected' if g == selected }}>{{ g }}</option>{% endfor %}
+  </select>
   <nav class="tabs" id="tabs">
     <button data-s="s1" class="active">今日概览</button>
     <button data-s="s2">进度趋势</button>
@@ -147,7 +109,13 @@ footer ul{padding-left:18px}
     <button id="btnRep">生成周报文字</button>
   </div>
 </header>
-<main>__KE_BANNER__
+<main>
+  {# 注入点②（原 __KE_BANNER__）：今日各组上传状态横幅（未上传提醒） #}
+  {% if banner_status %}
+  {% set miss = banner_status | selectattr('uploaded_today', 'equalto', false) | list %}
+  <div class="upbanner{{ ' miss' if miss }}">📮 今日已上传 {{ banner_status|length - miss|length }}/{{ banner_status|length }} 组{% if miss %}；未上传：{{ miss | map(attribute='name') | join('、') }}{% else %}，全部到齐 ✓{% endif %}
+    · <a href="/ke/upload">前往上传</a></div>
+  {% endif %}
   <section class="screen active" id="s1" data-name="今日概览">
     <div class="conclusion" id="c1"></div>
     <div class="nodata">该日无数据</div>
@@ -192,7 +160,27 @@ footer ul{padding-left:18px}
     </div>
   </section>
 </main>
-<footer><div class="fbox">__FOOTER__</div></footer>
+<footer><div class="fbox">
+  {# 注入点④（原 __FOOTER__）：页脚校验与口径栏，以下文字直接可改 #}
+  <p>数据截至 <strong>{{ data.export_day }}</strong> · 截止日 <strong>{{ data.deadline }}</strong>
+     · 生成时间 {{ gen_time }} · 读入 {{ data.total }} 行，校验提示 {{ data.warnings|length }} 条</p>
+  <div class="ft-cols">
+    <div><h4>校验提示</h4>
+      <ul>{% for w in data.warnings %}<li>{{ w }}</li>{% else %}<li>无异常</li>{% endfor %}</ul>
+    </div>
+    <div><h4>统计口径</h4>
+      <ul>
+        <li>完成率 = 已完成 ÷ 总题数；日产能 / 燃尽 / 预计完成日均按「完成时间」统计</li>
+        <li>近 7 日均产能 = 最近 7 个自然日完成条数均值（含当天）；预计完成日 = 剩余 ÷ 近 7 日均产能，从当天往后推</li>
+        <li>返工率为近似口径（无流转日志）：（已退回 或 标签含「返工」）÷ 已完成</li>
+        <li>未关闭问题 = 问题标签非空且状态 ≠ 已完成；「卡了几天」按创建时间算</li>
+        <li>复核结论以系统复核（KE 复核页）为准，CSV 自报兜底；上传重灌时系统结论自动重放</li>
+        <li>屏 1 / 屏 2 与周报文字随日期选择器切换；屏 3 / 4 / 5 为最近上传口径</li>
+        <li>数据来自各组每日全量上传，重复上传以最新一次为准</li>
+      </ul>
+    </div>
+  </div>
+</div></footer>
 <div id="tip"></div>
 <div class="mask" id="mask"><div class="modal">
   <h3>周报文字（可直接粘贴进汇报）</h3>
@@ -200,7 +188,8 @@ footer ul{padding-left:18px}
   <div class="m-btns"><button id="repClose">关闭</button><button class="primary" id="repCopy">复制</button></div>
 </div></div>
 <script>
-const DATA = __DATA_JSON__;
+{# 注入点③（原 __DATA_JSON__）：指标数据（服务端预转义 </，防 script 提前闭合） #}
+const DATA = {{ data_json | safe }};
 const C={blue:'#2a78d6',orange:'#eb6834',gray:'#a3a19a',green:'#0ca30c',yellow:'#fab219',red:'#d03b3b',
   ink:'#0b0b0b',sub:'#52514e',mut:'#898781',grid:'#e1e0d9',base:'#c3c2b7'};
 const HEALTH={green:C.green,yellow:C.yellow,red:C.red};
@@ -275,7 +264,7 @@ function chartBurn(axis,actual,ideal,sel){        /* 燃尽：实际剩余(蓝�
   const si=axis.indexOf(sel);
   if(si>=0){g+=`<line x1="${x(si)}" y1="${MT}" x2="${x(si)}" y2="${MT+ph}" stroke="${C.mut}" stroke-width="1"/>`;
     if(actual[si]!=null)g+=`<circle cx="${x(si)}" cy="${y(actual[si])}" r="5" fill="${C.blue}" stroke="#fff" stroke-width="2"/>`;
-    g+=`<text x="${x(si)}" y="${MT-8}" font-size="11" text-anchor="middle" fill="${C.sub}">所选 ${md(sel)}</text>`;}
+    g+=`<text x="${x(si)}" y="${MT-8}" font-size="11" text-anchor="middle" fill="${C.mut}">所选 ${md(sel)}</text>`;}
   g+=`<line x1="${ML}" y1="${MT-10}" x2="${ML+18}" y2="${MT-10}" stroke="${C.blue}" stroke-width="2"/><text x="${ML+22}" y="${MT-6}" font-size="11" fill="${C.sub}">实际剩余</text>`
     +`<line x1="${ML+86}" y1="${MT-10}" x2="${ML+104}" y2="${MT-10}" stroke="${C.mut}" stroke-width="2" stroke-dasharray="4 3"/><text x="${ML+108}" y="${MT-6}" font-size="11" fill="${C.sub}">理想剩余</text>`;
   const step=Math.ceil(n/8);
@@ -323,7 +312,7 @@ function chartTags(tags){                         /* 问题标签分布（半栏
   const maxV=Math.max(1,...tags.map(t=>t.count));
   let g='';
   tags.forEach((t,i)=>{const y=MT+i*rowH,w=t.count/maxV*pw;
-    g+=`<text x="${ML-10}" y="${y+barH/2+4}" font-size="12" text-anchor="end" fill="${C.ink}">${esc(t.name)}</text>`;
+    g+=`<text x="${ML-10}" y="${y+barH/2+4}" font-size="12" text-anchor="end" fill="${C.mut}">${esc(t.name)}</text>`;
     g+=`<rect x="${ML}" y="${y}" width="${Math.max(2,w).toFixed(1)}" height="${barH}" rx="3" fill="${C.blue}" data-tip="${esc(t.name)}：${t.count} 个未关闭问题"/>`;
     g+=`<text x="${ML+Math.max(2,w)+6}" y="${y+barH/2+4}" font-size="12" fill="${C.sub}">${t.count}</text>`;});
   return svgRoot(W,H,g);}
@@ -503,4 +492,4 @@ $('personChk').addEventListener('change',()=>$('personBox').classList.toggle('op
   if(tb)tb.click();})();
 </script>
 </body>
-</html>"""
+</html>

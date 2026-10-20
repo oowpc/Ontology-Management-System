@@ -1,12 +1,13 @@
 """M7 页面与 API：/ke/upload、/ke/dashboard、/api/ke/*"""
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from html import escape
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -14,7 +15,6 @@ from ..db import get_db
 from ..security import require_role
 from ..templating import templates
 from . import service
-from .template import render_dashboard
 
 router = APIRouter(tags=["ke"])
 EDIT_ROLES = ("reviewer", "admin")
@@ -32,42 +32,28 @@ def _can_upload_to(user: dict, group: str) -> bool:
     return user["role"] in EDIT_ROLES or (bool(user.get("group")) and user.get("group") == group)
 
 
-def _header_extra(groups, selected):
-    options = ['<option value="">全部组</option>']
-    for g in groups:
-        sel = " selected" if g == selected else ""
-        options.append(f'<option value="{escape(g)}"{sel}>{escape(g)}</option>')
-    return ('<a class="backlink" href="/concepts">← 本体系统</a>'
-            '<select class="gselect" id="groupPick" title="切换查看组别">'
-            + "".join(options) + "</select>")
-
-
-def _banner(status) -> str:
-    if not status:
-        return ""
-    miss = [g["name"] for g in status if not g["uploaded_today"]]
-    done = len(status) - len(miss)
-    cls = "upbanner miss" if miss else "upbanner"
-    tail = ("；未上传：" + "、".join(escape(m) for m in miss)) if miss else "，全部到齐 ✓"
-    return (f'<div class="{cls}">📮 今日已上传 {done}/{len(status)} 组{tail}'
-            f' · <a href="/ke/upload">前往上传</a></div>')
-
-
 # ================= 页面 =================
 
-@router.get("/ke/dashboard", response_class=HTMLResponse)
-def ke_dashboard(group: str | None = None, db: Session = Depends(get_db),
+@router.get("/ke/dashboard")
+def ke_dashboard(request: Request, group: str | None = None, db: Session = Depends(get_db),
                  user: dict = Depends(require_role())):
-    """五屏进度看板。group 缺省 = 全部组汇总（全员可见，见 M7 设计决策）。"""
+    """五屏进度看板。group 缺省 = 全部组汇总（全员可见，见 M7 设计决策）。
+
+    渲染已迁到 Jinja 模板 app/templates/ke/dashboard.html（结构与样式可直接编辑）；
+    数据注入点：data_json（指标，</ 已转义）、groups/selected（组别选择器）、
+    banner_status（今日上传横幅）、gen_time、data（页脚统计）。
+    """
     today = date.today()
     groups = service.list_groups(db)
     selected = group if group in groups else None
     data = service.dashboard_payload(db, selected, today, _deadline())
-    html = render_dashboard(
-        data, gen_time=datetime.now().strftime("%Y-%m-%d %H:%M"),
-        header_extra=_header_extra(groups, selected),
-        banner=_banner(service.group_status(db, today)))
-    return HTMLResponse(html)
+    data_json = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    return templates.TemplateResponse(request=request, name="ke/dashboard.html", context={
+        "request": request, "user": user, "data": data, "data_json": data_json,
+        "gen_time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "groups": groups, "selected": selected,
+        "banner_status": service.group_status(db, today),
+    })
 
 
 @router.get("/ke/upload")
