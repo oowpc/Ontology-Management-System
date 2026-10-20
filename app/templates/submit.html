@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}提交新概念{% endblock %}
+{% block content %}
+<h1>提交新概念</h1>
+{% if request.query_params.get('tmp') %}
+<div class="panel tmp-notice">
+  <strong>已提交审核，临时 ID：<code class="tmp">{{ request.query_params.get('tmp') }}</code></strong>
+  <p class="muted">审核期间请使用该 ID 继续标注；审核通过后系统记录「TMP → 正式概念」映射，支持批量回填（M3 页面）。</p>
+</div>
+{% endif %}
+{% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+<form class="form wide" id="submit-form" method="post" action="/submit">
+  <label>概念名称 *
+    <input id="f-name" name="name" value="{{ values.name if values else '' }}" required autocomplete="off">
+  </label>
+  <label>别名（逗号 / 顿号 / 换行分隔）
+    <textarea id="f-aliases" name="aliases" rows="2">{{ ((values.aliases or [])|join('，')) if values else '' }}</textarea>
+  </label>
+  <label>定义
+    <textarea name="definition" rows="3">{{ values.definition if values else '' }}</textarea>
+  </label>
+  <label>建议父类 *
+    <select id="f-parent" name="suggested_parent_id" required>
+      <option value="">（选择已入库概念）</option>
+      {% for p in approved %}
+      <option value="{{ p.id }}" {{ 'selected' if values and values.suggested_parent_id == p.id }}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>为什么现有概念不够 *
+    <textarea name="reason" rows="3" required placeholder="说明现有概念无法表达的场景">{{ values.reason if values else '' }}</textarea>
+  </label>
+  <label>附题目 *
+    <textarea name="sample_question" rows="2" required placeholder="给出一道只能用新概念标注的题目">{{ values.sample_question if values else '' }}</textarea>
+  </label>
+  <div class="panel" id="similar-panel"><span class="muted">输入名称后自动查重</span></div>
+  {% if llm_enabled %}
+  <div class="actions" style="margin:0">
+    <button class="btn" type="button" id="llm-dedup-btn">LLM 语义复核</button>
+    <span class="muted" id="llm-dedup-status">编辑距离查不出的近义，由 LLM 再判一遍</span>
+  </div>
+  <div class="panel" id="llm-panel" style="display:none"></div>
+  {% endif %}
+  <div class="actions">
+    <button class="btn primary" type="submit">提交审核</button>
+    <span class="muted">提交后进入待审队列并发放 TMP 临时 ID</span>
+  </div>
+</form>
+{% endblock %}
+{% block scripts %}<script src="/static/app.js"></script>{% endblock %}

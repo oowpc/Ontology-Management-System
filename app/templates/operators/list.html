@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}算子 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>算子管理</h1>
+  {% if user.role in ['reviewer','admin'] %}<a class="btn primary" href="/operators/new">+ 新建算子</a>{% endif %}
+</div>
+<form class="filters" method="get" action="/operators">
+  <select name="subject_concept_id">
+    <option value="">全部主体概念</option>
+    {% for p in concepts %}
+    <option value="{{ p.id }}" {{ 'selected' if subject_concept_id == p.id }}>{{ p.name }}</option>
+    {% endfor %}
+  </select>
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="算子名称">
+  <button class="btn" type="submit">过滤</button>
+</form>
+<p class="muted">共 {{ operators|length }} 条</p>
+<table class="data">
+  <thead>
+    <tr><th>ID</th><th>名称</th><th>主体概念</th><th>参数类型</th><th>返回类型</th><th>所属概念</th><th>状态</th><th>操作</th></tr>
+  </thead>
+  <tbody>
+  {% for o in operators %}
+  <tr>
+    <td>{{ o.id }}</td>
+    <td>{{ o.name }}</td>
+    <td><a href="/concepts/{{ o.subject_concept_id }}">{{ names.get(o.subject_concept_id, o.subject_concept_id) }}</a></td>
+    <td class="muted">{{ (o.param_types or [])|join('、') or '—' }}</td>
+    <td>{{ o.return_type }}</td>
+    <td class="muted">{{ names.get(o.owner_concept_id or o.subject_concept_id, '—') }}</td>
+    <td><span class="badge {{ o.status }}">{{ STATUS_LABELS.get(o.status, o.status) }}</span></td>
+    <td class="ops">
+      {% if user.role in ['reviewer','admin'] %}
+      <a href="/operators/{{ o.id }}/edit">编辑</a>
+      {% if o.status != 'disabled' %}
+      <form method="post" action="/operators/{{ o.id }}/disable" onsubmit="return confirm('确认停用算子「{{ o.name }}」？')"><button class="link" type="submit">停用</button></form>
+      {% endif %}
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="empty">没有匹配的算子</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

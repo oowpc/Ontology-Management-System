@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}TMP 回填 · 本体管理系统{% endblock %}
+{% block content %}
+<h1>TMP 临时 ID 与回填</h1>
+
+{% if result %}
+<div class="panel">
+  <h2 style="margin-top:0">回填结果</h2>
+  {% if result.replaced %}
+  <table class="data">
+    <thead><tr><th>TMP</th><th>替换为</th><th class="num">处</th><th>记录</th></tr></thead>
+    <tbody>
+    {% for r in result.replaced %}
+    <tr><td>{{ r.tmp_id }}</td><td><strong>{{ r.replacement }}</strong></td><td class="num">{{ r.count }}</td><td class="muted">#{{ r.record_id }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">没有可替换的 TMP（共扫描到 {{ result.scanned }} 个）。</p>
+  {% endif %}
+  {% if result.unresolved %}
+  <div class="flash err">未决 TMP（未替换）：
+    {% for u in result.unresolved %}{{ u.tmp_id }}（{{ u.reason }}）{% if not loop.last %}、{% endif %}{% endfor %}
+  </div>
+  {% endif %}
+  <label style="display:block;margin-top:8px">替换后文本
+    <textarea readonly rows="8" style="width:100%">{{ result.text }}</textarea>
+  </label>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2 style="margin-top:0">批量回填</h2>
+  <form method="post" action="/tmp/backfill">
+    <p style="margin:0 0 8px"><textarea name="text" rows="8" style="width:100%" required
+      placeholder="粘贴含 TMP-xxx 的 KE 标注文本，如：&#10;上级机构(TMP-0001) = {政府(__广东省)}"></textarea></p>
+    <p style="margin:0">
+      <input name="source_label" placeholder="批次说明（如：育儿补贴-广东-10月批次）" style="width:340px">
+      <button class="btn primary" type="submit">回填</button>
+    </p>
+  </form>
+</div>
+
+<h2>TMP 映射表</h2>
+<form class="filters" method="get" action="/tmp">
+  <select name="status">
+    <option value="">全部状态</option>
+    {% for v, label in TMP_STATUS_LABELS.items() %}
+    <option value="{{ v }}" {{ 'selected' if status == v }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn" type="submit">过滤</button>
+</form>
+<table class="data">
+  <thead><tr><th>TMP</th><th>状态</th><th>对应概念</th><th>提交单</th><th>创建</th><th>解决时间</th></tr></thead>
+  <tbody>
+  {% for m in mappings %}
+  <tr>
+    <td><code>{{ m.tmp_id }}</code></td>
+    <td><span class="badge {{ m.status }}">{{ TMP_STATUS_LABELS.get(m.status, m.status) }}</span></td>
+    <td>{% if m.concept_id %}<a href="/concepts/{{ m.concept_id }}">{{ m.concept_name }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+    <td><a href="/review">#{{ m.submission_id }}</a></td>
+    <td class="muted">{{ m.created_by }} · {{ m.created_at|dt }}</td>
+    <td class="muted">{{ m.resolved_at|dt }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="empty">暂无 TMP</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>回填记录（最近 50）</h2>
+<table class="data">
+  <thead><tr><th>ID</th><th>TMP</th><th>替换为</th><th class="num">处</th><th>批次</th><th>操作人</th><th>时间</th></tr></thead>
+  <tbody>
+  {% for r in records %}
+  <tr>
+    <td>{{ r.id }}</td>
+    <td><code>{{ r.tmp_id }}</code></td>
+    <td>{{ r.replacement }}</td>
+    <td class="num">{{ r.replaced_count }}</td>
+    <td class="muted">{{ r.source_label or '—' }}</td>
+    <td>{{ r.actor }}</td>
+    <td class="muted">{{ r.created_at|dt }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="empty">暂无回填记录</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

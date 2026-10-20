@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}KE 上传{% endblock %}
+{% block content %}
+<h1>KE 标注数据上传</h1>
+<p class="muted">每天收工后上传本组标注表的<strong>全量导出</strong>（CSV，十列：题目ID/领域/题目摘要/标注状态/标注人/创建时间/开始时间/完成时间/复核结论/问题标签）。重复上传按题目ID覆盖，以最新一次为准。</p>
+
+<h2>今日上传状态（{{ today }}）</h2>
+<table class="data">
+  <thead><tr><th>组别</th><th>状态</th><th>最近上传时间</th><th class="num">行数</th><th class="num">已完成</th><th>上传人</th></tr></thead>
+  <tbody>
+  {% for g in status %}
+  <tr>
+    <td>{{ g.name }}</td>
+    <td>{% if g.uploaded_today %}<span class="badge approved">已上传</span>{% else %}<span class="badge pending">未上传</span>{% endif %}</td>
+    <td>{{ g.last_upload.uploaded_at|dt if g.last_upload else '—' }}</td>
+    <td class="num">{{ g.last_upload.row_count if g.last_upload else '—' }}</td>
+    <td class="num">{{ g.last_upload.done_count if g.last_upload else '—' }}</td>
+    <td>{{ g.last_upload.uploaded_by if g.last_upload else '—' }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if can_upload %}
+<h2>上传 CSV</h2>
+<form class="form" method="post" action="/ke/upload" enctype="multipart/form-data">
+  {% if is_admin %}
+  <label>组别
+    <select name="group">
+      {% for g in group_options %}<option value="{{ g }}" {{ 'selected' if my_group and g == my_group }}>{{ g }}</option>{% endfor %}
+    </select>
+  </label>
+  {% else %}
+  <label>组别 <input name="group" value="{{ my_group }}" readonly></label>
+  {% endif %}
+  <label>CSV 文件 <input type="file" name="file" accept=".csv" required></label>
+  <div class="actions">
+    <button class="btn primary" type="submit">上传并统计</button>
+    <a class="btn" href="/ke/dashboard">查看进度看板 →</a>
+  </div>
+</form>
+{% else %}
+<div class="panel">你的账号未分配组别，请联系管理员后再上传。</div>
+{% endif %}
+
+{% if history %}
+<h2>上传历史{% if my_group and not is_admin %}（{{ my_group }}）{% endif %}</h2>
+<table class="data">
+  <thead><tr><th>时间</th><th>组别</th><th>文件</th><th class="num">行数</th><th class="num">已完成</th><th class="num">校验提示</th><th>上传人</th></tr></thead>
+  <tbody>
+  {% for h in history %}
+  <tr>
+    <td>{{ h.uploaded_at|dt }}</td>
+    <td>{{ h.group_name }}</td>
+    <td>{{ h.filename }}</td>
+    <td class="num">{{ h.row_count }}</td>
+    <td class="num">{{ h.done_count }}</td>
+    <td class="num" title="{{ h.warnings|join('；') }}">{{ h.warnings|length }}</td>
+    <td>{{ h.uploaded_by }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

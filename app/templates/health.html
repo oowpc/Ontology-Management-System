@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}本体体检 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>本体体检</h1>
+  <form method="post" action="/health/run"><button class="btn primary" type="submit">立即体检</button></form>
+</div>
+{% if not report %}
+<div class="panel empty">还没有体检报告，点击「立即体检」生成（定时任务每日自动生成）。</div>
+{% else %}
+<p class="muted">
+  最近报告：#{{ report.id }} · {{ '手动' if report.trigger_type == 'manual' else '定时' }} · {{ report.created_at|dt }}
+</p>
+<div class="tabs">
+  {% for k, label in kinds.items() %}
+  <a class="tab {{ 'active' if kind == k }}" href="/health?kind={{ k }}">{{ label }}（{{ report.summary.get(k, 0) }}）</a>
+  {% endfor %}
+</div>
+<div class="panel" style="border-top:0;border-radius:0 0 8px 8px">
+  <p><a class="btn" href="/api/health/report.csv?kind={{ kind }}">下载本类 CSV</a></p>
+
+  {% if kind == 'unused' %}
+  <table class="data">
+    <thead><tr><th>ID</th><th>名称</th><th class="num">KE 使用次数</th><th class="num">内部引用</th><th>最近使用</th></tr></thead>
+    <tbody>
+    {% for x in report.details.unused %}
+    <tr><td>{{ x.id }}</td><td><a href="/concepts/{{ x.id }}">{{ x.name }}</a></td>
+        <td class="num">0</td><td class="num">{{ x.internal_refs }}</td>
+        <td class="muted">{{ x.last_used_at or '—' }}</td></tr>
+    {% else %}<tr><td colspan="5" class="empty">没有问题</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% elif kind == 'orphan' %}
+  <table class="data">
+    <thead><tr><th>ID</th><th>名称</th><th>别名</th></tr></thead>
+    <tbody>
+    {% for x in report.details.orphan %}
+    <tr><td>{{ x.id }}</td><td><a href="/concepts/{{ x.id }}">{{ x.name }}</a></td>
+        <td class="muted">{{ x.aliases|join('、') or '—' }}</td></tr>
+    {% else %}<tr><td colspan="3" class="empty">没有问题</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% elif kind == 'similar' %}
+  <table class="data">
+    <thead><tr><th>概念 A</th><th>概念 B</th><th class="num">相似度</th><th>命中</th></tr></thead>
+    <tbody>
+    {% for x in report.details.similar_pairs %}
+    <tr><td><a href="/concepts/{{ x.a_id }}">{{ x.a_name }}</a></td>
+        <td><a href="/concepts/{{ x.b_id }}">{{ x.b_name }}</a></td>
+        <td class="num">{{ '%.0f%%'|format(x.score * 100) }}</td>
+        <td class="muted">{{ x.matched_on }}「{{ x.matched_value }}」</td></tr>
+    {% else %}<tr><td colspan="4" class="empty">没有问题</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <table class="data">
+    <thead><tr><th>ID</th><th>名称</th><th class="num">算子数</th><th>问题</th></tr></thead>
+    <tbody>
+    {% for x in report.details.operator_count %}
+    <tr><td>{{ x.id }}</td><td><a href="/concepts/{{ x.id }}">{{ x.name }}</a></td>
+        <td class="num">{{ x.operator_count }}</td>
+        <td><span class="badge {{ 'draft' if x.issue == '过少' else 'pending' }}">{{ x.issue }}</span></td></tr>
+    {% else %}<tr><td colspan="4" class="empty">没有问题</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if runs %}
+<h2>历史报告</h2>
+<table class="data">
+  <thead><tr><th>ID</th><th>触发</th><th class="num">未使用</th><th class="num">孤立</th><th class="num">近义对</th><th class="num">算子失衡</th><th>时间</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+  <tr><td>{{ r.id }}</td><td>{{ '手动' if r.trigger_type == 'manual' else '定时' }}</td>
+      <td class="num">{{ r.summary.get('unused', 0) }}</td>
+      <td class="num">{{ r.summary.get('orphan', 0) }}</td>
+      <td class="num">{{ r.summary.get('similar_pairs', 0) }}</td>
+      <td class="num">{{ r.summary.get('operator_count', 0) }}</td>
+      <td class="muted">{{ r.created_at|dt }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

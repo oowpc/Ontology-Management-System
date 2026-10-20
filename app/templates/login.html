@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}登录 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="login-card">
+  <h1>登录</h1>
+  {% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>用户名<input name="username" required autofocus></label>
+    <label>密码<input name="password" type="password" required></label>
+    <button class="btn primary" type="submit">登录</button>
+  </form>
+  <p class="muted">种子账号：admin / reviewer / annotator（密码同用户名）</p>
+</div>
+{% endblock %}

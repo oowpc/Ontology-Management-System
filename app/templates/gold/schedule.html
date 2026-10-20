@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}泳道排期 · GOLDKE{% endblock %}
+{% block content %}
+<div class="page-head"><h1>泳道排期（20 天）</h1></div>
+<p class="muted">状态色：<span class="badge stage-co_annotation">计划中</span> <span class="badge stage-done">已完成</span> <span class="badge stage-missed">延误</span>；点击格子下方「编辑」可更新任务与状态。</p>
+<table class="data schedule">
+  <thead>
+    <tr><th rowspan="2">日期</th><th rowspan="2">时段</th>{% for g in groups %}<th>{{ g }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody>
+  {% for d, slots in grid.items() %}
+    {% for slot, cells in slots.items() %}
+    <tr>
+      {% if loop.first %}<td rowspan="2" class="day">day{{ d }}</td>{% endif %}
+      <td class="muted">{{ slot }}</td>
+      {% for g in groups %}
+      {% set c = cells[g] %}
+      <td class="cell-{{ c.status if c else 'empty' }}">
+        {% if c and c.task %}
+        <div>{{ c.task }}</div>
+        <details class="cell-edit">
+          <summary>编辑</summary>
+          <form method="post" action="/gold/schedule/cell">
+            <input type="hidden" name="day_index" value="{{ d }}">
+            <input type="hidden" name="slot" value="{{ slot }}">
+            <input type="hidden" name="group_name" value="{{ g }}">
+            <input name="task" value="{{ c.task }}">
+            <input name="article_code" value="{{ c.article_code }}" placeholder="关联篇（可空）" size="8">
+            <select name="status">
+              {% for v, l in [('planned','计划中'),('done','已完成'),('missed','延误')] %}
+              <option value="{{ v }}" {{ 'selected' if c.status == v }}>{{ l }}</option>
+              {% endfor %}
+            </select>
+            <input name="note" value="{{ c.note }}" placeholder="备注" size="8">
+            <button class="btn" type="submit">存</button>
+          </form>
+        </details>
+        {% else %}
+        <details class="cell-edit">
+          <summary class="muted">+</summary>
+          <form method="post" action="/gold/schedule/cell">
+            <input type="hidden" name="day_index" value="{{ d }}">
+            <input type="hidden" name="slot" value="{{ slot }}">
+            <input type="hidden" name="group_name" value="{{ g }}">
+            <input name="task" placeholder="任务（如 CO 标注与对齐（篇14-化学））">
+            <input name="article_code" placeholder="关联篇" size="8">
+            <select name="status"><option value="planned">计划中</option><option value="done">已完成</option><option value="missed">延误</option></select>
+            <input name="note" placeholder="备注" size="8">
+            <button class="btn" type="submit">存</button>
+          </form>
+        </details>
+        {% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

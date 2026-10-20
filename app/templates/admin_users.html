@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}用户与组管理{% endblock %}
+{% block content %}
+<h1>用户与组管理</h1>
+<p class="muted">组为自由文本：保存后新组自动出现在上传 / 看板 / 泳道的组清单。不提供删除（保证留痕完整）；密码重置后立即生效。agent 请用 <code>/api/admin/users</code>。</p>
+
+<h2>新建用户</h2>
+<form class="filters" method="post" action="/admin/users/create">
+  <input name="username" placeholder="用户名" required autocomplete="off">
+  <input name="password" placeholder="初始密码" required autocomplete="off">
+  <select name="role">
+    {% for r in roles %}<option value="{{ r }}">{{ role_labels[r] }}</option>{% endfor %}
+  </select>
+  <input name="group_name" placeholder="组（可空，如：一组）" size="10">
+  <button class="btn primary" type="submit">创建</button>
+</form>
+
+<h2>用户列表（{{ items|length }}）</h2>
+<table class="data">
+  <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>组</th><th>创建时间</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for u in items %}
+  <tr>
+    <td class="num">{{ u.id }}</td>
+    <td>{{ u.username }}</td>
+    <td colspan="1">
+      <form class="filters" method="post" action="/admin/users/{{ u.id }}/update" style="margin:0">
+        <select name="role">
+          {% for r in roles %}<option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ role_labels[r] }}</option>{% endfor %}
+        </select>
+    </td>
+    <td>
+        <input name="group_name" value="{{ u.group_name or '' }}" size="8" placeholder="（无组）">
+    </td>
+    <td>{{ u.created_at|dt }}</td>
+    <td class="ops">
+        <button class="link" type="submit">保存角色/组</button>
+      </form>
+      <form class="inline" method="post" action="/admin/users/{{ u.id }}/password" onsubmit="return confirm('确认重置 {{ u.username }} 的密码？')">
+        <input name="password" placeholder="新密码" size="8" required>
+        <button class="link" type="submit">重置密码</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

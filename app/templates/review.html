@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}审核 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head"><h1>审核队列</h1></div>
+<form class="filters" method="get" action="/review">
+  <select name="status">
+    {% for v, label in [('pending','待审'),('approved','已通过'),('rejected','已驳回'),('merged','已合并'),('','全部')] %}
+    <option value="{{ v }}" {{ 'selected' if status == v }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn" type="submit">过滤</button>
+</form>
+
+{% if items and status == 'pending' %}
+<div class="panel batch-bar">
+  <textarea form="batch-form" name="comment" rows="2" placeholder="批量审核意见（必填）" required></textarea>
+  <form id="batch-form" method="post" action="/review/batch">
+    <button class="btn primary" name="action" value="approve" type="submit">批量通过选中</button>
+    <button class="btn" name="action" value="reject" type="submit" onclick="return confirm('确认批量驳回选中项？')">批量驳回选中</button>
+  </form>
+</div>
+{% endif %}
+
+{% for s in items %}
+<div class="panel review-card">
+  <div class="review-head">
+    {% if s.status == 'pending' %}<input type="checkbox" form="batch-form" name="ids" value="{{ s.id }}">{% endif %}
+    <strong class="review-name">{{ s.name }}</strong>
+    <span class="badge {{ s.status }}">{{ SUB_STATUS_LABELS.get(s.status, s.status) }}</span>
+    <span class="muted">#{{ s.id }} · {{ s.tmp_id }} · {{ s.submitted_by }} 提交于 {{ s.created_at|dt }}</span>
+  </div>
+  <table class="kv">
+    <tr><th>别名</th><td>{{ s.aliases|join('、') or '—' }}</td></tr>
+    <tr><th>定义</th><td>{{ s.definition or '—' }}</td></tr>
+    <tr><th>建议父类</th><td>{{ s.suggested_parent_name or '—' }}</td></tr>
+    <tr><th>理由</th><td>{{ s.reason }}</td></tr>
+    <tr><th>附题目</th><td>{{ s.sample_question }}</td></tr>
+    {% if s.status != 'pending' %}
+    <tr><th>审核</th><td>{{ s.reviewed_by }} · {{ s.reviewed_at|dt }}<br>意见：{{ s.review_comment }}
+      {% if s.status == 'merged' %}<br>合并到：<a href="/concepts/{{ s.merge_target_id }}">{{ s.merge_target_name }}</a>{% endif %}
+    </td></tr>
+    {% endif %}
+  </table>
+  {% if s.similar_snapshot %}
+  <details class="similar" {{ 'open' if s.status == 'pending' }}>
+    <summary>提交时查重结果（{{ s.similar_snapshot|length }}）</summary>
+    <table class="data">
+      <thead><tr><th>概念</th><th>别名</th><th>父类</th><th>状态</th><th class="num">相似度</th><th>命中</th></tr></thead>
+      <tbody>
+      {% for h in s.similar_snapshot %}
+      <tr>
+        <td><a href="/concepts/{{ h.id }}">{{ h.name }}</a></td>
+        <td class="muted">{{ h.aliases|join('、') }}</td>
+        <td class="muted">{{ h.parent_name or '—' }}</td>
+        <td class="muted">{{ STATUS_LABELS.get(h.status, h.status) }}</td>
+        <td class="num">{{ '%.0f%%'|format(h.score * 100) }}</td>
+        <td class="muted">{{ h.matched_on }}「{{ h.matched_value }}」</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+  {% if s.status == 'pending' %}
+  <form class="review-actions" method="post" action="/review/{{ s.id }}">
+    <textarea name="comment" rows="2" placeholder="审核意见（必填）" required></textarea>
+    <div class="actions">
+      <button class="btn primary" name="action" value="approve" type="submit">通过</button>
+      <button class="btn" name="action" value="reject" type="submit">驳回</button>
+      <select name="merge_target_id">
+        <option value="">（合并到已有概念…）</option>
+        {% for t in approved_concepts %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+      </select>
+      <button class="btn" name="action" value="merge" type="submit" onclick="return confirmMerge(this)">合并</button>
+      {% if llm_enabled %}
+      <button class="btn" type="button" onclick="llmSuggest(this, {{ s.id }})">LLM 建议</button>
+      <span class="muted llm-rationale"></span>
+      {% endif %}
+    </div>
+  </form>
+  {% endif %}
+</div>
+{% else %}
+<div class="panel empty">当前没有{{ '待审的' if status == 'pending' else '符合条件的' }}提交单</div>
+{% endfor %}
+{% endblock %}
+{% block scripts %}<script src="/static/app.js"></script>{% endblock %}

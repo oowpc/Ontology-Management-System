@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑' if it and it.id else '补录' }}成品条目{% endblock %}
+{% block content %}
+<h1>{{ '编辑' if it and it.id else '补录' }}成品条目</h1>
+{% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+<form class="form wide" method="post">
+  <label>篇编号 *
+    <input name="article_code" value="{{ it.article_code if it else '' }}" {{ 'readonly' if it and it.id }} required autocomplete="off">
+  </label>
+  <label>KE 编号 *
+    <input name="ke_id" value="{{ it.ke_id if it else '' }}" {{ 'readonly' if it and it.id }} required autocomplete="off">
+  </label>
+  <label>组别
+    <select name="group_name">
+      {% for g in groups %}<option value="{{ g }}" {{ 'selected' if it and it.group_name == g }}>{{ g }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>KE 内容
+    <textarea name="ke_text" rows="6">{{ it.ke_text if it else '' }}</textarea>
+  </label>
+  <label>引用概念（逗号 / 顿号 / 分号分隔，可为 TMP）
+    <input name="concepts" value="{{ (it.concepts or [])|join('，') if it else '' }}" autocomplete="off">
+  </label>
+  {% if user.role in edit_roles %}
+  <label>状态
+    <select name="status">
+      {% for s in status_list %}<option value="{{ s }}" {{ 'selected' if it and it.status == s }}>{{ status_labels[s] }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <div class="actions">
+    <button class="btn primary" type="submit">保存</button>
+    <a class="btn" href="/gold/items">返回列表</a>
+    {% if it and it.id %}<span class="muted">当前版本 v{{ it.version }} · 最后修改 {{ it.updated_by }}（{{ it.updated_at|dt }}）</span>{% endif %}
+  </div>
+</form>
+{% endblock %}

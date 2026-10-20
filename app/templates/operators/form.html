@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑算子' if o and o.id else '新建算子' }}{% endblock %}
+{% block content %}
+<h1>{{ '编辑算子' if o and o.id else '新建算子' }}</h1>
+{% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+<form class="form" method="post">
+  <label>名称 *
+    <input name="name" value="{{ o.name if o else '' }}" required>
+  </label>
+  <label>主体概念 *
+    <select name="subject_concept_id" required>
+      <option value="">（选择概念）</option>
+      {% for p in concepts %}
+      <option value="{{ p.id }}" {{ 'selected' if o and o.subject_concept_id == p.id }}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>所属概念（缺省 = 主体概念）
+    <select name="owner_concept_id">
+      <option value="">（同主体）</option>
+      {% for p in concepts %}
+      <option value="{{ p.id }}" {{ 'selected' if o and o.owner_concept_id == p.id }}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>参数类型列表（逗号 / 换行分隔）
+    <textarea name="param_types" rows="3" placeholder="行政区划&#10;人">{{ ((o.param_types or [])|join('，')) if o else '' }}</textarea>
+  </label>
+  <label>返回类型 *
+    <input name="return_type" value="{{ o.return_type if o else '' }}" placeholder="概念名 或 String / Number / Set[...]" required>
+  </label>
+  <div class="actions">
+    <button class="btn primary" type="submit">保存</button>
+    <a class="btn" href="/operators">取消</a>
+  </div>
+</form>
+{% endblock %}

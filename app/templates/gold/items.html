@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}成品库 · GOLDKE{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>GOLD 成品库（{{ total }}）</h1>
+  <div>
+    <a class="btn" href="/api/gold/items/export.csv?{{ qs }}">导出 CSV</a>
+    <a class="btn" href="/api/gold/items/export.json?{{ qs }}">导出 JSON</a>
+    {% if user.role in edit_roles %}<a class="btn primary" href="/gold/items/new">+ 补录条目</a>{% endif %}
+  </div>
+</div>
+<form class="filters" method="get" action="/gold/items">
+  <input name="article_code" value="{{ article_code or '' }}" placeholder="篇编号" size="8">
+  <select name="status">
+    <option value="">全部状态</option>
+    {% for s in status_list %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ status_labels[s] }}</option>{% endfor %}
+  </select>
+  <select name="group_name">
+    <option value="">全部组别</option>
+    {% for g in groups %}<option value="{{ g }}" {{ 'selected' if group_name == g }}>{{ g }}</option>{% endfor %}
+  </select>
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="内容 / KE 编号关键字">
+  <button class="btn" type="submit">过滤</button>
+</form>
+<table class="data">
+  <thead><tr><th>篇</th><th>KE 编号</th><th>组别</th><th>KE 内容</th><th>引用概念</th><th>状态</th><th class="num">版本</th><th>更新时间</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for i in items %}
+  <tr>
+    <td><code>{{ i.article_code }}</code></td>
+    <td>{{ i.ke_id }}</td>
+    <td>{{ i.group_name }}</td>
+    <td>{{ i.ke_text[:80] }}{{ '…' if i.ke_text|length > 80 }}</td>
+    <td>{% for c in i.concepts %}<span class="chip">{{ c }}</span>{% endfor %}</td>
+    <td><span class="badge {{ {'draft':'draft','reviewed':'merged','gold':'approved'}[i.status] }}">{{ status_labels[i.status] }}</span></td>
+    <td class="num">v{{ i.version }}</td>
+    <td>{{ i.updated_at|dt }}</td>
+    <td class="ops">
+      {% if user.role in edit_roles or (i.status == 'draft' and user.group == i.group_name) %}
+      <a href="/gold/items/{{ i.id }}/edit">编辑</a>
+      {% endif %}
+      {% if user.role in edit_roles %}
+      <form class="inline" method="post" action="/gold/items/{{ i.id }}/delete" onsubmit="return confirm('删除该条目？（留痕可回滚）')"><button class="link" type="submit">删除</button></form>
+      {% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="9" class="empty">暂无成品条目（每日上传 CSV 带「篇编号 + KE内容」列会自动入库为草稿）</td></tr>
+  {% endfor %}
+</tbody>
+</table>
+<p class="muted">口径：草稿可由本组标注员或审核员修改；已复核 / GOLD 仅审核员、管理员可改；全部写操作在「变更日志」留痕。列表最多显示 200 条，完整数据请用导出。</p>
+{% endblock %}

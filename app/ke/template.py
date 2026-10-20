@@ -1,0 +1,506 @@
+"""段2移植：五屏看板页面模板（纯 SVG、零外部依赖，与独立版 generate_report.py 同源）。
+
+网页版相比独立版多三个注入点：
+- __HEADER_EXTRA__：应用导航（返回本体系统）+ 组别选择器
+- __KE_BANNER__：今日各组上传状态横幅（未上传提醒）
+- 其余同：__DATA_JSON__（指标数据）、__FOOTER__（校验与口径栏）
+"""
+from __future__ import annotations
+
+import html as html_mod
+import json
+
+
+def build_footer(data, gen_time):
+    """页脚数据校验栏：读入概况 + 校验提示 + 口径说明。"""
+    warns = "".join(f"<li>{html_mod.escape(w)}</li>" for w in data["warnings"]) or "<li>无异常</li>"
+    notes = [
+        "完成率 = 已完成 ÷ 总题数；日产能 / 燃尽 / 预计完成日均按「完成时间」统计",
+        "近 7 日均产能 = 最近 7 个自然日完成条数均值（含当天）；预计完成日 = 剩余 ÷ 近 7 日均产能，从当天往后推",
+        "返工率为近似口径（无流转日志）：（已退回 或 标签含「返工」）÷ 已完成",
+        "未关闭问题 = 问题标签非空且状态 ≠ 已完成；「卡了几天」按创建时间算",
+        "复核结论以系统复核（KE 复核页）为准，CSV 自报兜底；上传重灌时系统结论自动重放",
+        "屏 1 / 屏 2 与周报文字随日期选择器切换；屏 3 / 4 / 5 为最近上传口径",
+        "数据来自各组每日全量上传，重复上传以最新一次为准",
+    ]
+    notes_html = "".join(f"<li>{n}</li>" for n in notes)
+    return (f"<p>数据截至 <strong>{data['export_day']}</strong> · 截止日 <strong>{data['deadline']}</strong>"
+            f" · 生成时间 {gen_time} · 读入 {data['total']} 行，"
+            f"校验提示 {len(data['warnings'])} 条</p>"
+            f"<div class='ft-cols'><div><h4>校验提示</h4><ul>{warns}</ul></div>"
+            f"<div><h4>统计口径</h4><ul>{notes_html}</ul></div></div>")
+
+
+def render_dashboard(data, gen_time, header_extra="", banner=""):
+    payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
+    return (TEMPLATE
+            .replace("__DATA_JSON__", payload)
+            .replace("__FOOTER__", build_footer(data, gen_time))
+            .replace("__HEADER_EXTRA__", header_extra)
+            .replace("__KE_BANNER__", banner))
+
+
+# ---------- 页面模板（CSS + JS + 纯SVG图表，无任何外部引用） ----------
+
+TEMPLATE = r"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KE 标注项目 · 进度看板</title>
+<style>
+:root{
+  --bg:#f9f9f7;--card:#fcfcfb;--ink:#0b0b0b;--sub:#52514e;--mut:#898781;
+  --grid:#e1e0d9;--base:#c3c2b7;--blue:#2a78d6;--orange:#eb6834;--gray:#a3a19a;
+  --green:#0ca30c;--yellow:#fab219;--red:#d03b3b;
+  --green-bg:#e9f6e9;--yellow-bg:#fdf3d7;--red-bg:#fbe9e9;
+  --ring:rgba(11,11,11,.10);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:14px/1.6 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+header{position:sticky;top:0;z-index:50;background:var(--card);border-bottom:1px solid var(--grid);
+  display:flex;align-items:center;gap:14px;padding:10px 22px;flex-wrap:wrap}
+header h1{font-size:16px;font-weight:700;white-space:nowrap}
+header .meta{font-size:12px;color:var(--mut);white-space:nowrap}
+.tabs{display:flex;gap:6px;margin-left:6px}
+.tabs button{border:1px solid var(--grid);background:transparent;color:var(--sub);border-radius:999px;
+  padding:5px 14px;font-size:13px;cursor:pointer}
+.tabs button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+.hctl{margin-left:auto;display:flex;gap:8px;align-items:center}
+.hctl input[type=date]{border:1px solid var(--grid);border-radius:8px;padding:5px 8px;font:inherit;background:#fff}
+.hctl button{border:1px solid var(--grid);background:#fff;border-radius:8px;padding:5px 12px;font-size:13px;cursor:pointer}
+.hctl button:hover{border-color:var(--mut)}
+main{max-width:1240px;margin:0 auto;padding:20px 22px 40px}
+.screen{display:none}
+.screen.active{display:block}
+.conclusion{background:#eef4fd;border-left:3px solid var(--blue);border-radius:8px;
+  padding:12px 16px;font-size:15px;font-weight:600;margin-bottom:14px}
+.nodata{display:none;background:var(--yellow-bg);border:1px solid var(--yellow);border-radius:8px;
+  padding:10px 16px;margin-bottom:14px;font-weight:600}
+.alert{border-radius:8px;padding:11px 16px;font-size:14px;font-weight:600;margin-bottom:14px;border:1px solid}
+.alert.green{background:var(--green-bg);border-color:var(--green)}
+.alert.yellow{background:var(--yellow-bg);border-color:var(--yellow)}
+.alert.red{background:var(--red-bg);border-color:var(--red)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+.kpi{position:relative;background:var(--card);border:1px solid var(--ring);border-radius:12px;padding:16px 18px}
+.kpi .k-label{font-size:13px;color:var(--sub)}
+.kpi .k-val{font-size:32px;font-weight:700;line-height:1.25;margin-top:2px}
+.kpi .k-val.k-date{font-size:26px;padding-top:4px}
+.dot{position:absolute;top:16px;right:16px;width:12px;height:12px;border-radius:50%}
+.dot.green{background:var(--green)}.dot.yellow{background:var(--yellow)}.dot.red{background:var(--red)}
+.card{background:var(--card);border:1px solid var(--ring);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.card h3{font-size:14px;font-weight:600;margin-bottom:8px}
+.card .hint{font-size:12px;color:var(--mut);margin-top:6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 10px;border-bottom:1px solid var(--grid);text-align:left}
+th{color:var(--sub);font-weight:600;background:#f4f4f2}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.hot td{background:var(--red-bg)}
+tr.hot td:first-child{font-weight:700}
+.tagchip{display:inline-block;background:#eef0f3;border-radius:4px;padding:0 6px;margin-right:4px;font-size:12px;color:var(--sub)}
+details{margin-top:8px}
+summary{font-size:12px;color:var(--mut);cursor:pointer}
+.mini{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:14px}
+.mini .kpi .k-val{font-size:24px}
+.toggle{display:flex;align-items:center;gap:8px;color:var(--sub);font-size:13px;margin:2px 0 10px;cursor:pointer}
+#personBox{display:none}
+#personBox.open{display:block}
+.empty{text-align:center;color:var(--mut);padding:70px 0;font-size:16px}
+#tip{position:fixed;display:none;pointer-events:none;background:var(--ink);color:#fff;font-size:12px;
+  border-radius:6px;padding:5px 9px;z-index:99;white-space:nowrap}
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:90}
+.mask.show{display:flex}
+.modal{background:#fff;border-radius:12px;padding:20px;width:min(560px,92vw)}
+.modal h3{font-size:15px;margin-bottom:10px}
+.modal textarea{width:100%;height:150px;border:1px solid var(--grid);border-radius:8px;padding:10px;font:inherit;resize:none}
+.modal .m-btns{margin-top:12px;display:flex;gap:8px;justify-content:flex-end}
+.modal button{border:1px solid var(--grid);background:#fff;border-radius:8px;padding:6px 16px;cursor:pointer;font-size:13px}
+.modal button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+footer{max-width:1240px;margin:0 auto;padding:0 22px 36px;color:var(--sub);font-size:12px}
+footer .fbox{background:var(--card);border:1px solid var(--ring);border-radius:12px;padding:14px 18px}
+footer h4{font-size:12px;margin:6px 0 4px;color:var(--ink)}
+footer ul{padding-left:18px}
+.ft-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.upbanner{background:#fff;border:1px solid var(--ring);border-left:3px solid var(--green);
+  border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px}
+.upbanner.miss{border-left-color:var(--yellow)}
+.upbanner a{color:var(--blue)}
+.backlink{color:var(--blue);font-size:13px;white-space:nowrap}
+.gselect{border:1px solid var(--grid);border-radius:8px;padding:5px 8px;font:inherit;background:#fff}
+</style>
+</head>
+<body>
+<header>
+  <h1>KE 标注项目 · 进度看板</h1>
+  <span class="meta" id="metaLine"></span>__HEADER_EXTRA__
+  <nav class="tabs" id="tabs">
+    <button data-s="s1" class="active">今日概览</button>
+    <button data-s="s2">进度趋势</button>
+    <button data-s="s3">结构与分布</button>
+    <button data-s="s4">人员与效率</button>
+    <button data-s="s5">问题面板</button>
+  </nav>
+  <div class="hctl">
+    <input type="date" id="dayPick" title="查看任意一天的数据快照">
+    <button id="btnPng">导出 PNG</button>
+    <button id="btnRep">生成周报文字</button>
+  </div>
+</header>
+<main>__KE_BANNER__
+  <section class="screen active" id="s1" data-name="今日概览">
+    <div class="conclusion" id="c1"></div>
+    <div class="nodata">该日无数据</div>
+    <div class="kpis">
+      <div class="kpi"><div class="k-label">总题数</div><div class="k-val" id="kTotal">—</div></div>
+      <div class="kpi"><div class="k-label">已完成</div><div class="k-val" id="kDone">—</div></div>
+      <div class="kpi"><div class="k-label">完成率</div><div class="k-val" id="kRate">—</div><span class="dot" id="dRate"></span></div>
+      <div class="kpi"><div class="k-label">预计完成日</div><div class="k-val k-date" id="kEta">—</div><span class="dot" id="dEta"></span></div>
+    </div>
+    <div class="alert green" id="alertBar"></div>
+  </section>
+
+  <section class="screen" id="s2" data-name="进度趋势">
+    <div class="conclusion" id="c2"></div>
+    <div class="nodata">该日无数据</div>
+    <div class="card"><h3>每日完成 与 累计完成（共享日期轴）</h3><div id="comboBox"></div>
+      <details><summary>数据表</summary><div id="comboTbl"></div></details></div>
+    <div class="card"><h3>燃尽图：剩余条数 vs 理想线</h3><div id="burnBox"></div>
+      <details><summary>数据表</summary><div id="burnTbl"></div></details></div>
+  </section>
+
+  <section class="screen" id="s3" data-name="结构与分布">
+    <div class="conclusion" id="c3"></div>
+    <div class="card"><h3>各领域状态构成（截至导出时）</h3><div id="stackBox"></div>
+      <details><summary>数据表</summary><div id="stackTbl"></div></details></div>
+    <div class="card"><h3>各领域完成率（低完成率排上面）</h3><div id="rateBox"></div>
+      <div class="hint">圆点 = 健康度：绿 正常 / 黄 有风险 / 红 落后（与整体完成率比较，&lt;60% 为红，&lt;90% 为黄）</div></div>
+  </section>
+
+  <section class="screen" id="s4" data-name="人员与效率">
+    <div class="conclusion" id="c4"></div>
+    <div class="mini" id="teamBox"></div>
+    <label class="toggle"><input type="checkbox" id="personChk"> 显示个人明细（默认隐藏，看板用于进度管理而非个人考核）</label>
+    <div class="card" id="personBox"><h3>个人明细（按姓名排序，不做排名）</h3><div id="personTbl"></div></div>
+  </section>
+
+  <section class="screen" id="s5" data-name="问题面板">
+    <div class="conclusion" id="c5"></div>
+    <div class="grid2">
+      <div class="card"><h3>未关闭问题清单（★ = 卡最久 Top 5）</h3><div id="probTbl"></div></div>
+      <div class="card"><h3>问题标签分布</h3><div id="tagBox"></div></div>
+    </div>
+  </section>
+</main>
+<footer><div class="fbox">__FOOTER__</div></footer>
+<div id="tip"></div>
+<div class="mask" id="mask"><div class="modal">
+  <h3>周报文字（可直接粘贴进汇报）</h3>
+  <textarea id="repTxt" readonly></textarea>
+  <div class="m-btns"><button id="repClose">关闭</button><button class="primary" id="repCopy">复制</button></div>
+</div></div>
+<script>
+const DATA = __DATA_JSON__;
+const C={blue:'#2a78d6',orange:'#eb6834',gray:'#a3a19a',green:'#0ca30c',yellow:'#fab219',red:'#d03b3b',
+  ink:'#0b0b0b',sub:'#52514e',mut:'#898781',grid:'#e1e0d9',base:'#c3c2b7'};
+const HEALTH={green:C.green,yellow:C.yellow,red:C.red};
+const $=id=>document.getElementById(id);
+const NF=new Intl.NumberFormat('zh-CN');
+const fmtN=n=>n==null?'—':NF.format(n);
+const fmtP=(x,d=1)=>x==null?'—':(x*100).toFixed(d)+'%';
+const md=s=>{const p=s.split('-');return (+p[1])+'/'+(+p[2]);};
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+let curDay=DATA.export_day;
+
+/* ---------- tooltip ---------- */
+const tip=$('tip');
+document.addEventListener('mouseover',e=>{const t=e.target.closest?e.target.closest('[data-tip]'):null;
+  if(!t)return;tip.textContent=t.getAttribute('data-tip');tip.style.display='block';});
+document.addEventListener('mousemove',e=>{if(tip.style.display!=='block')return;
+  tip.style.left=Math.min(innerWidth-10-tip.offsetWidth,e.clientX+12)+'px';
+  tip.style.top=(e.clientY+14)+'px';});
+document.addEventListener('mouseout',e=>{if(e.target.closest&&e.target.closest('[data-tip]'))tip.style.display='none';});
+
+/* ---------- SVG 图表（全部内联属性，导出 PNG 时可直接序列化） ---------- */
+function svgRoot(w,h,inner){return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" `
+  +`style="width:100%;height:auto;display:block" font-family="system-ui,'Microsoft YaHei',sans-serif">${inner}</svg>`;}
+function yTicks(maxV){                        /* 小量程用整数刻度，避免 0.5 四舍五入成重复标签 */
+  if(maxV<=5){const t=[];for(let v=0;v<=maxV;v++)t.push(v);return t;}
+  const step=Math.ceil(maxV/4),t=[];
+  for(let v=0;v<=maxV;v+=step)t.push(v);
+  if(maxV-t[t.length-1]>step*0.4)t.push(maxV);
+  return t;}
+function yGrid(ML,MR,W,y0,ph,maxV,fmt){let g='';
+  yTicks(maxV).forEach(v=>{const y=y0-ph*(v/maxV);
+    g+=`<line x1="${ML}" y1="${y.toFixed(1)}" x2="${W-MR}" y2="${y.toFixed(1)}" stroke="${C.grid}" stroke-width="1"/>`;
+    g+=`<text x="${ML-7}" y="${(y+4).toFixed(1)}" font-size="11" text-anchor="end" fill="${C.mut}">${fmt(v)}</text>`;});
+  return g;}
+
+function chartCombo(axis,daily,cum,sel){          /* 每日柱状(上) + 累计曲线(下)，共享X轴 */
+  const W=780,H=330,ML=48,MR=52,MT=28,XH=34,GAP=26,PH=(H-MT-XH-GAP)/2,n=axis.length;
+  const pw=W-ML-MR,band=pw/n,bw=Math.max(2,Math.min(26,band*0.62));
+  const maxD=Math.max(1,...daily),maxC=Math.max(1,...cum);
+  const x=i=>ML+band*(i+.5),yT=v=>MT+PH-v/maxD*PH,yB0=MT+PH+GAP+PH,yB=v=>yB0-v/maxC*PH;
+  let g=`<text x="${ML}" y="${MT-10}" font-size="12" fill="${C.sub}">每日完成（题）</text>`
+      +`<text x="${ML}" y="${MT+PH+GAP-10}" font-size="12" fill="${C.sub}">累计完成（题）</text>`;
+  g+=yGrid(ML,MR,W,MT+PH,PH,maxD,v=>Math.round(v));
+  g+=yGrid(ML,MR,W,yB0,PH,maxC,v=>fmtN(Math.round(v)));
+  g+=`<line x1="${ML}" y1="${MT+PH}" x2="${W-MR}" y2="${MT+PH}" stroke="${C.base}"/>`
+    +`<line x1="${ML}" y1="${yB0}" x2="${W-MR}" y2="${yB0}" stroke="${C.base}"/>`;
+  daily.forEach((v,i)=>{if(v>0)g+=`<rect x="${(x(i)-bw/2).toFixed(1)}" y="${yT(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(MT+PH-yT(v)).toFixed(1)}" rx="2" fill="${C.blue}"/>`;});
+  g+=`<path d="${cum.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+yB(v).toFixed(1)).join(' ')}" fill="none" stroke="${C.blue}" stroke-width="2"/>`;
+  if(n<=92)cum.forEach((v,i)=>{g+=`<circle cx="${x(i).toFixed(1)}" cy="${yB(v).toFixed(1)}" r="3" fill="${C.blue}"/>`;});
+  g+=`<text x="${x(n-1)+7}" y="${yB(cum[n-1])+4}" font-size="12" font-weight="600" fill="${C.sub}">${fmtN(cum[n-1])}</text>`;
+  const si=axis.indexOf(sel);
+  if(si>=0)g+=`<line x1="${x(si)}" y1="${MT}" x2="${x(si)}" y2="${yB0}" stroke="${C.mut}" stroke-width="1" stroke-dasharray="2 3"/>`
+      +`<circle cx="${x(si)}" cy="${yB(cum[si])}" r="5" fill="${C.blue}" stroke="#fff" stroke-width="2"/>`;
+  const step=Math.ceil(n/8);
+  for(let i=0;i<n;i+=step)g+=`<text x="${x(i)}" y="${H-8}" font-size="11" text-anchor="middle" fill="${C.mut}">${md(axis[i])}</text>`;
+  for(let i=0;i<n;i++)g+=`<rect x="${(ML+band*i).toFixed(1)}" y="${MT}" width="${Math.max(1,band).toFixed(1)}" height="${(yB0-MT).toFixed(1)}" fill="transparent" data-tip="${axis[i]}：完成 ${daily[i]} 题，累计 ${cum[i]} 题"/>`;
+  return svgRoot(W,H,g);}
+
+function chartBurn(axis,actual,ideal,sel){        /* 燃尽：实际剩余(蓝实线) vs 理想(灰虚线) */
+  const W=780,H=320,ML=48,MR=86,MT=26,XH=32,n=axis.length,pw=W-ML-MR,ph=H-MT-XH;
+  const maxY=Math.max(1,...ideal,...actual.filter(v=>v!=null));
+  const x=i=>ML+pw*(n===1?0.5:i/(n-1)),y=v=>MT+ph-v/maxY*ph;
+  let g=yGrid(ML,MR,W,MT+ph,ph,maxY,v=>fmtN(Math.round(v)));
+  g+=`<line x1="${ML}" y1="${MT+ph}" x2="${W-MR}" y2="${MT+ph}" stroke="${C.base}"/>`;
+  const pts=actual.map((v,i)=>v==null?null:[x(i),y(v)]).filter(Boolean);
+  g+=`<path d="M ${x(0).toFixed(1)} ${y(ideal[0]).toFixed(1)} L ${x(n-1).toFixed(1)} ${y(ideal[n-1]).toFixed(1)}" fill="none" stroke="${C.mut}" stroke-width="2" stroke-dasharray="6 4"/>`;
+  if(pts.length)g+=`<path d="${pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ')}" fill="none" stroke="${C.blue}" stroke-width="2"/>`;
+  pts.forEach(p=>{g+=`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3" fill="${C.blue}"/>`;});
+  if(pts.length)g+=`<text x="${pts[pts.length-1][0]+7}" y="${pts[pts.length-1][1]+4}" font-size="12" font-weight="600" fill="${C.sub}">剩 ${fmtN(actual[pts.length-1])}</text>`;
+  const mi=Math.floor(n*0.72);
+  g+=`<text x="${x(mi)}" y="${y(ideal[mi])-10}" font-size="12" text-anchor="middle" fill="${C.mut}">理想</text>`;
+  const si=axis.indexOf(sel);
+  if(si>=0){g+=`<line x1="${x(si)}" y1="${MT}" x2="${x(si)}" y2="${MT+ph}" stroke="${C.mut}" stroke-width="1"/>`;
+    if(actual[si]!=null)g+=`<circle cx="${x(si)}" cy="${y(actual[si])}" r="5" fill="${C.blue}" stroke="#fff" stroke-width="2"/>`;
+    g+=`<text x="${x(si)}" y="${MT-8}" font-size="11" text-anchor="middle" fill="${C.sub}">所选 ${md(sel)}</text>`;}
+  g+=`<line x1="${ML}" y1="${MT-10}" x2="${ML+18}" y2="${MT-10}" stroke="${C.blue}" stroke-width="2"/><text x="${ML+22}" y="${MT-6}" font-size="11" fill="${C.sub}">实际剩余</text>`
+    +`<line x1="${ML+86}" y1="${MT-10}" x2="${ML+104}" y2="${MT-10}" stroke="${C.mut}" stroke-width="2" stroke-dasharray="4 3"/><text x="${ML+108}" y="${MT-6}" font-size="11" fill="${C.sub}">理想剩余</text>`;
+  const step=Math.ceil(n/8);
+  for(let i=0;i<n;i+=step){if(x(n-1)-x(i)<64)continue;   /* 与「截止」刻度重叠的普通刻度跳过 */
+    g+=`<text x="${x(i)}" y="${H-8}" font-size="11" text-anchor="middle" fill="${C.mut}">${md(axis[i])}</text>`;}
+  g+=`<text x="${x(n-1)}" y="${H-8}" font-size="11" text-anchor="end" fill="${C.mut}">${md(axis[n-1])}(截止)</text>`;
+  const band=pw/Math.max(1,n-1);
+  for(let i=0;i<n;i++){const a=actual[i]==null?'—':actual[i]+' 题';
+    g+=`<rect x="${(x(i)-band/2).toFixed(1)}" y="${MT}" width="${Math.max(1,band).toFixed(1)}" height="${ph}" fill="transparent" data-tip="${axis[i]}：实际剩余 ${a}，理想剩余 ${Math.round(ideal[i])} 题"/>`;}
+  return svgRoot(W,H,g);}
+
+const STACK=[['已完成',C.green],['待复核',C.orange],['标注中',C.blue],['待标注',C.gray],['已退回',C.red]];
+function chartStack(domains){                     /* 各领域状态构成（横向堆叠，2px 间隔） */
+  const rowH=36,barH=22,ML=86,MR=16,W=780,MT=26;
+  const H=MT+domains.length*rowH+34,pw=W-ML-MR;
+  const maxT=Math.max(1,...domains.map(d=>d.total));
+  let g='';
+  domains.forEach((d,i)=>{const y=MT+i*rowH;let cx=ML;
+    g+=`<text x="${ML-10}" y="${y+barH/2+4}" font-size="12" text-anchor="end" fill="${C.ink}">${esc(d.name)}</text>`;
+    g+=`<text x="${ML+d.total/maxT*pw+8}" y="${y+barH/2+4}" font-size="11" fill="${C.mut}">${d.total}</text>`;
+    STACK.forEach(([st,col])=>{const w=d.counts[st]/maxT*pw;if(w<=0)return;
+      const ins=w>2?1:0;
+      g+=`<rect x="${(cx+ins).toFixed(1)}" y="${y}" width="${(w-2*ins).toFixed(1)}" height="${barH}" rx="2" fill="${col}" data-tip="${esc(d.name)} · ${st}：${d.counts[st]} 题（${fmtP(d.counts[st]/d.total,0)}）"/>`;
+      cx+=w;});});
+  let lx=ML;const ly=H-14;
+  STACK.forEach(([st,col])=>{g+=`<rect x="${lx}" y="${ly-10}" width="10" height="10" rx="2" fill="${col}"/>`;
+    g+=`<text x="${lx+14}" y="${ly-1}" font-size="11" fill="${C.sub}">${st}</text>`;lx+=14+st.length*11+22;});
+  return svgRoot(W,H,g);}
+
+function chartRates(doms){                        /* 各领域完成率（低→高，健康度圆点） */
+  const rowH=32,barH=16,ML=104,MR=70,W=780,MT=8;
+  const H=MT+doms.length*rowH+18,pw=W-ML-MR;
+  let g='';
+  doms.forEach((d,i)=>{const y=MT+i*rowH,w=d.rate*pw;
+    g+=`<circle cx="${ML-88}" cy="${y+barH/2}" r="4.5" fill="${HEALTH[d.health]}"/>`;
+    g+=`<text x="${ML-76}" y="${y+barH/2+4}" font-size="12" fill="${C.ink}">${esc(d.name)}</text>`;
+    if(w>0)g+=`<rect x="${ML}" y="${y}" width="${Math.max(2,w).toFixed(1)}" height="${barH}" rx="3" fill="${C.blue}" data-tip="${esc(d.name)}：${d.done}/${d.total}，完成率 ${fmtP(d.rate)}"/>`;
+    g+=`<text x="${ML+Math.max(2,w)+7}" y="${y+barH/2+4}" font-size="12" fill="${C.sub}">${fmtP(d.rate)}（${d.done}/${d.total}）</text>`;});
+  g+=`<line x1="${ML}" y1="${MT-2}" x2="${ML}" y2="${MT+doms.length*rowH}" stroke="${C.base}"/>`;
+  return svgRoot(W,H,g);}
+
+function chartTags(tags){                         /* 问题标签分布（半栏卡片，viewBox 收窄防字小） */
+  const rowH=34,barH=18,ML=104,MR=40,W=520,MT=8;
+  const H=MT+tags.length*rowH+16,pw=W-ML-MR;
+  const maxV=Math.max(1,...tags.map(t=>t.count));
+  let g='';
+  tags.forEach((t,i)=>{const y=MT+i*rowH,w=t.count/maxV*pw;
+    g+=`<text x="${ML-10}" y="${y+barH/2+4}" font-size="12" text-anchor="end" fill="${C.ink}">${esc(t.name)}</text>`;
+    g+=`<rect x="${ML}" y="${y}" width="${Math.max(2,w).toFixed(1)}" height="${barH}" rx="3" fill="${C.blue}" data-tip="${esc(t.name)}：${t.count} 个未关闭问题"/>`;
+    g+=`<text x="${ML+Math.max(2,w)+6}" y="${y+barH/2+4}" font-size="12" fill="${C.sub}">${t.count}</text>`;});
+  return svgRoot(W,H,g);}
+
+function buildTable(heads,rows,aligns){           /* 表格视图（图表的可访问性孪生） */
+  const al=i=>aligns&&aligns[i]==='r'?' class="num"':'';
+  return '<table><thead><tr>'+heads.map((h,i)=>`<th${al(i)}>${h}</th>`).join('')+'</tr></thead><tbody>'
+    +rows.map(r=>'<tr'+(r.hot?' class="hot"':'')+'>'+r.cells.map((c,i)=>`<td${al(i)}>${c}</td>`).join('')+'</tr>').join('')
+    +'</tbody></table>';}
+
+/* ---------- 渲染 ---------- */
+function setDot(id,h){const el=$(id);el.className='dot '+h;}
+function renderTrend(sel){
+  $('comboBox').innerHTML=chartCombo(DATA.axis,DATA.daily,DATA.cum,sel);
+  $('burnBox').innerHTML=chartBurn(DATA.burn_axis,DATA.burn_actual,DATA.burn_ideal,sel);}
+function applyDay(day){
+  curDay=day;const s=DATA.snapshots[day];
+  document.querySelectorAll('.nodata').forEach(e=>e.style.display=s?'none':'block');
+  if(!s){['kTotal','kDone','kRate','kEta'].forEach(i=>$(i).textContent='—');
+    $('c1').textContent='该日无数据';$('alertBar').style.display='none';return;}
+  $('alertBar').style.display='block';
+  $('c1').textContent=s.conclusion;
+  $('kTotal').textContent=fmtN(DATA.total);
+  $('kDone').textContent=fmtN(s.done);
+  $('kRate').textContent=fmtP(s.rate);setDot('dRate',s.health);
+  $('kEta').textContent=s.eta_text;setDot('dEta',s.eta_health);
+  const ab=$('alertBar');ab.className='alert '+s.health;ab.textContent=s.alert;
+  renderTrend(day);}
+function renderStatics(){
+  $('metaLine').textContent=`数据截至 ${DATA.export_day} · 截止日 ${DATA.deadline}`;
+  ['s2','s3','s4','s5'].forEach(k=>$(k.replace('s','c')).textContent=DATA.conclusions[k]);
+  $('comboTbl').innerHTML=buildTable(['日期','当日完成','累计完成'],
+    DATA.axis.map((d,i)=>({cells:[d,fmtN(DATA.daily[i]),fmtN(DATA.cum[i])]})),['l','r','r']);
+  $('burnTbl').innerHTML=buildTable(['日期','实际剩余','理想剩余'],
+    DATA.burn_axis.map((d,i)=>({cells:[d,DATA.burn_actual[i]==null?'—':fmtN(DATA.burn_actual[i]),fmtN(Math.round(DATA.burn_ideal[i]))]})),['l','r','r']);
+  $('stackBox').innerHTML=chartStack(DATA.domains);
+  $('stackTbl').innerHTML=buildTable(['领域','待标注','标注中','待复核','已完成','已退回','合计','完成率'],
+    DATA.domains.map(d=>({cells:[esc(d.name),d.counts['待标注'],d.counts['标注中'],d.counts['待复核'],
+      d.counts['已完成'],d.counts['已退回'],d.total,fmtP(d.rate)]})),['l','r','r','r','r','r','r','r']);
+  $('rateBox').innerHTML=chartRates(DATA.rates_sorted);
+  const t=DATA.team;
+  $('teamBox').innerHTML=[['标注人数',fmtN(t.n)+' 人'],['累计完成',fmtN(t.done)+' 题'],['人均完成',t.percap+' 题'],
+    ['平均单题耗时',t.avg_hours==null?'—':t.avg_hours+' 小时'],['整体返工率',fmtP(t.rework_rate)]]
+    .map(([l,v])=>`<div class="kpi"><div class="k-label">${l}</div><div class="k-val">${v}</div></div>`).join('');
+  $('personTbl').innerHTML=buildTable(['标注人','完成数','平均单题耗时','返工率'],
+    DATA.persons.map(p=>({cells:[esc(p.name),fmtN(p.done),
+      p.avg_hours==null?'—':p.avg_hours+' 小时',fmtP(p.rework)]})),['l','r','r','r']);
+  $('probTbl').innerHTML=DATA.problems.length?buildTable(['题目ID','问题描述','卡了几天'],
+    DATA.problems.map(p=>({hot:p.top5,cells:[(p.top5?'★ ':'')+esc(p.id),
+      esc(p.summary)+'<br>'+p.tags.map(t=>`<span class="tagchip">${esc(t)}</span>`).join(''),
+      p.stuck+' 天']}))):'<div class="empty">当前无未关闭问题</div>';
+  $('tagBox').innerHTML=DATA.tags.length?chartTags(DATA.tags):'<div class="empty">暂无问题标签</div>';}
+
+/* ---------- 导出 PNG（当前屏 → canvas，2x 清晰度） ---------- */
+function rr(cx,x,y,w,h,r){cx.beginPath();cx.moveTo(x+r,y);cx.arcTo(x+w,y,x+w,y+h,r);
+  cx.arcTo(x+w,y+h,x,y+h,r);cx.arcTo(x,y+h,x,y,r);cx.arcTo(x,y,x+w,y,r);cx.closePath();}
+function svgImg(svg,w,h){return new Promise((res,rej)=>{const c=svg.cloneNode(true);
+  c.setAttribute('width',w*2);c.setAttribute('height',h*2);
+  const s=new XMLSerializer().serializeToString(c);const img=new Image();
+  img.onload=()=>res(img);img.onerror=rej;
+  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(s);});}
+function drawTableEl(cx,tbl,x,y,w){
+  const rows=[...tbl.rows];if(!rows.length)return 0;
+  const ncol=rows[0].cells.length;
+  const cwid=new Array(ncol).fill(0);
+  cx.font='600 12px system-ui,"Microsoft YaHei",sans-serif';
+  rows.forEach(r=>[...r.cells].forEach((c,i)=>{cwid[i]=Math.max(cwid[i],cx.measureText(c.textContent).width);}));
+  const tot=cwid.reduce((a,b)=>a+b,0)+ncol*20,sc=Math.min(1,w/tot);
+  let cy=y;const rh=24;
+  rows.forEach((r,ri)=>{let cxx=x;
+    if(ri===0){cx.fillStyle='#f4f4f2';cx.fillRect(x,cy,w,rh);}
+    else if(r.classList.contains('hot')){cx.fillStyle='#fbe9e9';cx.fillRect(x,cy,w,rh);}
+    [...r.cells].forEach((c,i)=>{const cw=(cwid[i]+20)*sc;
+      cx.fillStyle=ri===0?'#52514e':'#0b0b0b';
+      cx.font=(ri===0?'600 ':'')+'12px system-ui,"Microsoft YaHei",sans-serif';
+      const num=/^[\d,.%—\-★\s题天小时人]+$/.test(c.textContent)&&i>0;
+      cx.textAlign=num?'end':'start';
+      cx.fillText(c.textContent,num?cxx+cw-12:cxx+10,cy+16);
+      cxx+=cw;});
+    cx.textAlign='start';
+    cx.strokeStyle='#e1e0d9';cx.beginPath();cx.moveTo(x,cy+rh);cx.lineTo(x+w,cy+rh);cx.stroke();
+    cy+=rh;});
+  return cy-y;}
+async function exportPNG(){
+  if(!DATA.total){alert('暂无数据可导出');return;}
+  const scr=document.querySelector('.screen.active'),name=scr.dataset.name;
+  const W=1160,pad=28,gap=14;
+  const blocks=[...scr.querySelectorAll(':scope>.conclusion,:scope>.alert,:scope>.kpis,:scope>.mini,:scope>.card,:scope>.grid2>.card')];
+  const visTbl=b=>[...b.querySelectorAll('table')].find(t=>!t.closest('details'));  /* 折叠的数据表不进截图 */
+  const items=[];let y=pad+58;
+  for(const b of blocks){
+    if(b.id==='personBox'&&!b.classList.contains('open'))continue;
+    let h=0;const svg=b.querySelector('svg'),tbl=visTbl(b);
+    if(b.classList.contains('conclusion')||b.classList.contains('alert'))h=44;
+    else if(b.classList.contains('kpis'))h=92;
+    else if(b.classList.contains('mini'))h=78;
+    else{h=26;if(b.querySelector('h3'))h+=26;
+      if(svg){const vb=svg.viewBox.baseVal;h+=vb.height*(W-2*pad-8)/vb.width;}
+      if(tbl)h+=tbl.rows.length*24+16;}
+    items.push({b,h});y+=h+gap;}
+  const cv=document.createElement('canvas');cv.width=W*2;cv.height=Math.ceil(y)*2;
+  const cx=cv.getContext('2d');cx.scale(2,2);
+  cx.fillStyle='#f9f9f7';cx.fillRect(0,0,W,y);
+  cx.fillStyle='#0b0b0b';cx.font='700 20px system-ui,"Microsoft YaHei",sans-serif';
+  cx.fillText('KE 标注项目 · 进度看板 — '+name,pad,pad+4);
+  cx.fillStyle='#898781';cx.font='12px system-ui,"Microsoft YaHei",sans-serif';
+  cx.fillText(`数据日期 ${curDay} · 截止 ${DATA.deadline}`,pad,pad+26);
+  let cy=pad+58;
+  for(const{b,h}of items){
+    const innerW=W-2*pad;
+    if(b.classList.contains('conclusion')){cx.fillStyle='#eef4fd';rr(cx,pad,cy,innerW,h,8);cx.fill();
+      cx.fillStyle='#2a78d6';cx.fillRect(pad,cy,4,h);
+      cx.fillStyle='#0b0b0b';cx.font='600 14px system-ui,"Microsoft YaHei",sans-serif';
+      cx.fillText(b.textContent,pad+16,cy+27);}
+    else if(b.classList.contains('alert')){
+      const hc={green:['#e9f6e9','#0ca30c'],yellow:['#fdf3d7','#fab219'],red:['#fbe9e9','#d03b3b']}[['green','yellow','red'].find(k=>b.classList.contains(k))||'green'];
+      cx.fillStyle=hc[0];rr(cx,pad,cy,innerW,h,8);cx.fill();cx.fillStyle=hc[1];cx.fillRect(pad,cy,4,h);
+      cx.fillStyle='#0b0b0b';cx.font='600 13px system-ui,"Microsoft YaHei",sans-serif';
+      cx.fillText(b.textContent,pad+16,cy+27);}
+    else if(b.classList.contains('kpis')||b.classList.contains('mini')){
+      const ks=[...b.children],kw=(innerW-(ks.length-1)*gap)/ks.length;
+      ks.forEach((k,i)=>{const kx=pad+i*(kw+gap);
+        cx.fillStyle='#fcfcfb';rr(cx,kx,cy,kw,h,10);cx.fill();
+        cx.strokeStyle='rgba(11,11,11,.12)';rr(cx,kx,cy,kw,h,10);cx.stroke();
+        cx.fillStyle='#52514e';cx.font='12px system-ui,"Microsoft YaHei",sans-serif';
+        cx.fillText(k.querySelector('.k-label').textContent,kx+14,cy+24);
+        cx.fillStyle='#0b0b0b';cx.font='700 24px system-ui,"Microsoft YaHei",sans-serif';
+        cx.fillText(k.querySelector('.k-val').textContent,kx+14,cy+58);
+        const dot=k.querySelector('.dot');
+        if(dot){const dc={green:'#0ca30c',yellow:'#fab219',red:'#d03b3b'}[['green','yellow','red'].find(c=>dot.classList.contains(c))];
+          if(dc){cx.fillStyle=dc;cx.beginPath();cx.arc(kx+kw-18,cy+18,6,0,7);cx.fill();}}});}
+    else{cx.fillStyle='#fcfcfb';rr(cx,pad,cy,innerW,h,10);cx.fill();
+      cx.strokeStyle='rgba(11,11,11,.12)';rr(cx,pad,cy,innerW,h,10);cx.stroke();
+      let iy=cy+14;const h3=b.querySelector('h3');
+      if(h3){cx.fillStyle='#0b0b0b';cx.font='600 13px system-ui,"Microsoft YaHei",sans-serif';
+        cx.fillText(h3.textContent,pad+14,iy+10);iy+=26;}
+      const svg=b.querySelector('svg');
+      if(svg){const vb=svg.viewBox.baseVal,sh=vb.height*(innerW-8)/vb.width;
+        try{const img=await svgImg(svg,innerW-8,sh);cx.drawImage(img,pad+4,iy,innerW-8,sh);}catch(e){}
+        iy+=sh;}
+      const tbl=visTbl(b);
+      if(tbl)drawTableEl(cx,tbl,pad+10,iy+6,innerW-20);}
+    cy+=h+gap;}
+  cv.toBlob(bl=>{const a=document.createElement('a');a.href=URL.createObjectURL(bl);
+    a.download=`KE看板-${curDay}-${name}.png`;a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);});}
+
+/* ---------- 周报 ---------- */
+function showReport(){
+  if(!DATA.total){alert('暂无数据');return;}
+  const s=DATA.snapshots[curDay];
+  if(!s){alert('该日无数据');return;}
+  $('repTxt').value=s.report;$('mask').classList.add('show');}
+
+/* ---------- 初始化 ---------- */
+document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('active',x===b));
+  document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active',s.id===b.dataset.s));}));
+$('dayPick').addEventListener('change',()=>applyDay($('dayPick').value));
+(function(){const gp=$('groupPick');if(gp)gp.addEventListener('change',()=>{
+  location.href=gp.value?'/ke/dashboard?group='+encodeURIComponent(gp.value):'/ke/dashboard';});})();
+$('btnPng').addEventListener('click',exportPNG);
+$('btnRep').addEventListener('click',showReport);
+$('repClose').addEventListener('click',()=>$('mask').classList.remove('show'));
+$('repCopy').addEventListener('click',()=>{const t=$('repTxt');t.select();
+  if(navigator.clipboard)navigator.clipboard.writeText(t.value).catch(()=>document.execCommand('copy'));
+  else document.execCommand('copy');});
+$('personChk').addEventListener('change',()=>$('personBox').classList.toggle('open',$('personChk').checked));
+(function init(){
+  const dp=$('dayPick');dp.min=DATA.first_day;dp.max=DATA.export_day;dp.value=DATA.export_day;
+  if(!DATA.total){document.querySelectorAll('.screen').forEach(s=>
+    s.innerHTML='<div class="card empty">暂无数据：该组还没有上传记录</div>');
+    $('metaLine').textContent='暂无数据';return;}
+  renderStatics();applyDay(DATA.export_day);
+  const h=location.hash.slice(1);   /* 支持 #s2 直达某屏，方便周报截图定位 */
+  const tb=h&&document.querySelector(`#tabs button[data-s="${h}"]`);
+  if(tb)tb.click();})();
+</script>
+</body>
+</html>"""

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}GOLDKE · 总览{% endblock %}
+{% block content %}
+<div class="page-head"><h1>GOLDKE · 执行总览</h1></div>
+
+<div class="panel">
+  <table class="kv">
+    <tr><th>累计进度</th><td>
+      <strong>{{ stats.total_estimate }} / {{ stats.target_total }}</strong> 条
+      （存量 {{ stats.baseline }} + 本期新增 {{ stats.new_done }}）
+      <div class="progressbar"><div style="width:{{ [100, (stats.total_estimate * 100 / stats.target_total)|round(0)|int]|min }}%"></div></div>
+    </td></tr>
+    <tr><th>本期新增目标</th><td>
+      <strong>{{ stats.new_done }} / {{ stats.target_new }}</strong> 条（篇级自报口径；题级交叉核对 M7 已完成 {{ stats.m7_done }} 题）
+      <div class="progressbar"><div style="width:{{ [100, (stats.new_done * 100 / stats.target_new)|round(0)|int]|min }}%"></div></div>
+    </td></tr>
+    <tr><th>开放 issue</th><td><a href="/gold/issues?status=open">{{ stats.open_issues }} 个</a></td></tr>
+    <tr><th>泳道执行</th><td>已完成 {{ stats.cell_status.get('done', 0) }} 格 · 计划中 {{ stats.cell_status.get('planned', 0) }} 格 · 延误 {{ stats.cell_status.get('missed', 0) }} 格（<a href="/gold/schedule">泳道</a>）</td></tr>
+  </table>
+</div>
+
+<h2>按领域</h2>
+<table class="data">
+  <thead><tr><th>领域</th><th class="num">篇数</th><th class="num">KE 完成</th><th class="num">KE 目标</th><th>进度</th></tr></thead>
+  <tbody>
+  {% for d, v in stats.by_domain.items() %}
+  <tr><td>{{ d }}</td><td class="num">{{ v.articles }}</td>
+      <td class="num">{{ v.ke_done }}</td><td class="num">{{ v.ke_target }}</td>
+      <td><div class="progressbar sm"><div style="width:{{ [100, (v.ke_done * 100 / v.ke_target)|round(0)|int if v.ke_target else 0]|min }}%"></div></div></td></tr>
+  {% else %}<tr><td colspan="5" class="empty">暂无篇任务</td></tr>{% endfor %}
+  </tbody>
+</table>
+
+<h2>按组别</h2>
+<table class="data">
+  <thead><tr><th>组别</th><th class="num">篇数</th><th class="num">KE 完成</th><th class="num">KE 目标</th><th>进度</th></tr></thead>
+  <tbody>
+  {% for g, v in stats.by_group.items() %}
+  <tr><td>{{ g }}</td><td class="num">{{ v.articles }}</td>
+      <td class="num">{{ v.ke_done }}</td><td class="num">{{ v.ke_target }}</td>
+      <td><div class="progressbar sm"><div style="width:{{ [100, (v.ke_done * 100 / v.ke_target)|round(0)|int if v.ke_target else 0]|min }}%"></div></div></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>按阶段（篇数）</h2>
+<div class="panel">
+  {% for s, label in stats.stage_labels.items() %}
+  <span class="chip">{{ label }}：{{ stats.by_stage.get(s, 0) }}</span>
+  {% endfor %}
+  <p style="margin:8px 0 0"><a class="btn" href="/gold/articles">篇任务管理</a> <a class="btn" href="/gold/schedule">泳道排期</a> <a class="btn" href="/gold/issues">issue 列表</a> <a class="btn" href="/gold/samples">抽查记录</a> <a class="btn" href="/gold/items">成品库</a></p>
+</div>
+
+{% if stats.recent_samples %}
+<h2>最近抽查</h2>
+<table class="data">
+  <thead><tr><th>日期</th><th>范围</th><th class="num">抽查</th><th class="num">通过</th><th>检查人</th></tr></thead>
+  <tbody>
+  {% for s in stats.recent_samples %}
+  <tr><td>{{ s.sample_date }}</td><td>{{ s.scope }}</td><td class="num">{{ s.total }}</td>
+      <td class="num">{{ s.passed }}</td><td>{{ s.checker }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

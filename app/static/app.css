@@ -1,0 +1,114 @@
+:root{--bg:#f5f6f8;--panel:#fff;--line:#e5e7eb;--text:#1f2329;--muted:#6b7280;--brand:#2563eb;--ok:#15803d;--warn:#b45309;--bad:#b91c1c;--gray:#4b5563}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+a{color:var(--brand);text-decoration:none}
+a:hover{text-decoration:underline}
+.topbar{display:flex;align-items:center;gap:24px;background:#0f172a;color:#e2e8f0;padding:0 20px;height:52px}
+.brand{color:#fff;font-weight:600;font-size:16px}
+.brand:hover{text-decoration:none}
+.topbar nav{display:flex;gap:16px;flex:1}
+.topbar nav a{color:#cbd5e1}
+.topbar nav a.active,.topbar nav a:hover{color:#fff;text-decoration:none}
+.nav-disabled{color:#475569;cursor:not-allowed}
+.who{display:flex;gap:12px;align-items:center;font-size:13px}
+.who a{color:#cbd5e1}
+.wrap{max-width:1100px;margin:24px auto;padding:0 16px}
+.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px}
+.page-head>div{display:flex;gap:8px;align-items:center}
+h1{font-size:20px;margin:0}
+h2{font-size:15px;margin:24px 0 8px}
+.btn{display:inline-block;padding:5px 14px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--text);cursor:pointer;font-size:13px;text-decoration:none}
+.btn:hover{border-color:var(--brand);text-decoration:none}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+button.link{border:0;background:none;color:var(--brand);cursor:pointer;padding:0;font:inherit;font-size:13px}
+button.link:hover{text-decoration:underline}
+.inline{display:inline}
+.filters{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.filters input[type=search]{width:260px}
+input,select,textarea{padding:6px 8px;border:1px solid var(--line);border-radius:6px;font:inherit;background:#fff}
+textarea{font-family:inherit}
+table.data{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line)}
+table.data th,table.data td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.data th{background:#f8fafc;font-weight:600;white-space:nowrap}
+.num{text-align:right}
+.badge{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12px;white-space:nowrap}
+.badge.approved{background:#dcfce7;color:var(--ok)}
+.badge.pending{background:#fef3c7;color:var(--warn)}
+.badge.draft{background:#e5e7eb;color:var(--gray)}
+.badge.disabled{background:#fee2e2;color:var(--bad)}
+.badge.open{background:#fef3c7;color:var(--warn)}
+.badge.resolved{background:#dcfce7;color:var(--ok)}
+.badge.merged{background:#e0e7ff;color:#3730a3}
+.muted{color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:24px}
+.flash{padding:9px 14px;border-radius:6px;margin-bottom:12px}
+.flash.ok{background:#dcfce7;color:var(--ok)}
+.flash.err{background:#fee2e2;color:var(--bad)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:8px}
+table.kv{border-collapse:collapse}
+table.kv th{text-align:left;color:var(--muted);font-weight:normal;padding:3px 18px 3px 0;white-space:nowrap;vertical-align:top}
+table.kv td{padding:3px 0}
+.chip{display:inline-block;padding:2px 10px;margin:2px 4px 2px 0;border:1px solid var(--line);border-radius:999px;background:#f8fafc}
+.form{display:flex;flex-direction:column;gap:12px;max-width:560px;margin-top:12px}
+.form label{display:flex;flex-direction:column;gap:4px;font-weight:500}
+.form .actions{display:flex;gap:8px}
+.pager{display:flex;gap:12px;align-items:center;margin-top:12px}
+.login-card{max-width:360px;margin:80px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:28px}
+.login-card h1{margin-bottom:16px}
+.login-card form{display:flex;flex-direction:column;gap:12px;margin-bottom:12px}
+.login-card label{display:flex;flex-direction:column;gap:4px}
+.ops form{display:inline}
+
+/* M2 提交与审核 */
+.form.wide{max-width:680px}
+.review-card{margin-bottom:14px}
+.review-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.review-name{font-size:16px}
+.review-actions textarea{width:100%;margin-bottom:8px}
+.review-actions .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.batch-bar{display:flex;gap:12px;align-items:flex-start}
+.batch-bar textarea{flex:1}
+.batch-bar form{display:flex;gap:8px}
+details.similar{margin:8px 0}
+details.similar summary{cursor:pointer;color:var(--brand)}
+.tmp-notice{border-color:var(--brand);background:#eff6ff}
+code.tmp{font-size:16px;background:#dbeafe;padding:2px 8px;border-radius:4px}
+tr.row-warn{background:#fff7ed}
+
+/* M4 历史 / M5 体检 / M6 导入导出 */
+.badge.action-create{background:#dcfce7;color:var(--ok)}
+.badge.action-update{background:#dbeafe;color:#1d4ed8}
+.badge.action-status{background:#fef3c7;color:var(--warn)}
+.badge.action-merge{background:#e0e7ff;color:#3730a3}
+.badge.action-rollback{background:#fee2e2;color:var(--bad)}
+.badge.action-import{background:#f3e8ff;color:#7e22ce}
+.history-entry{margin-bottom:10px}
+table.data.diff td:first-child{white-space:nowrap;color:var(--muted)}
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--line);margin:12px 0 0}
+.tab{padding:6px 16px;border:1px solid var(--line);border-bottom:0;border-radius:6px 6px 0 0;margin-bottom:-2px;background:#f8fafc;color:var(--muted)}
+.tab:hover{text-decoration:none;color:var(--text)}
+.tab.active{background:#fff;border-bottom:2px solid #fff;font-weight:600;color:var(--text)}
+
+/* M8 GOLDKE */
+.progressbar{height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-top:4px;max-width:420px}
+.progressbar>div{height:100%;background:var(--brand);border-radius:999px}
+.progressbar.sm{max-width:180px;height:8px}
+.badge.stage-co_annotation{background:#dbeafe;color:#1d4ed8}
+.badge.stage-co_merge{background:#f3e8ff;color:#7e22ce}
+.badge.stage-ke_annotation{background:#fef3c7;color:var(--warn)}
+.badge.stage-done{background:#dcfce7;color:var(--ok)}
+.badge.stage-missed{background:#fee2e2;color:var(--bad)}
+.badge.issue-open{background:#fef3c7;color:var(--warn)}
+.badge.issue-resolved{background:#dcfce7;color:var(--ok)}
+.badge.issue-escalated{background:#e0e7ff;color:#3730a3}
+table.schedule td.day{font-weight:600;background:#f8fafc;white-space:nowrap}
+table.schedule td{min-width:180px}
+td.cell-planned{background:#eff6ff}
+td.cell-done{background:#f0fdf4}
+td.cell-missed{background:#fef2f2}
+td.cell-empty{background:#fafafa}
+.cell-edit summary{cursor:pointer;color:var(--brand);font-size:12px}
+.cell-edit form{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.cell-edit input,.cell-edit select{font-size:12px;padding:3px 6px}
+.ke-done-form{display:flex;gap:4px;align-items:center}
+.ke-done-form input{width:56px;padding:2px 6px}

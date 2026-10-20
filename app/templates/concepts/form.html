@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑概念' if c and c.id else '新建概念' }}{% endblock %}
+{% block content %}
+<h1>{{ '编辑概念' if c and c.id else '新建概念' }}</h1>
+{% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+<form class="form" method="post">
+  <label>名称 *
+    <input name="name" value="{{ c.name if c else '' }}" required>
+  </label>
+  <label>别名（逗号 / 顿号 / 换行分隔）
+    <textarea name="aliases" rows="2">{{ ((c.aliases or [])|join('，')) if c else '' }}</textarea>
+  </label>
+  <label>定义
+    <textarea name="definition" rows="4">{{ c.definition if c else '' }}</textarea>
+  </label>
+  <label>父类
+    <select name="parent_id">
+      <option value="">（无父类 · 根概念）</option>
+      {% for p in parents %}
+      <option value="{{ p.id }}" {{ 'selected' if c and c.parent_id == p.id }}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  {% if not c or not c.id %}
+  <label>初始状态
+    <select name="status">
+      <option value="approved" selected>已入库</option>
+      <option value="draft">草稿</option>
+    </select>
+  </label>
+  {% endif %}
+  <div class="actions">
+    <button class="btn primary" type="submit">保存</button>
+    <a class="btn" href="{{ '/concepts/' ~ c.id if c and c.id else '/concepts' }}">取消</a>
+  </div>
+</form>
+{% endblock %}

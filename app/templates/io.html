@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}导入导出 · 本体管理系统{% endblock %}
+{% block content %}
+<h1>导入导出</h1>
+{% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+{% if result %}
+<div class="panel">
+  <h2 style="margin-top:0">导入结果</h2>
+  <table class="kv">
+    <tr><th>概念</th><td>新建 {{ result.concepts_created }} · 更新 {{ result.concepts_updated }} · 未变 {{ result.concepts_unchanged }}</td></tr>
+    <tr><th>算子</th><td>新建 {{ result.operators_created }} · 更新 {{ result.operators_updated }} · 未变 {{ result.operators_unchanged }}</td></tr>
+  </table>
+  <p class="muted">按「名称」幂等 upsert；再次导入相同内容应全部显示「未变」。</p>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2 style="margin-top:0">导出</h2>
+  <form class="filters" method="get" action="/api/export/json" target="_blank">
+    <input name="field_map" placeholder='字段映射（可选）：{"name":"概念名"}' style="width:340px">
+    <button class="btn" type="submit">导出 JSON</button>
+  </form>
+  <form class="filters" method="get" action="/api/export/csv" target="_blank" style="margin-top:8px">
+    <input type="hidden" name="kind" value="concepts">
+    <button class="btn" type="submit">导出概念 CSV</button>
+  </form>
+  <form class="filters" method="get" action="/api/export/csv" target="_blank" style="margin-top:8px">
+    <input type="hidden" name="kind" value="operators">
+    <button class="btn" type="submit">导出算子 CSV</button>
+  </form>
+  <p class="muted">导出以「概念名」为自然键（父类 / 主体 / 合并目标均按名称引用），可跨环境移植；CSV 带 BOM，Excel 直开不乱码。</p>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0">导入</h2>
+  <form method="post" action="/io/import" enctype="multipart/form-data" class="form">
+    <label>格式
+      <select name="format">
+        <option value="json">JSON</option>
+        <option value="csv">CSV（概念）</option>
+        <option value="csv_ops">CSV（算子）</option>
+      </select>
+    </label>
+    <label>文件（或下方粘贴文本）
+      <input type="file" name="file">
+    </label>
+    <label>文本
+      <textarea name="text" rows="8" placeholder='{"concepts": [{"name": "…", "parent": "…"}], "operators": []}'></textarea>
+    </label>
+    <label>字段映射（可选）
+      <input name="field_map" placeholder='{"name":"概念名"}'>
+    </label>
+    <div class="actions"><button class="btn primary" type="submit">导入（幂等 upsert）</button></div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑篇任务' if a and a.id else '新建篇任务' }} · GOLDKE{% endblock %}
+{% block content %}
+<h1>{{ '编辑篇任务' if a and a.id else '新建篇任务' }}</h1>
+{% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+<form class="form" method="post">
+  <label>篇编号 *
+    <input name="code" value="{{ a.code if a else '' }}" {{ 'readonly' if a and a.id }} placeholder="篇14" required>
+  </label>
+  <label>标题 *
+    <input name="title" value="{{ a.title if a else '' }}" placeholder="化学领域·篇14" required>
+  </label>
+  <label>领域
+    <input name="domain" value="{{ a.domain if a else '' }}" placeholder="育儿 / 特困 / 金融 / 化学 …">
+  </label>
+  <label>负责组别 *
+    <select name="group_name" required>
+      {% for g in groups %}<option value="{{ g }}" {{ 'selected' if a and a.group_name == g }}>{{ g }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>KE 目标条数
+    <input name="ke_target" type="number" min="0" value="{{ a.ke_target if a else 30 }}">
+  </label>
+  {% if a and a.id %}
+  <label>KE 已完成条数
+    <input name="ke_done" type="number" min="0" value="{{ a.ke_done }}">
+  </label>
+  {% endif %}
+  <label>备注
+    <textarea name="note" rows="3">{{ a.note if a else '' }}</textarea>
+  </label>
+  <div class="actions">
+    <button class="btn primary" type="submit">保存</button>
+    <a class="btn" href="/gold/articles">取消</a>
+  </div>
+</form>
+{% endblock %}

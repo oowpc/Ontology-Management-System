@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}issue · GOLDKE{% endblock %}
+{% block content %}
+<div class="page-head"><h1>标注分歧 issue（{{ items|length }}）</h1></div>
+<div class="panel">
+  <form class="filters" method="post" action="/gold/issues/new" style="align-items:flex-start">
+    <input name="title" placeholder="issue 标题（须文字表述，忌口头）" style="width:280px" required>
+    <input name="cluster" placeholder="聚类标签" style="width:120px">
+    <select name="related_type">
+      <option value="">不关联</option><option value="article">篇</option><option value="question">题目</option><option value="domain">领域</option>
+    </select>
+    <input name="related_ref" placeholder="如 篇1 / KE-001 / 育儿" style="width:150px">
+    <textarea name="content" placeholder="思考过程（上会/反馈前必须独立思考并保留记录）" rows="2" style="flex:1;min-width:260px"></textarea>
+    <button class="btn primary" type="submit">登记 issue</button>
+  </form>
+</div>
+<form class="filters" method="get" action="/gold/issues">
+  <select name="status">
+    <option value="">全部状态</option>
+    {% for v, l in status_labels.items() %}<option value="{{ v }}" {{ 'selected' if status == v }}>{{ l }}</option>{% endfor %}
+  </select>
+  <select name="cluster">
+    <option value="">全部聚类</option>
+    {% for c in clusters %}<option value="{{ c }}" {{ 'selected' if cluster == c }}>{{ c }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">过滤</button>
+</form>
+<table class="data">
+  <thead><tr><th>ID</th><th>标题</th><th>聚类</th><th>关联</th><th>状态</th><th>提出人</th><th>时间</th></tr></thead>
+  <tbody>
+  {% for i in items %}
+  <tr>
+    <td>{{ i.id }}</td>
+    <td><a href="/gold/issues/{{ i.id }}">{{ i.title }}</a></td>
+    <td>{% if i.cluster %}<span class="chip">{{ i.cluster }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+    <td class="muted">{{ (i.related_type ~ '·' ~ i.related_ref) if i.related_ref else '—' }}</td>
+    <td><span class="badge issue-{{ i.status }}">{{ status_labels[i.status] }}</span></td>
+    <td>{{ i.raised_by }}</td>
+    <td class="muted">{{ i.created_at|dt }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="empty">暂无 issue</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

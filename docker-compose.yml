@@ -1,0 +1,22 @@
+services:
+  ontology:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ontology-data:/data
+    environment:
+      # 生产必改
+      SECRET_KEY: "change-me-in-production"
+      # 切 PostgreSQL 示例：
+      # DB_URL: "postgresql+psycopg://ontology:ontology@db:5432/ontology"
+      # 体检定时（cron 五段）
+      HEALTH_CRON: "30 3 * * *"
+      # LLM（可选，OpenAI 兼容端点）
+      # LLM_BASE_URL: "https://api.deepseek.com/v1"
+      # LLM_API_KEY: "sk-xxx"
+      # LLM_MODEL: "deepseek-chat"
+    restart: unless-stopped
+
+volumes:
+  ontology-data:

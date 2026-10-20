@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}抽查记录 · GOLDKE{% endblock %}
+{% block content %}
+<div class="page-head"><h1>验收抽查记录（{{ items|length }}）</h1></div>
+<div class="panel">
+  <form class="filters" method="post" action="/gold/samples/new">
+    <input name="sample_date" type="date" value="{{ today }}">
+    <input name="scope" placeholder="抽查范围（如 育儿·A组·篇1）" style="width:220px" required>
+    <input name="total" type="number" min="0" placeholder="抽查数" style="width:90px" required>
+    <input name="passed" type="number" min="0" placeholder="通过数" style="width:90px" required>
+    <input name="note" placeholder="备注（语法校验等）" style="width:200px">
+    <button class="btn primary" type="submit">登记抽查</button>
+  </form>
+</div>
+<table class="data">
+  <thead><tr><th>ID</th><th>日期</th><th>范围</th><th class="num">抽查</th><th class="num">通过</th><th class="num">通过率</th><th>检查人</th><th>备注</th></tr></thead>
+  <tbody>
+  {% for s in items %}
+  <tr>
+    <td>{{ s.id }}</td><td>{{ s.sample_date }}</td><td>{{ s.scope }}</td>
+    <td class="num">{{ s.total }}</td><td class="num">{{ s.passed }}</td>
+    <td class="num">{{ '%.0f%%'|format(s.passed * 100 / s.total) if s.total else '—' }}</td>
+    <td>{{ s.checker }}</td><td class="muted">{{ s.note or '—' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="empty">暂无抽查记录</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="muted">验收口径：400 条 KE 进行 sample 抽查质量（语法校验等），抽查率与通过条件阈值见《数据标注执行方案·验收期》。</p>
+{% endblock %}

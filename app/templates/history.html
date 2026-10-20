@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}变更日志 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head"><h1>变更日志</h1></div>
+<form class="filters" method="get" action="/history">
+  <select name="entity_type">
+    <option value="">全部实体</option>
+    <option value="concept" {{ 'selected' if entity_type == 'concept' }}>概念</option>
+    <option value="operator" {{ 'selected' if entity_type == 'operator' }}>算子</option>
+  </select>
+  <input type="search" name="actor" value="{{ actor or '' }}" placeholder="操作人">
+  <button class="btn" type="submit">过滤</button>
+</form>
+<p class="muted">最近 {{ rows|length }} 条（上限 200）</p>
+{% for r in rows %}
+<div class="panel history-entry">
+  <div class="review-head">
+    <span class="badge action-{{ r.action }}">{{ ACTION_LABELS.get(r.action, r.action) }}</span>
+    <strong>
+      {% if r.entity_type == 'concept' %}
+      <a href="/concepts/{{ r.entity_id }}">{{ names.get(r.entity_id, '#' ~ r.entity_id) }}</a>
+      {% else %}算子 #{{ r.entity_id }}{% endif %}
+    </strong>
+    <span class="muted">#{{ r.id }} · {{ r.actor }} · {{ r.created_at|dt }}</span>
+  </div>
+  {% set diff = diffs.get(r.id) %}
+  {% if diff %}
+  <table class="data diff">
+    <thead><tr><th>字段</th><th>修改前</th><th>修改后</th></tr></thead>
+    <tbody>
+    {% for d in diff %}
+    <tr><td>{{ d.field }}</td><td class="muted">{{ d.before|dj }}</td><td>{{ d.after|dj }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <span class="muted">（创建 / 无字段差异）</span>
+  {% endif %}
+</div>
+{% else %}
+<div class="panel empty">暂无变更记录</div>
+{% endfor %}
+{% endblock %}

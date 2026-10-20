@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}issue #{{ i.id }} · GOLDKE{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>#{{ i.id }} {{ i.title }} <span class="badge issue-{{ i.status }}">{{ status_labels[i.status] }}</span></h1>
+  <a class="btn" href="/gold/issues">返回列表</a>
+</div>
+<div class="panel">
+  <table class="kv">
+    <tr><th>提出</th><td>{{ i.raised_by }} · {{ i.created_at|dt }}</td></tr>
+    <tr><th>聚类</th><td>{{ i.cluster or '—' }}</td></tr>
+    <tr><th>关联</th><td>{{ (i.related_type ~ '·' ~ i.related_ref) if i.related_ref else '—' }}</td></tr>
+    <tr><th>思考过程</th><td style="white-space:pre-wrap">{{ i.content or '—' }}</td></tr>
+    {% if i.resolution %}
+    <tr><th>结论</th><td style="white-space:pre-wrap">{{ i.resolution }}（{{ i.resolved_at|dt }}）</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<h2>评论（{{ comments|length }}）</h2>
+{% for c in comments %}
+<div class="panel history-entry">
+  <div class="review-head"><strong>{{ c.author }}</strong><span class="muted">{{ c.created_at|dt }}</span></div>
+  <div style="white-space:pre-wrap">{{ c.content }}</div>
+</div>
+{% else %}
+<div class="panel empty">暂无评论</div>
+{% endfor %}
+
+<div class="panel">
+  <form method="post" action="/gold/issues/{{ i.id }}/comments">
+    <p style="margin:0 0 8px"><textarea name="content" rows="3" style="width:100%" placeholder="追加评论（话题+评论形式推进）" required></textarea></p>
+    <button class="btn" type="submit">评论</button>
+  </form>
+</div>
+
+<div class="panel">
+  <form method="post" action="/gold/issues/{{ i.id }}/status" class="filters" style="align-items:flex-start">
+    <select name="status">
+      {% for v, l in status_labels.items() %}<option value="{{ v }}" {{ 'selected' if i.status == v }}>{{ l }}</option>{% endfor %}
+    </select>
+    <textarea name="resolution" rows="2" placeholder="结论（解决/上会时填写）" style="flex:1;min-width:260px">{{ i.resolution }}</textarea>
+    <button class="btn primary" type="submit">更新状态</button>
+  </form>
+</div>
+{% endblock %}

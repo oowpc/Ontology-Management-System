@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}{{ c.name }} · 概念详情{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ c.name }} <span class="badge {{ c.status }}">{{ STATUS_LABELS.get(c.status, c.status) }}</span></h1>
+  <div>
+    {% if user.role in ['reviewer','admin'] %}
+    <a class="btn" href="/concepts/{{ c.id }}/edit">编辑</a>
+    {% if c.status != 'disabled' %}
+    <form class="inline" method="post" action="/concepts/{{ c.id }}/disable" onsubmit="return confirm('确认停用？')"><button class="btn" type="submit">停用</button></form>
+    {% else %}
+    <form class="inline" method="post" action="/concepts/{{ c.id }}/restore"><button class="btn" type="submit">恢复</button></form>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+<div class="panel">
+  <table class="kv">
+    <tr><th>ID</th><td>{{ c.id }}</td></tr>
+    <tr><th>名称</th><td>{{ c.name }}</td></tr>
+    <tr><th>别名</th><td>{{ (c.aliases or [])|join('、') or '—' }}</td></tr>
+    <tr><th>定义</th><td>{{ c.definition or '—' }}</td></tr>
+    <tr><th>父类</th><td>{% if c.parent_id %}<a href="/concepts/{{ c.parent_id }}">{{ parent_name }}</a>{% else %}—（根概念）{% endif %}</td></tr>
+    <tr><th>创建</th><td>{{ c.created_by }} · {{ c.created_at|dt }}</td></tr>
+    <tr><th>最近更新</th><td>{{ c.updated_at|dt }}</td></tr>
+    <tr><th>使用统计</th><td>{{ usage.ke_count if usage else 0 }} 次（最近使用：{{ usage.last_used_at|dt if usage else '—' }}）{% if usage and usage.source %} · 来源：{{ usage.source }}{% endif %}</td></tr>
+  </table>
+</div>
+
+<h2>子类（{{ children|length }}）</h2>
+<div class="panel">
+  {% if children %}
+  {% for ch in children %}
+  <a class="chip" href="/concepts/{{ ch.id }}">{{ ch.name }}</a>
+  {% endfor %}
+  {% else %}<span class="muted">无子类</span>{% endif %}
+</div>
+
+<h2>绑定算子（{{ operators|length }}）</h2>
+<table class="data">
+  <thead><tr><th>ID</th><th>名称</th><th>参数类型</th><th>返回类型</th><th>状态</th></tr></thead>
+  <tbody>
+  {% for o in operators %}
+  <tr>
+    <td>{{ o.id }}</td>
+    <td>{{ o.name }}</td>
+    <td class="muted">{{ (o.param_types or [])|join('、') or '—' }}</td>
+    <td>{{ o.return_type }}</td>
+    <td><span class="badge {{ o.status }}">{{ STATUS_LABELS.get(o.status, o.status) }}</span></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="5" class="empty">未绑定算子</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if submissions %}
+<h2>关联提交单（{{ submissions|length }}）</h2>
+<table class="data">
+  <thead><tr><th>ID</th><th>状态</th><th>TMP</th><th>提交人</th><th>审核意见</th><th>提交时间</th></tr></thead>
+  <tbody>
+  {% for s in submissions %}
+  <tr>
+    <td>{{ s.id }}</td>
+    <td><span class="badge {{ s.status }}">{{ SUB_STATUS_LABELS.get(s.status, s.status) }}</span></td>
+    <td>{{ s.tmp_id or '—' }}</td>
+    <td>{{ s.submitted_by }}</td>
+    <td class="muted">{{ s.review_comment or '—' }}</td>
+    <td class="muted">{{ s.created_at|dt }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<h2>变更历史（{{ history|length }}）</h2>
+{% for item in history %}
+{% set h = item.entry %}
+<div class="panel history-entry">
+  <div class="review-head">
+    <span class="badge action-{{ h.action }}">{{ ACTION_LABELS.get(h.action, h.action) }}</span>
+    <span class="muted">#{{ h.id }} · {{ h.actor }} · {{ h.created_at|dt }}</span>
+    {% if user.role == 'admin' and h.before %}
+    <form method="post" action="/concepts/{{ c.id }}/rollback/{{ h.id }}"
+          onsubmit="return confirm('回滚到该记录修改前的状态？当前状态会成为新的历史记录。')">
+      <button class="link" type="submit">回滚到此</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if item.diff %}
+  <table class="data diff">
+    <thead><tr><th>字段</th><th>修改前</th><th>修改后</th></tr></thead>
+    <tbody>
+    {% for d in item.diff %}
+    <tr><td>{{ d.field }}</td><td class="muted">{{ d.before|dj }}</td><td>{{ d.after|dj }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <span class="muted">（创建记录）</span>
+  {% endif %}
+</div>
+{% else %}
+<div class="panel empty">暂无变更记录</div>
+{% endfor %}
+{% endblock %}

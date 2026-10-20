@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}KE 复核{% endblock %}
+{% block content %}
+<h1>KE 逐条复核（待复核 {{ items|length }}）</h1>
+<p class="muted">结论写回任务并留痕：<strong>一致 → 已完成</strong>；<strong>不一致 → 已退回</strong> 并自动加「复核退回」标签（进入看板问题面板）。系统结论为准——下次全量上传自动重放，表内自报不覆盖。</p>
+<form class="filters" method="get" action="/ke/review">
+  <select name="group">
+    <option value="">全部组</option>
+    {% for g in groups %}<option value="{{ g }}" {{ 'selected' if group == g }}>{{ g }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">过滤</button>
+</form>
+<table class="data">
+  <thead><tr><th></th><th>组</th><th>题目ID</th><th>篇</th><th>摘要</th><th>标注人</th><th>成品内容</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for t in items %}
+  <tr>
+    <td><input type="checkbox" name="ids" value="{{ t.group_name }}|{{ t.ke_id }}" form="batch-form"></td>
+    <td>{{ t.group_name }}</td>
+    <td>{{ t.ke_id }}</td>
+    <td>{{ t.article_code }}</td>
+    <td>{{ t.summary }}</td>
+    <td>{{ t.person }}</td>
+    <td>{{ contents.get((t.group_name, t.ke_id), '')[:60] }}{{ '…' if contents.get((t.group_name, t.ke_id), '')|length > 60 else '' }}</td>
+    <td class="ops">
+      <form class="inline" method="post" action="/ke/review/one">
+        <input type="hidden" name="group_name" value="{{ t.group_name }}">
+        <input type="hidden" name="ke_id" value="{{ t.ke_id }}">
+        <button class="link" name="conclusion" value="一致" type="submit">一致</button>
+        <button class="link" name="conclusion" value="不一致" type="submit" style="color:var(--bad)">不一致</button>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="empty">待复核队列为空</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<form class="panel batch-bar" id="batch-form" method="post" action="/ke/review/batch">
+  <textarea name="comment" rows="2" placeholder="复核意见（批量时共用，可留空）"></textarea>
+  <div style="display:flex;gap:8px">
+    <button class="btn primary" name="conclusion" value="一致" type="submit">批量一致</button>
+    <button class="btn" name="conclusion" value="不一致" type="submit">批量不一致</button>
+  </div>
+</form>
+{% endblock %}
