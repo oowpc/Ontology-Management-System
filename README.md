@@ -39,6 +39,7 @@ python -m uvicorn app.main:app --reload
 | M16 | 题目级视图：一题一页工作台（原文/CO/KE版本 diff/issue/审计尾）· `scripts/backfill_questions.py` 从 ke_tasks 幂等回填 · 概念详情反向入口 · 列表筛选+CSV | ✅ 本次交付 |
 | M17 | Issue 管理闭环：分歧→讨论→结论→回填（7 表：issue+cases+待讨论+观点+评论+关联+影响清单）· IS 编号 · 结案强校验 · 重开留痕 · 概念/算子/题目页「相关 Issue」+ 预填提单 · MCP +5 工具 | ✅ 本次交付 |
 | M18 | KE 看板 UI 迁移：Python 字符串模板（ke/template.py）→ Jinja 模板 `templates/ke/dashboard.html`，结构/样式/口径文字全部可直接编辑；metrics/service 数据逻辑零改动 | ✅ 本次交付 |
+| M19 | 适配现行协作 xlsx：上传支持 .xlsx（QA 问答/Lean 题目标注 两种表头自动识别）· 多人 KE 列合成标注人 · Lean 的 conclusion 进复核结论、wpcke 进成品库 · 别家表头回退 KE_COLUMN_MAP | ✅ 本次交付 |
 
 ## M12 · Agent 可操控性补全
 
@@ -53,8 +54,17 @@ python -m uvicorn app.main:app --reload
 
 - 验证：`tests/test_agent.py`——Token 签发/吊销、manifest 结构、MCP 工具注册数、agent 经 MCP 完成「提交→审核→回填」全流程
 
-## M17 · Issue 管理（分歧闭环）
+## M19 · 适配现行协作 xlsx（上传即入）
 
+- **上传口同时吃 CSV 和 .xlsx**：`/ke/upload` 与 `POST /api/ke/upload` 按扩展名分发；xlsx 用 openpyxl（`reset_dimensions` 兼容协作系统/WPS 导出的错误 dimension）
+- **两种现行格式自动识别**：
+  - QA 问答（自然语言/Gold_KE/KE-*/KE-对齐状态/Issue）：题号取 `[山东问N]` 前缀；KE 内容 = `Gold_KE`；对齐状态进复核结论；`Issue` 非空打 issue 标签
+  - Lean 题目标注（题目/题干/领域/conclusion/wpcke/各人 KE 列/所属数据集）：KE 内容 = `wpcke`（空则回退各人 KE 列）；`conclusion` 是讨论文本 → 进复核结论；标注人 = 有内容的多人列合成
+- **篇编号**：行内「所属数据集」→ 工作表名 → 文件名去扩展名
+- **别家表头**：不认识时回退 `KE_COLUMN_MAP` 规范列匹配（与 CSV 同口径）
+- 实测：`育儿补贴-问答.xlsx`（75 行，69 完成）、`Lean题目标注.xlsx`（51 行，50 完成）均零警告入库，成品库分别命中 Gold_KE 与 wpcke
+
+## M17 · Issue 管理（分歧闭环）
 - **闭环**：编号 IS-xxxx → 问题描述（例子→矛盾→提问）+ 对照案例（原文/写法一/写法二/差异）→ 待讨论问题与各方观点 → 结案（结论+适用范围+影响清单强校验）→ 回填清单勾选完成（进度 x/y）→ 重开留痕（结案不锁定）
 - **校验**：标题以「关于/讨论/记录」开头被拒（引导写成问句）；每条 Case 需原文+至少一种写法；新建至少 1 条 Case；结案影响清单为空须显式声明「无受影响条目」
 - **集成**：概念详情 / 算子详情（本模块新增）/ 题目详情各有「相关 Issue」块 + 「提 issue」预填链接；MCP 增加 issue_create / issue_comment / issue_close / issue_list_impacts / issue_reopen / list_issues

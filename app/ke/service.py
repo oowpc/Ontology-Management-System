@@ -1,10 +1,11 @@
-"""上传事务与查询：CSV 文本 → 行 dict；按组全量替换；看板数据组装。"""
+"""上传事务与查询：CSV/xlsx 文本 → 行 dict；按组全量替换；看板数据组装。"""
 from __future__ import annotations
 
 import csv
 import io
 import re
 from datetime import date
+from pathlib import Path
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..models import KeTask, KeUpload, User
 from .metrics import STATUSES, build_data, normalize, parse_dt
+from .xlsx_reader import read_xlsx
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 单文件上限 5MB
 
@@ -83,6 +85,105 @@ def parse_csv_text(text: str, column_map: dict | None = None):
             "content": content,
         })
     return rows, warnings
+
+
+# ---------------- xlsx 适配（现行协作格式） ----------------
+
+def _first(row: dict, *cols: str) -> str:
+    for c in cols:
+        if (row.get(c) or "").strip():
+            return row[c].strip()
+    return ""
+
+
+def _annotators(row: dict, patterns: tuple[str, ...], exclude: frozenset[str] = frozenset()) -> str:
+    """多人列（如 王金旺-KE / KE-Li）有内容者名拼接。"""
+    names = []
+    for h, v in row.items():
+        if h in exclude or not (v or "").strip():
+            continue
+        for p in patterns:
+            m = re.fullmatch(p, h)
+            if m:
+                names.append(m.group(1) if m.groups() else h)
+    return "、".join(dict.fromkeys(names))  # 保序去重
+
+
+def adapt_xlsx_rows(sheet_rows: tuple[str, list[dict]], *, source: str, column_map: dict | None = None):
+    """现行协作 xlsx → 规范行（与 parse_csv_text 同键）。按表头识别格式：
+
+    QA（如 育儿补贴-问答）：自然语言/自然语言（去废话）/标注状态/Gold_KE/KE-*/KE-对齐状态/Issue
+    Lean（如 Lean题目标注）：题目/题干/领域/标注状态 + conclusion（讨论结论，非 KE）/
+      wpcke（工作 KE）/王金旺-KE 等（各人 KE）/所属数据集/…
+    都不匹配 → 回退到 KE_COLUMN_MAP 规范列匹配（与 CSV 同口径，别家 xlsx 也能进）。
+
+    篇编号优先级：行内「所属数据集」→ 工作表名 → 文件名去扩展名。
+    """
+    sheet_name, rows = sheet_rows
+    stem = Path(source).stem                      # 文件名去扩展名（兜底）
+    domain_default = re.split(r"[-_]", stem)[0]   # 文件名第一段 → 领域兜底
+    warnings: list[str] = []
+    if not rows:
+        raise ValueError("xlsx 没有数据行")
+    headers = set(rows[0].keys())
+    out = []
+    if "自然语言" in headers:
+        kind = "QA"
+    elif "题干" in headers and "题目" in headers:
+        kind = "Lean"
+    else:
+        kind = None
+    for idx, row in enumerate(rows, 2):
+        article = _first(row, "所属数据集") or sheet_name or stem
+        if kind == "QA":
+            nl = _first(row, "自然语言")
+            m = re.match(r"^\[([^\]]+)\]", nl)
+            rid = m.group(1) if m else f"Q{idx - 1}"
+            summary = _first(row, "自然语言（去废话）") or nl
+            content = _first(row, "Gold_KE")
+            review = _first(row, "KE-对齐状态")
+            person = _annotators(row, (r"KE-([^-]+)",), exclude=frozenset({"KE-对齐状态"})) or "多人"
+            tags = ["issue"] if _first(row, "Issue") else []
+            domain = domain_default
+        elif kind == "Lean":
+            rid = _first(row, "题目", "原始ID", "UUID") or f"L{idx - 1}"
+            summary = _first(row, "题干")
+            content = _first(row, "wpcke") or _first(row, "王金旺-KE", "李天音-KE", "陈思源-KE")
+            review = _first(row, "conclusion")   # conclusion 是讨论结论，不是 KE
+            person = _annotators(row, (r"(.+)-KE", r"(.+)note")) or "多人"
+            tags = []
+            domain = _first(row, "领域") or domain_default
+        else:
+            # 回退：按规范列名（KE_COLUMN_MAP 口径）从 xlsx 行里取
+            cmap = {**settings.ke_column_map, **(column_map or {})}
+            rid = (row.get(cmap.get("id", "id")) or "").strip()
+            if not rid:
+                warnings.append(f"第{idx}行: 缺少题目ID，已跳过")
+                continue
+            summary = row.get(cmap.get("summary", "summary"), "")
+            content = row.get(cmap.get("content", "KE内容"), "")
+            review = row.get(cmap.get("review", "复核结论"), "")
+            person = row.get(cmap.get("person", "标注人"), "") or "未分配"
+            tags = [t.strip() for t in re.split(r"[;;]", row.get(cmap.get("tags", "问题标签"), "")) if t.strip()]
+            domain = row.get(cmap.get("domain", "领域"), "") or domain_default
+        status = _canon_status(_first(row, "标注状态") or "待标注")
+        if status not in STATUSES:
+            warnings.append(f"{rid}: 标注状态 {status!r} 非法，已按「待标注」处理")
+            status = "待标注"
+        out.append({
+            "id": rid, "domain": domain or "未分类", "summary": summary,
+            "status": status, "person": person,
+            "created": None, "started": None, "finished": None,
+            "review": review, "tags": tags, "article": article, "content": content,
+        })
+    return out, warnings
+
+
+def parse_upload(filename: str, raw: bytes, column_map: dict | None = None):
+    """上传分发：.xlsx/.xlsm → xlsx 适配（含现行协作两种格式）；其余 → 既有 CSV 管线。"""
+    if filename.lower().endswith((".xlsx", ".xlsm")):
+        return adapt_xlsx_rows(read_xlsx(raw), source=filename, column_map=column_map)
+    return parse_csv_text(decode_upload(raw), column_map)
 
 
 def replace_group_tasks(db: Session, group: str, rows, filename: str,

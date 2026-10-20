@@ -2,7 +2,7 @@
 {% block title %}KE 上传{% endblock %}
 {% block content %}
 <h1>KE 标注数据上传</h1>
-<p class="muted">每天收工后上传本组标注表的<strong>全量导出</strong>（CSV，十列：题目ID/领域/题目摘要/标注状态/标注人/创建时间/开始时间/完成时间/复核结论/问题标签）。重复上传按题目ID覆盖，以最新一次为准。</p>
+<p class="muted">每天收工后上传本组标注表的<strong>全量导出</strong>（CSV 十列，或现行协作 xlsx：问答格式「自然语言/Gold_KE/标注状态…」、题目标注格式「题目/题干/领域/conclusion…」；别家表头可用 KE_COLUMN_MAP 映射）。重复上传按题目ID覆盖，以最新一次为准。</p>
 
 <h2>今日上传状态（{{ today }}）</h2>
 <table class="data">
@@ -22,7 +22,7 @@
 </table>
 
 {% if can_upload %}
-<h2>上传 CSV</h2>
+<h2>上传 CSV / xlsx</h2>
 <form class="form" method="post" action="/ke/upload" enctype="multipart/form-data">
   {% if is_admin %}
   <label>组别
@@ -33,7 +33,7 @@
   {% else %}
   <label>组别 <input name="group" value="{{ my_group }}" readonly></label>
   {% endif %}
-  <label>CSV 文件 <input type="file" name="file" accept=".csv" required></label>
+  <label>CSV 文件 <input type="file" name="file" accept=".csv,.xlsx,.xlsm" required></label>
   <div class="actions">
     <button class="btn primary" type="submit">上传并统计</button>
     <a class="btn" href="/ke/dashboard">查看进度看板 →</a>

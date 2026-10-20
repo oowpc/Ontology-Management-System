@@ -99,12 +99,12 @@ async def _do_upload(db: Session, form, user: dict):
     if not _can_upload_to(user, group):
         return None, "只能上传本组数据", 403, None
     if file is None or not getattr(file, "filename", ""):
-        return None, "请选择 CSV 文件", 400, None
+        return None, "请选择 CSV / xlsx 文件", 400, None
     raw = await file.read()
     if len(raw) > service.MAX_UPLOAD_BYTES:
         return None, "文件过大（上限 5MB）", 400, None
     try:
-        rows, warnings = service.parse_csv_text(service.decode_upload(raw))
+        rows, warnings = service.parse_upload(file.filename, raw)
     except ValueError as e:
         return None, str(e), 400, None
     up = service.replace_group_tasks(db, group, rows, file.filename, user["username"], warnings)
