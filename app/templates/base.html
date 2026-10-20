@@ -13,6 +13,7 @@
   <nav>
     <a href="/concepts" class="{{ 'active' if request.url.path.startswith('/concepts') }}">概念</a>
     <a href="/graph" class="{{ 'active' if request.url.path == '/graph' }}">图</a>
+    <a href="/paste" class="{{ 'active' if request.url.path.startswith('/paste') }}">粘贴识别</a>
     <a href="/operators" class="{{ 'active' if request.url.path.startswith('/operators') }}">算子</a>
     <a href="/submit" class="{{ 'active' if request.url.path.startswith('/submit') }}">提交</a>
     {% if user.role in ['reviewer','admin'] %}

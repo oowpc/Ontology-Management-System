@@ -29,9 +29,11 @@ def _out(db: Session, c: Concept) -> dict:
 
 @router.get("")
 def list_concepts(status: str | None = None, parent_id: int | None = None,
-                  q: str | None = None, page: int = 1, size: int = Query(50, le=200),
+                  q: str | None = None, domain: str | None = None,
+                  page: int = 1, size: int = Query(50, le=200),
                   db: Session = Depends(get_db), user: dict = Depends(require_role())):
-    items, total = query_concepts(db, status=status, parent_id=parent_id, q=q, page=page, size=size)
+    items, total = query_concepts(db, status=status, parent_id=parent_id, q=q,
+                                  domain=domain, page=page, size=size)
     stats = usage_map(db, [c.id for c in items])
     parents = name_map(db, [c.parent_id for c in items if c.parent_id])
     return {
@@ -44,8 +46,9 @@ def list_concepts(status: str | None = None, parent_id: int | None = None,
 def create(data: ConceptCreate, db: Session = Depends(get_db),
            user: dict = Depends(require_role("reviewer", "admin"))):
     try:
-        c = create_concept(db, name=data.name, aliases=data.aliases, definition=data.definition,
-                           parent_id=data.parent_id, status=data.status, actor=user["username"],
+        c = create_concept(db, name=data.name, domain=data.domain, aliases=data.aliases,
+                           definition=data.definition, parent_id=data.parent_id,
+                           status=data.status, actor=user["username"],
                            check_similar=True)
     except SimilarityBlock as e:
         raise HTTPException(409, detail={"message": str(e), "similar": e.similar})

@@ -56,10 +56,16 @@ _CSV_KINDS = {
     "orphan": (["id", "名称", "别名"],
                "orphan",
                lambda d: [[x["id"], x["name"], "、".join(x["aliases"])] for x in d["orphan"]]),
-    "similar": (["概念A", "概念B", "相似度", "命中方式", "命中值"],
+    "similar": (["概念A", "领域A", "概念B", "领域B", "相似度", "命中方式", "命中值"],
                 "similar_pairs",
-                lambda d: [[x["a_name"], x["b_name"], f"{x['score']:.2f}", x["matched_on"], x["matched_value"]]
+                lambda d: [[x["a_name"], x["a_domain"], x["b_name"], x["b_domain"],
+                            f"{x['score']:.2f}", x["matched_on"], x["matched_value"]]
                            for x in d["similar_pairs"]]),
+    "cross_domain": (["概念A", "领域A", "概念B", "领域B", "相似度", "命中方式", "命中值"],
+                     "cross_domain",
+                     lambda d: [[x["a_name"], x["a_domain"], x["b_name"], x["b_domain"],
+                                 f"{x['score']:.2f}", x["matched_on"], x["matched_value"]]
+                                for x in d["cross_domain"]]),
     "operators": (["id", "名称", "算子数", "问题"],
                   "operator_count",
                   lambda d: [[x["id"], x["name"], x["operator_count"], x["issue"]] for x in d["operator_count"]]),

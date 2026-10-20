@@ -18,6 +18,7 @@
   <table class="kv">
     <tr><th>ID</th><td>{{ c.id }}</td></tr>
     <tr><th>名称</th><td>{{ c.name }}</td></tr>
+    <tr><th>领域</th><td><span class="chip">{{ c.domain or '通用' }}</span></td></tr>
     <tr><th>别名</th><td>{{ (c.aliases or [])|join('、') or '—' }}</td></tr>
     <tr><th>定义</th><td>{{ c.definition or '—' }}</td></tr>
     <tr><th>父类</th><td>{% if c.parent_id %}<a href="/concepts/{{ c.parent_id }}">{{ parent_name }}</a>{% else %}—（根概念）{% endif %}</td></tr>

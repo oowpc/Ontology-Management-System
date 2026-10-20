@@ -16,6 +16,12 @@
     <option value="{{ r.id }}" {{ 'selected' if root_id == r.id }}>{{ r.name }}（子树）</option>
     {% endfor %}
   </select>
+  <select name="domain">
+    <option value="">全部领域</option>
+    {% for d in domains %}
+    <option value="{{ d }}" {{ 'selected' if domain == d }}>{{ d }}</option>
+    {% endfor %}
+  </select>
   <select name="status">
     <option value="">全部状态</option>
     {% for s, label in STATUS_LABELS.items() %}

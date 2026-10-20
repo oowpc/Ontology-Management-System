@@ -39,7 +39,8 @@ class Concept(Base):
     __table_args__ = (CheckConstraint(f"status IN ({CONCEPT_STATUS})", name="ck_concepts_status"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(128), unique=True, index=True)  # 概念名 = KE 正式标识
+    name: Mapped[str] = mapped_column(String(128), unique=True, index=True)  # 概念名 = KE 正式标识（全局唯一）
+    domain: Mapped[str] = mapped_column(String(64), default="通用", index=True)  # 领域分组（育儿/特困/金融/化学…；同名即同一概念，跨域冲突靠体检近义对发现）
     aliases: Mapped[list] = mapped_column(JSON, default=list)
     definition: Mapped[str] = mapped_column(Text, default="")
     parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("concepts.id"), index=True)

@@ -13,6 +13,9 @@
   <label>概念名称 *
     <input id="f-name" name="name" value="{{ values.name if values else '' }}" required autocomplete="off">
   </label>
+  <label>领域
+    <input name="domain" value="{{ (values.domain or '通用') if values else '通用' }}" placeholder="通用 / 育儿 / 特困 / 金融 / 化学 …">
+  </label>
   <label>别名（逗号 / 顿号 / 换行分隔）
     <textarea id="f-aliases" name="aliases" rows="2">{{ ((values.aliases or [])|join('，')) if values else '' }}</textarea>
   </label>

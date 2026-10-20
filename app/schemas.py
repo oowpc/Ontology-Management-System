@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class ConceptCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
+    domain: str = "通用"
     aliases: list[str] = []
     definition: str = ""
     parent_id: int | None = None
@@ -14,6 +15,7 @@ class ConceptCreate(BaseModel):
 
 class ConceptUpdate(BaseModel):
     name: str | None = None
+    domain: str | None = None
     aliases: list[str] | None = None
     definition: str | None = None
     parent_id: int | None = None
@@ -37,6 +39,7 @@ class OperatorUpdate(BaseModel):
 
 class SubmissionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=128)
+    domain: str = "通用"
     aliases: list[str] = []
     definition: str = ""
     suggested_parent_id: int

@@ -63,14 +63,16 @@ def _parent_options(db: Session, exclude_id: int | None = None):
 
 @router.get("/concepts")
 def concepts_page(request: Request, status: str | None = None, parent_id: int | None = None,
-                  q: str | None = None, page: int = 1,
+                  q: str | None = None, domain: str | None = None, page: int = 1,
                   db: Session = Depends(get_db), user: dict = Depends(current_user)):
-    items, total = query_concepts(db, status=status, parent_id=parent_id, q=q, page=page, size=PAGE_SIZE)
+    items, total = query_concepts(db, status=status, parent_id=parent_id, q=q,
+                                  domain=domain, page=page, size=PAGE_SIZE)
     all_concepts = db.scalars(select(Concept).order_by(Concept.id)).all()
+    domains = sorted({(c.domain or "通用") for c in all_concepts})
     return templates.TemplateResponse(request=request, name="concepts/list.html", context={
         "request": request, "user": user, "items": items, "total": total,
         "page": page, "pages": max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE),
-        "q": q, "status": status, "parent_id": parent_id,
+        "q": q, "status": status, "parent_id": parent_id, "domain": domain, "domains": domains,
         "parents": all_concepts, "parent_names": {c.id: c.name for c in all_concepts},
         "stats": usage_map(db, [c.id for c in items]),
     })
@@ -90,6 +92,7 @@ async def _concept_form(request: Request) -> dict:
     form = await request.form()
     return {
         "name": str(form.get("name", "")),
+        "domain": str(form.get("domain", "")).strip() or "通用",
         "aliases": _split_multi(str(form.get("aliases", ""))),
         "definition": str(form.get("definition", "")),
         "parent_id": _int_or_none(form.get("parent_id")),
@@ -313,6 +316,7 @@ async def submit_create(request: Request, db: Session = Depends(get_db),
     form = await request.form()
     values = {
         "name": str(form.get("name", "")),
+        "domain": str(form.get("domain", "")).strip() or "通用",
         "aliases": _split_multi(str(form.get("aliases", ""))),
         "definition": str(form.get("definition", "")),
         "suggested_parent_id": _int_or_none(form.get("suggested_parent_id")),

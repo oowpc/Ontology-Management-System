@@ -33,7 +33,9 @@ python -m uvicorn app.main:app --reload
 | M11 | 通用化：CSV 列名映射（KE_COLUMN_MAP）· 状态词表映射（KE_STATUS_MAP）· GOLD 阶段/泳道词表配置 · 用户与组管理页（/admin/users） | ✅ 本次交付 |
 | 接入 | Agent 全开放：Bearer Token（`/api/tokens` 自助签发）· 页面动作均有对应 API（32/32 审计通过）· 幂等键统一 · `AGENTS.md` 手册 | ✅ |
 | M12 | Agent 可发现性：`GET /api/agent/manifest`（活路由表+工况词表+工作流配方，永不缺漏）· MCP server（`scripts/mcp_server.py`，28 个工具） | ✅ 本次交付 |
-| M13 | 概念继承图：服务端 tidy-tree 布局 + 原生 SVG（零依赖、内网可用）· 缩放/拖拽/点击进详情 · 按根/状态过滤 · `/api/graph` 结构+布局数据 | ✅ 本次交付 |
+| M13 | 概念继承图：服务端 tidy-tree 布局 + 原生 SVG（零依赖、内网可用）· 缩放/拖拽/点击进详情 · 按根/状态过滤 · `/api/graph` 结构+布局数据 | ✅ |
+| M14 | 领域分组：Concept.domain（默认通用，存量自动迁移）· 列表/图/导入导出/提交审核带领域 · 体检新增「跨领域近义对」（验收自洽口径） | ✅ 本次交付 |
+| M15 | 粘贴识别：粘贴 KEOL 文本 → 自动识别 concept/op/const/KE 事实 → 报告（新/已存在/相似/无效+行级原因）→ 勾选导入（概念算子进本体库·可选领域，事实入成品库） | ✅ 本次交付 |
 
 ## M12 · Agent 可操控性补全
 

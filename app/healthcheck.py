@@ -13,6 +13,7 @@ KIND_LABELS = {
     "unused": "未使用概念",
     "orphan": "孤立节点（无父类）",
     "similar": "近义候选对",
+    "cross_domain": "跨领域近义对",
     "operators": "算子过多/过少",
 }
 
@@ -57,9 +58,11 @@ def check_similar_pairs(db: Session, limit=200) -> list[dict]:
             sc = score_against(a.name, a.aliases or [], b)
             if sc["score"] >= settings.similarity_suggest_threshold:
                 pairs.append({
-                    "a_id": a.id, "a_name": a.name, "b_id": b.id, "b_name": b.name,
+                    "a_id": a.id, "a_name": a.name, "a_domain": a.domain or "通用",
+                    "b_id": b.id, "b_name": b.name, "b_domain": b.domain or "通用",
                     "score": sc["score"], "matched_on": sc["matched_on"],
                     "matched_value": sc["matched_value"],
+                    "cross_domain": (a.domain or "通用") != (b.domain or "通用"),
                 })
     pairs.sort(key=lambda p: p["score"], reverse=True)
     return pairs[:limit]
@@ -83,10 +86,12 @@ def check_operator_counts(db: Session) -> list[dict]:
 
 
 def run_health(db: Session, trigger_type: str) -> HealthReport:
+    similar = check_similar_pairs(db)
     details = {
         "unused": check_unused(db),
         "orphan": check_orphans(db),
-        "similar_pairs": check_similar_pairs(db),
+        "similar_pairs": similar,
+        "cross_domain": [p for p in similar if p["cross_domain"]],
         "operator_count": check_operator_counts(db),
     }
     report = HealthReport(

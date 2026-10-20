@@ -1,6 +1,7 @@
 """M13 验证：概念继承图——布局引擎单测 + API 结构 + 页面渲染。"""
-from app.graphviz import build_forest, layout
 from conftest import concept_id_by_name, login
+
+# app.* 延迟导入（见 test_domain_paste.py 顶部注释：顶层导入会抢在 DB_URL 设置前建引擎）
 
 
 class _C:
@@ -10,6 +11,7 @@ class _C:
 
 
 def test_layout_chain_and_fanout():
+    from app.graphviz import build_forest, layout
     nodes = build_forest([
         _C(1, "根"), _C(2, "子一", 1), _C(3, "子二", 1), _C(4, "孙", 2),
     ])
@@ -28,6 +30,7 @@ def test_layout_chain_and_fanout():
 
 
 def test_layout_subtree_and_cycle_safe():
+    from app.graphviz import build_forest, layout
     nodes = build_forest([_C(1, "A"), _C(2, "B", 1), _C(3, "C", 2), _C(9, "孤立")])
     g = layout(nodes, root_id=1)
     assert {n["id"] for n in g["nodes"]} == {1, 2, 3}

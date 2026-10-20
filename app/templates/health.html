@@ -42,16 +42,29 @@
   </table>
   {% elif kind == 'similar' %}
   <table class="data">
-    <thead><tr><th>概念 A</th><th>概念 B</th><th class="num">相似度</th><th>命中</th></tr></thead>
+    <thead><tr><th>概念 A</th><th>领域</th><th>概念 B</th><th>领域</th><th class="num">相似度</th><th>命中</th></tr></thead>
     <tbody>
     {% for x in report.details.similar_pairs %}
-    <tr><td><a href="/concepts/{{ x.a_id }}">{{ x.a_name }}</a></td>
-        <td><a href="/concepts/{{ x.b_id }}">{{ x.b_name }}</a></td>
+    <tr><td><a href="/concepts/{{ x.a_id }}">{{ x.a_name }}</a></td><td class="muted">{{ x.a_domain }}</td>
+        <td><a href="/concepts/{{ x.b_id }}">{{ x.b_name }}</a></td><td class="muted">{{ x.b_domain }}</td>
         <td class="num">{{ '%.0f%%'|format(x.score * 100) }}</td>
         <td class="muted">{{ x.matched_on }}「{{ x.matched_value }}」</td></tr>
-    {% else %}<tr><td colspan="4" class="empty">没有问题</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="6" class="empty">没有问题</td></tr>{% endfor %}
     </tbody>
   </table>
+  {% elif kind == 'cross_domain' %}
+  <table class="data">
+    <thead><tr><th>概念 A</th><th>领域</th><th>概念 B</th><th>领域</th><th class="num">相似度</th><th>命中</th></tr></thead>
+    <tbody>
+    {% for x in report.details.cross_domain %}
+    <tr><td><a href="/concepts/{{ x.a_id }}">{{ x.a_name }}</a></td><td><span class="chip">{{ x.a_domain }}</span></td>
+        <td><a href="/concepts/{{ x.b_id }}">{{ x.b_name }}</a></td><td><span class="chip">{{ x.b_domain }}</span></td>
+        <td class="num">{{ '%.0f%%'|format(x.score * 100) }}</td>
+        <td class="muted">{{ x.matched_on }}「{{ x.matched_value }}」</td></tr>
+    {% else %}<tr><td colspan="6" class="empty">无跨领域近义对（各领域自洽）</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">验收口径：各领域大本体内容不存在明显冲突 → 此表应为空或逐条有结论。</p>
   {% else %}
   <table class="data">
     <thead><tr><th>ID</th><th>名称</th><th class="num">算子数</th><th>问题</th></tr></thead>

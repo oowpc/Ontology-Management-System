@@ -36,9 +36,9 @@ def list_submissions(status: str | None = "pending", page: int = 1,
 def create(data: SubmissionCreate, db: Session = Depends(get_db),
            user: dict = Depends(require_role())):
     sub = create_submission(
-        db, name=data.name, aliases=data.aliases, definition=data.definition,
-        suggested_parent_id=data.suggested_parent_id, reason=data.reason,
-        sample_question=data.sample_question, actor=user["username"],
+        db, name=data.name, domain=data.domain, aliases=data.aliases,
+        definition=data.definition, suggested_parent_id=data.suggested_parent_id,
+        reason=data.reason, sample_question=data.sample_question, actor=user["username"],
     )
     return submission_dict(db, sub)
 

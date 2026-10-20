@@ -16,8 +16,8 @@ from .gold.router import router as gold_router
 from .ke.review import router as ke_review_router
 from .ke.router import router as ke_router
 from .routers import (agent, auth, concepts, graph, health, io, llm,
-                      operators, pages, similarity, submissions, tmp, tokens,
-                      users)
+                      operators, pages, paste, similarity, submissions, tmp,
+                      tokens, users)
 from .security import LoginRequired
 from .seed import seed_if_empty
 
@@ -82,6 +82,7 @@ app.include_router(tokens.router)
 app.include_router(users.router)
 app.include_router(agent.router)
 app.include_router(graph.router)
+app.include_router(paste.router)
 app.include_router(ke_router)
 app.include_router(ke_review_router)
 app.include_router(gold_router)

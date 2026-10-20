@@ -30,7 +30,7 @@ def get_submission_or_404(db: Session, sid: int) -> Submission:
 
 
 def create_submission(db: Session, *, name, aliases, definition, suggested_parent_id,
-                      reason, sample_question, actor) -> Submission:
+                      reason, sample_question, actor, domain: str = "通用") -> Submission:
     """标注员提交新概念：同事务建 pending 概念 + 提交单（含查重快照）+ TMP。"""
     name = (name or "").strip()
     if not name:
@@ -46,7 +46,8 @@ def create_submission(db: Session, *, name, aliases, definition, suggested_paren
         raise HTTPException(409, f"概念名「{name}」已被占用")
     similar = find_similar(db, name=name, aliases=aliases, parent_id=suggested_parent_id)
     concept = Concept(
-        name=name, aliases=list(aliases or []), definition=definition or "",
+        name=name, domain=(domain or "通用").strip() or "通用",
+        aliases=list(aliases or []), definition=definition or "",
         parent_id=suggested_parent_id, status="pending", created_by=actor,
     )
     db.add(concept)
@@ -183,6 +184,7 @@ def submission_dict(db: Session, sub: Submission) -> dict:
         "id": sub.id,
         "concept_id": sub.concept_id,
         "name": c.name if c else None,
+        "domain": (c.domain or "通用") if c else None,
         "aliases": (c.aliases or []) if c else [],
         "definition": (c.definition or "") if c else "",
         "concept_status": c.status if c else None,

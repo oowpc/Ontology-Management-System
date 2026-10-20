@@ -16,9 +16,10 @@ from sqlalchemy.orm import Session
 from .audit import log_change, snapshot
 from .models import Concept, Operator
 
-CONCEPT_FIELDS = ["name", "aliases", "definition", "parent", "status", "merged_into"]
+CONCEPT_FIELDS = ["name", "domain", "aliases", "definition", "parent", "status", "merged_into"]
 OPERATOR_FIELDS = ["name", "subject", "owner", "param_types", "return_type", "status"]
 VALID_STATUS = {"draft", "pending", "approved", "disabled"}
+DEFAULT_DOMAIN = "通用"
 
 
 def parse_field_map(raw: str | None) -> dict:
@@ -42,6 +43,7 @@ def export_payload(db: Session, field_map: dict | None = None) -> dict:
     names = {c.id: c.name for c in concepts}
     out_c = [{
         k("name"): c.name,
+        k("domain"): c.domain or DEFAULT_DOMAIN,
         k("aliases"): c.aliases or [],
         k("definition"): c.definition or "",
         k("parent"): names.get(c.parent_id),
@@ -74,7 +76,7 @@ def export_csv(db: Session, kind: str, field_map: dict | None = None) -> str:
     if kind == "concepts":
         fields = CONCEPT_FIELDS
         k = lambda key: (field_map or {}).get(key, key)  # noqa: E731
-        rows = [[r[k("name")], "|".join(r[k("aliases")]), r[k("definition")],
+        rows = [[r[k("name")], r[k("domain")] or DEFAULT_DOMAIN, "|".join(r[k("aliases")]), r[k("definition")],
                  r[k("parent")] or "", r[k("status")], r[k("merged_into")] or ""]
                 for r in payload["concepts"]]
         return _to_csv([k(f) for f in fields], rows)
@@ -134,18 +136,22 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
         status = str(row.get("status") or "approved").strip()
         if status not in VALID_STATUS:
             status = "approved"
+        domain = str(row.get("domain") or DEFAULT_DOMAIN).strip() or DEFAULT_DOMAIN
         aliases = _split_list(row.get("aliases"))
         definition = str(row.get("definition") or "")
         c = existing.get(name)
         if c is None:
-            c = Concept(name=name, aliases=aliases, definition=definition, status=status,
-                        created_by=actor, reviewed_by=actor)
+            c = Concept(name=name, domain=domain, aliases=aliases, definition=definition,
+                        status=status, created_by=actor, reviewed_by=actor)
             db.add(c)
             db.flush()
             log_change(db, "concept", c.id, "create", None, snapshot(c), actor)
             existing[name] = c
             stats["concepts_created"] += 1
         else:
+            if c.domain != domain:
+                touch(c)
+                c.domain = domain
             if (c.aliases or []) != aliases:
                 touch(c)
                 c.aliases = aliases

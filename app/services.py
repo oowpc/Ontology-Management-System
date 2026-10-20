@@ -30,7 +30,7 @@ def get_operator_or_404(db: Session, oid: int) -> Operator:
     return o
 
 
-def query_concepts(db: Session, *, status=None, parent_id=None, q=None, page=1, size=50):
+def query_concepts(db: Session, *, status=None, parent_id=None, q=None, domain=None, page=1, size=50):
     stmt = select(Concept)
     if status:
         if status not in VALID_STATUS:
@@ -38,6 +38,8 @@ def query_concepts(db: Session, *, status=None, parent_id=None, q=None, page=1, 
         stmt = stmt.where(Concept.status == status)
     if parent_id is not None:
         stmt = stmt.where(Concept.parent_id == parent_id)
+    if domain:
+        stmt = stmt.where(Concept.domain == domain)
     if q and q.strip():
         like = f"%{q.strip()}%"
         stmt = stmt.where(
@@ -71,6 +73,7 @@ def concept_dict(c: Concept, *, parents=None, stats=None) -> dict:
     return {
         "id": c.id,
         "name": c.name,
+        "domain": c.domain or "通用",
         "aliases": c.aliases or [],
         "definition": c.definition or "",
         "parent_id": c.parent_id,
@@ -119,7 +122,7 @@ def would_create_cycle(db: Session, concept_id: int, new_parent_id: int | None) 
 
 
 def create_concept(db: Session, *, name, aliases, definition, parent_id, status, actor,
-                   check_similar: bool = False) -> Concept:
+                   check_similar: bool = False, domain: str = "通用") -> Concept:
     name = (name or "").strip()
     if not name:
         raise HTTPException(400, "名称不能为空")
@@ -135,7 +138,8 @@ def create_concept(db: Session, *, name, aliases, definition, parent_id, status,
         if hits:
             raise SimilarityBlock(name, hits)
     c = Concept(
-        name=name, aliases=list(aliases or []), definition=definition or "",
+        name=name, domain=(domain or "通用").strip() or "通用",
+        aliases=list(aliases or []), definition=definition or "",
         parent_id=parent_id, status=status, created_by=actor, reviewed_by=actor,
     )
     db.add(c)
@@ -160,6 +164,11 @@ def update_concept(db: Session, c: Concept, changes: dict, actor: str) -> Concep
         c.aliases = list(changes["aliases"])
     if "definition" in changes and changes["definition"] is not None:
         c.definition = changes["definition"]
+    if "domain" in changes and changes["domain"] is not None:
+        d = changes["domain"].strip()
+        if not d:
+            raise HTTPException(400, "领域不能为空")
+        c.domain = d
     if "parent_id" in changes:
         pid = changes["parent_id"]
         if pid is not None:

@@ -14,10 +14,13 @@ from ..templating import templates
 router = APIRouter(tags=["graph"])
 
 
-def _graph_data(db: Session, root_id: int | None, status: str | None = None):
+def _graph_data(db: Session, root_id: int | None, status: str | None = None,
+                domain: str | None = None):
     stmt = select(Concept).order_by(Concept.id)
     if status:
         stmt = stmt.where(Concept.status == status)
+    if domain:
+        stmt = stmt.where(Concept.domain == domain)
     concepts = db.scalars(stmt).all()
     forest = build_forest(concepts)
     return layout(forest, root_id=root_id), forest
@@ -25,8 +28,9 @@ def _graph_data(db: Session, root_id: int | None, status: str | None = None):
 
 @router.get("/api/graph")
 def api_graph(root_id: int | None = None, status: str | None = None,
+              domain: str | None = None,
               db: Session = Depends(get_db), user: dict = Depends(require_role())):
-    data, forest = _graph_data(db, root_id, status)
+    data, forest = _graph_data(db, root_id, status, domain)
     if root_id is not None and root_id not in forest:
         return {"nodes": [], "edges": [], "error": f"根概念 #{root_id} 不存在"}
     # 结构 + 布局一起返回（结构可直接用于其他可视化）
@@ -40,11 +44,14 @@ def api_graph(root_id: int | None = None, status: str | None = None,
 
 @router.get("/graph")
 def graph_page(request: Request, root_id: int | None = None, status: str | None = None,
+               domain: str | None = None,
                db: Session = Depends(get_db), user: dict = Depends(current_user)):
-    data, forest = _graph_data(db, root_id, status)
+    data, forest = _graph_data(db, root_id, status, domain)
     all_concepts = db.scalars(select(Concept).order_by(Concept.id)).all()
     roots = [c for c in all_concepts if c.parent_id is None]
+    domains = sorted({(c.domain or "通用") for c in all_concepts})
     return templates.TemplateResponse(request=request, name="graph.html", context={
         "request": request, "user": user, "g": data,
         "root_id": root_id, "status": status, "roots": roots,
+        "domain": domain, "domains": domains,
     })

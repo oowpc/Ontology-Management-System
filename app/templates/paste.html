@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}粘贴识别 · 本体管理系统{% endblock %}
+{% block content %}
+<h1>粘贴文本 · 自动识别本体与 KE</h1>
+<div class="panel">
+  <form method="post" action="/paste/parse">
+    <p style="margin:0 0 8px">
+      <textarea name="text" rows="10" style="width:100%" placeholder="粘贴 KEOL 文本，支持：&#10;concept 名 / concept 名 <: 父类&#10;op 名称(参数类型) : 返回类型&#10;const __实例 : 类型&#10;算子(实参) = 值">{{ text }}</textarea>
+    </p>
+    <p style="margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      目标领域
+      <input name="domain" value="{{ domain }}" list="domain-list">
+      <datalist id="domain-list">{% for d in domains %}<option value="{{ d }}">{% endfor %}</datalist>
+      KE 事实入成品库的篇编号（可选）
+      <input name="article_code" value="{{ article_code }}" placeholder="如 篇1" size="8">
+      <button class="btn primary" type="submit">识别</button>
+    </p>
+  </form>
+</div>
+
+{% if result %}
+<div class="panel">
+  <h2 style="margin-top:0">导入结果</h2>
+  <table class="kv">
+    <tr><th>概念</th><td>新建 {{ result.concepts_created }} · 跳过（已存在）{{ result.concepts_skipped }}</td></tr>
+    <tr><th>算子</th><td>新建 {{ result.operators_created }} · 跳过 {{ result.operators_skipped }}</td></tr>
+    <tr><th>KE 事实</th><td>入成品库 {{ result.facts_created }} · 跳过 {{ result.facts_skipped }}</td></tr>
+  </table>
+  {% if result.problems %}
+  <div class="flash err">{% for p in result.problems %}{{ p }}{% if not loop.last %}；{% endif %}{% endfor %}</div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if report %}
+<div class="panel">
+  <h2 style="margin-top:0">识别报告（目标领域：{{ report.domain }}）</h2>
+  <p class="muted">
+    概念：新 {{ report.counts.concepts_new }} · 已存在 {{ report.counts.concepts_exists }} · 相似 {{ report.counts.concepts_similar }}；
+    算子：新 {{ report.counts.operators_new }} · 有问题 {{ report.counts.operators_invalid }}；
+    实例 {{ report.counts.consts }}（仅报告，不入库）；KE 事实 {{ report.counts.facts }}（{{ report.counts.facts_issues }} 条有问题）；
+    无法识别 {{ report.counts.unparsed }} 行
+  </p>
+</div>
+
+{% if report.concepts %}
+<h2>概念（{{ report.concepts|length }}）</h2>
+<table class="data">
+  <thead><tr><th>行</th><th>名称</th><th>父类</th><th>判定</th><th>备注</th></tr></thead>
+  <tbody>
+  {% for c in report.concepts %}
+  <tr>
+    <td>{{ c.line }}</td><td><strong>{{ c.name }}</strong></td><td>{{ c.parent or '—' }}</td>
+    <td>
+      {% if c.status == 'new' %}<span class="badge approved">新</span>
+      {% elif c.status == 'exists' %}<span class="badge disabled">已存在（{{ STATUS_LABELS.get(c.existing_status) }}）</span>
+      {% else %}<span class="badge pending">相似：{% for s in c.similar %}{{ s.name }} {{ '%.0f%%'|format(s.score*100) }}{% if not loop.last %}、{% endif %}{% endfor %}</span>{% endif %}
+    </td>
+    <td class="muted">{{ (c.warnings or [])|join('；') }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if report.operators %}
+<h2>算子（{{ report.operators|length }}）</h2>
+<table class="data">
+  <thead><tr><th>行</th><th>签名</th><th>判定</th><th>问题</th></tr></thead>
+  <tbody>
+  {% for o in report.operators %}
+  <tr>
+    <td>{{ o.line }}</td>
+    <td><code>{{ o.name }}({{ o.param_types|join(', ') }}) : {{ o.return_type }}</code></td>
+    <td>
+      {% if o.status == 'new' %}<span class="badge approved">新</span>
+      {% elif o.status == 'exists' %}<span class="badge disabled">已存在</span>
+      {% else %}<span class="badge disabled">有问题</span>{% endif %}
+    </td>
+    <td class="muted">{{ o.issues|join('；') }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if report.facts %}
+<h2>KE 事实（{{ report.facts|length }}）</h2>
+<table class="data">
+  <thead><tr><th>行</th><th>内容</th><th>引用</th><th>问题</th></tr></thead>
+  <tbody>
+  {% for f in report.facts %}
+  <tr class="{{ 'row-warn' if f.issues }}">
+    <td>{{ f.line }}</td>
+    <td><code>{{ f.raw }}</code></td>
+    <td class="muted">{{ f.const_refs|join('、') or '—' }}</td>
+    <td class="muted">{{ f.issues|join('；') }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if report.errors %}
+<h2>无法识别（{{ report.errors|length }}）</h2>
+<table class="data">
+  <thead><tr><th>行</th><th>内容</th></tr></thead>
+  <tbody>
+  {% for e in report.errors %}<tr><td>{{ e.line }}</td><td class="muted"><code>{{ e.text }}</code></td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if user.role in ['reviewer','admin'] %}
+<div class="panel">
+  <form method="post" action="/paste/import" class="filters" style="align-items:center">
+    <input type="hidden" name="text" value="{{ text }}">
+    <input type="hidden" name="domain" value="{{ report.domain }}">
+    <input type="hidden" name="article_code" value="{{ article_code }}">
+    <label><input type="checkbox" name="import_concepts" checked> 导入概念（{{ report.counts.concepts_new }} 新）</label>
+    <label><input type="checkbox" name="import_operators" checked> 导入算子（{{ report.counts.operators_new }} 新）</label>
+    <label><input type="checkbox" name="import_facts" {{ 'checked' if article_code else 'disabled' }}> KE 事实入成品库（篇：{{ article_code or '未指定，不入' }}）</label>
+    <button class="btn primary" type="submit">确认导入</button>
+  </form>
+</div>
+{% else %}
+<p class="muted">导入需审核员 / 管理员权限；你可以先把识别报告发给审核员。</p>
+{% endif %}
+{% endif %}
+{% endblock %}

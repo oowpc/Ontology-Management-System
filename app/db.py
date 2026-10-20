@@ -43,6 +43,19 @@ def init_db():
     from . import models  # noqa: F401  确保表已注册
 
     Base.metadata.create_all(engine)
+    _migrate()
+
+
+def _migrate():
+    """轻量迁移：给已有库补后加的列（create_all 不会改已有表）。"""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "concepts" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("concepts")}
+        if "domain" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE concepts ADD COLUMN domain VARCHAR(64) DEFAULT '通用' NOT NULL"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_concepts_domain ON concepts (domain)"))
     _migrate_add_columns()
 
 
