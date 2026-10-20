@@ -15,8 +15,9 @@ from .gold.items import router as gold_items_router
 from .gold.router import router as gold_router
 from .ke.review import router as ke_review_router
 from .ke.router import router as ke_router
-from .routers import (auth, concepts, health, io, llm, operators, pages,
-                      similarity, submissions, tmp, tokens, users)
+from .routers import (agent, auth, concepts, graph, health, io, llm,
+                      operators, pages, similarity, submissions, tmp, tokens,
+                      users)
 from .security import LoginRequired
 from .seed import seed_if_empty
 
@@ -49,7 +50,10 @@ async def lifespan(app: FastAPI):
         _scheduler = None  # 定时任务不可用不阻断启动
     yield
     if _scheduler:
-        _scheduler.shutdown(wait=False)
+        try:
+            _scheduler.shutdown(wait=False)
+        except Exception:
+            pass  # 嵌套 lifespan（测试起多个 client）时调度器可能已被停
 
 
 app = FastAPI(title="本体管理系统", version="0.1.0", lifespan=lifespan)
@@ -76,6 +80,8 @@ app.include_router(health.router)
 app.include_router(io.router)
 app.include_router(tokens.router)
 app.include_router(users.router)
+app.include_router(agent.router)
+app.include_router(graph.router)
 app.include_router(ke_router)
 app.include_router(ke_review_router)
 app.include_router(gold_router)

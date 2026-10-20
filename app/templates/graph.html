@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}概念图 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>概念继承图（{{ g.total }} 个节点）</h1>
+  <div class="graph-toolbar">
+    <button class="btn" onclick="graphZoom(0.8)">放大</button>
+    <button class="btn" onclick="graphZoom(1.25)">缩小</button>
+    <button class="btn" onclick="graphReset()">复位</button>
+  </div>
+</div>
+<form class="filters" method="get" action="/graph">
+  <select name="root_id">
+    <option value="">整片森林</option>
+    {% for r in roots %}
+    <option value="{{ r.id }}" {{ 'selected' if root_id == r.id }}>{{ r.name }}（子树）</option>
+    {% endfor %}
+  </select>
+  <select name="status">
+    <option value="">全部状态</option>
+    {% for s, label in STATUS_LABELS.items() %}
+    <option value="{{ s }}" {{ 'selected' if status == s }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn" type="submit">过滤</button>
+</form>
+{% if g.truncated %}
+<div class="flash err">节点超过 500 个（{{ g.total }}），建议先按根/状态过滤查看子树。</div>
+{% endif %}
+{% if not g.nodes %}
+<div class="panel empty">没有可显示的概念</div>
+{% else %}
+<div class="panel graph-wrap" id="graph-wrap">
+  <svg id="concept-graph" width="100%" height="620" viewBox="0 0 {{ g.width }} {{ g.height }}"
+       data-width="{{ g.width }}" data-height="{{ g.height}}" role="img" aria-label="概念继承图">
+    {% for e in g.edges %}
+    <path class="edge" d="{{ e.d }}"/>
+    {% endfor %}
+    {% for n in g.nodes %}
+    <g class="node st-{{ n.status }}" onclick="location.href='/concepts/{{ n.id }}'" style="cursor:pointer">
+      <title>{{ n.name }}{% if n.aliases %}（别名：{{ n.aliases|join('、') }}）{% endif %} — {{ STATUS_LABELS.get(n.status, n.status) }}
+{{ n.definition }}</title>
+      <rect x="{{ n.x }}" y="{{ n.y }}" width="{{ n.w }}" height="26" rx="7"/>
+      <text x="{{ n.x + 8 }}" y="{{ n.y + 17 }}">{{ n.name }}{% if n.child_count %}（{{ n.child_count }}）{% endif %}</text>
+    </g>
+    {% endfor %}
+  </svg>
+</div>
+<p class="muted">点击节点进入概念详情；滚轮缩放、拖拽平移。颜色：<span class="badge approved">已入库</span> <span class="badge pending">待审</span> <span class="badge draft">草稿</span> <span class="badge disabled">停用</span></p>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var svg = document.getElementById("concept-graph");
+  if (!svg) return;
+  var W = parseFloat(svg.dataset.width), H = parseFloat(svg.dataset.height);
+  var vb = { x: 0, y: 0, w: W, h: H }, orig = { x: 0, y: 0, w: W, h: H };
+  function apply() { svg.setAttribute("viewBox", vb.x + " " + vb.y + " " + vb.w + " " + vb.h); }
+  window.graphZoom = function (f) {
+    var cx = vb.x + vb.w / 2, cy = vb.y + vb.h / 2;
+    vb.w = Math.min(W * 3, Math.max(W / 20, vb.w * f));
+    vb.h = Math.min(H * 3, Math.max(H / 20, vb.h * f));
+    vb.x = cx - vb.w / 2; vb.y = cy - vb.h / 2;
+    apply();
+  };
+  window.graphReset = function () { vb = { x: orig.x, y: orig.y, w: orig.w, h: orig.h }; apply(); };
+  svg.addEventListener("wheel", function (e) { e.preventDefault(); graphZoom(e.deltaY > 0 ? 1.2 : 0.83); }, { passive: false });
+  var drag = null;
+  svg.addEventListener("pointerdown", function (e) {
+    drag = { x: e.clientX, y: e.clientY, vx: vb.x, vy: vb.y };
+    svg.setPointerCapture(e.pointerId);
+  });
+  svg.addEventListener("pointermove", function (e) {
+    if (!drag) return;
+    var rect = svg.getBoundingClientRect();
+    var sx = vb.w / rect.width, sy = vb.h / rect.height;
+    vb.x = drag.vx - (e.clientX - drag.x) * sx;
+    vb.y = drag.vy - (e.clientY - drag.y) * sy;
+    apply();
+  });
+  svg.addEventListener("pointerup", function () { drag = null; });
+})();
+</script>
+{% endblock %}

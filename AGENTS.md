@@ -2,6 +2,16 @@
 
 本系统对 agent **完全开放**：页面上能做的，API 都能做。认证一次，全流程可编程操控。
 
+> 首次接入先做两件事：① 按 §1 拿 Token；② `GET /api/agent/manifest` 拿活清单（全部路由 + 当前工况词表 + 工作流配方，运行时生成，永不缺漏）。
+
+## 0. 活清单（推荐入口）
+
+```bash
+curl -H "Authorization: Bearer ke_..." http://127.0.0.1:8000/api/agent/manifest
+```
+
+返回：按域分组的全部 API 路由、当前工况词表（GOLD 阶段/泳道时段/组别/目标、KE 状态词表与列名映射、查重阈值、LLM 是否可用）、常用工作流、幂等键与错误约定。另有 MCP server（`scripts/mcp_server.py`，28 个工具，见 §5）。
+
 ## 1. 认证
 
 ```bash
@@ -28,15 +38,31 @@ curl -b ck.txt -X POST http://127.0.0.1:8000/api/tokens -H "Content-Type: applic
 | KE 复核 | `GET /api/ke/review/queue` · `POST /api/ke/review` · `POST /api/ke/review/batch` · `GET /api/ke/review/history` | 待复核队列 / 逐条打标（写回任务并留痕）/ 批量 / 留痕查询（仅 reviewer/admin） |
 | 用户与组 | `GET/POST /api/admin/users` · `PATCH /api/admin/users/{uid}` · `POST /api/admin/users/{uid}/password` | 建号 / 改角色与组 / 重置密码（仅 admin） |
 | 本体 | `/api/concepts` · `/api/operators` · `/api/submissions`（含 approve/reject/merge/batch）· `/api/tmp` · `/api/health` · `/api/io` | 查重 / 审核 / 回填 / 体检 / 导入导出 |
-| 变更 | `/api/audit`（历史、回滚） | 全部写操作留痕可回滚 |
+| 变更 | `/api/history`（历史）· `/api/concepts/{id}/rollback/{audit_id}`（回滚，admin） | 全部写操作留痕可回滚 |
 | Token | `POST/GET/DELETE /api/tokens` | 签发（代签需 admin）/ 列表 / 吊销 |
 
 ## 3. 约定
 
-- **页面/API 对等已审计**：全部 32 个页面写操作都有对应 API（2026-10 审计：140 条路由 / 59 条 API）
-- **错误**：统一 `{"detail": "…"}` + 恰当 HTTP 码（400 参数 / 401 未认证 / 403 越权 / 404 不存在 / 409 幂等冲突）
+- **页面/API 对等已审计**：全部页面写操作都有对应 API
+- **错误**：统一 `{"detail": "…"}` + 恰当 HTTP 码（400 参数 / 401 未认证 / 403 越权 / 404 不存在 / 409 幂等冲突 / 422 校验）
 - **幂等键**：KE 上传 =（组， 题目ID）；成品 =（篇编号， KE编号）；概念/算子 = 名称自然键；复核结论 =（组， 题目ID）取最新一条；重复提交返回 409 而非重复创建
 - **复核权威**：系统复核结论为准；组内 CSV 自报在下次上传时被自动重放覆盖
 - **CSV 列名**：默认中文十列 + 可选「篇编号」「KE内容」；别家表头用环境变量 `KE_COLUMN_MAP='{"id":"题目编号",...}'` 单项覆盖即可，无需改代码
-- **词表可配**：`KE_STATUS_MAP`（状态写法映射，如 `{"done":["done","完成"]}`）、`GOLD_STAGES`（篇级阶段流水线，建库前设定）、`GOLD_SLOTS`（泳道时段）
-- **定稿保护**：reviewed / gold 状态的成品条目不会被上传或标注员改动覆盖；调整需 reviewer/admin，全部留痕
+- **TMP 回填**：仅 resolved / merged 的 TMP 会被替换为正式概念名；其余列入未决清单（`GET /api/tmp-mappings` 可查）
+
+## 4. 通用性（别家工况）
+
+- **账号与组**：组名取自账号体系（admin 在 `/admin/users` 或 `/api/admin/users` 建号分组），不写死
+- **词表全部可配**：GOLD 阶段流水线（`GOLD_STAGES`）、泳道时段（`GOLD_SLOTS`）、KE 状态写法（`KE_STATUS_MAP`）、KE 表头（`KE_COLUMN_MAP`）、目标口径（`GOLD_BASELINE` / `GOLD_TARGET_TOTAL` / `GOLD_TARGET_NEW`）、查重阈值、体检阈值与 cron——均为环境变量，见 `.env.example`
+- **种子数据可关**：`SEED_DEMO=0`（演示概念/算子/GOLD 预置）、`SEED_KE=0`（KE 演示数据）；别的团队干净起步 → 建号 → `/api/import/json` 导自己本体
+- **数据库**：默认 SQLite（`data/ontology.db`）；切 PostgreSQL 只换 `DB_URL`
+
+## 5. MCP server（agent 直连）
+
+```jsonc
+// .mcp.json 接入示例
+{"mcpServers": {"ontology": {"command": "python", "args": ["scripts/mcp_server.py"],
+  "env": {"ONTOLOGY_BASE_URL": "http://127.0.0.1:8000", "ONTOLOGY_TOKEN": "ke_..."}}}}
+```
+
+28 个工具覆盖：whoami / get_manifest / 概念与算子 CRUD / 查重 / 提交审核 / TMP 回填 / GOLDKE 篇级与泳道 / issue 话题评论 / KE 上传与组别状态 / 体检 / 导出与变更日志。工具即 §2 端点的薄封装，错误同样返回 `{error, detail}`。

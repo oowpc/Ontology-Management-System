@@ -112,3 +112,17 @@ td.cell-empty{background:#fafafa}
 .cell-edit input,.cell-edit select{font-size:12px;padding:3px 6px}
 .ke-done-form{display:flex;gap:4px;align-items:center}
 .ke-done-form input{width:56px;padding:2px 6px}
+
+/* M13 概念图 */
+.graph-wrap{overflow:hidden;padding:0;background:#fff}
+#concept-graph{display:block;touch-action:none}
+#concept-graph .edge{fill:none;stroke:#cbd5e1;stroke-width:1.5}
+#concept-graph .node rect{fill:#f8fafc;stroke:#94a3b8;stroke-width:1}
+#concept-graph .node:hover rect{fill:#eff6ff;stroke:var(--brand)}
+#concept-graph .node text{font-size:13px;fill:var(--text);user-select:none}
+#concept-graph .node.st-approved rect{stroke:#16a34a}
+#concept-graph .node.st-pending rect{stroke:#d97706;stroke-dasharray:4 2}
+#concept-graph .node.st-draft rect{stroke:#6b7280;stroke-dasharray:2 2}
+#concept-graph .node.st-disabled rect{stroke:#dc2626;opacity:.55}
+#concept-graph .node.st-disabled text{opacity:.55}
+.graph-toolbar{display:flex;gap:8px}

@@ -31,7 +31,22 @@ python -m uvicorn app.main:app --reload
 | M9 | GOLD 成品库：CSV 上传自动入草稿（篇编号+KE内容列）· 定稿锁定与版本 · 全留痕可回滚 · CSV/JSON 导出 · API 全覆盖 | ✅ 本次交付 |
 | M10 | KE 逐条复核：待复核队列 · 逐条/批量打标 · 写回任务（一致→完成 / 不一致→退回+标签）· 系统结论上传重放 · 留痕可查 | ✅ 本次交付 |
 | M11 | 通用化：CSV 列名映射（KE_COLUMN_MAP）· 状态词表映射（KE_STATUS_MAP）· GOLD 阶段/泳道词表配置 · 用户与组管理页（/admin/users） | ✅ 本次交付 |
-| 接入 | Agent 全开放：Bearer Token（`/api/tokens` 自助签发）· 页面动作均有对应 API（32/32 审计通过）· 幂等键统一 · `AGENTS.md` 手册 | ✅ 本次交付 |
+| 接入 | Agent 全开放：Bearer Token（`/api/tokens` 自助签发）· 页面动作均有对应 API（32/32 审计通过）· 幂等键统一 · `AGENTS.md` 手册 | ✅ |
+| M12 | Agent 可发现性：`GET /api/agent/manifest`（活路由表+工况词表+工作流配方，永不缺漏）· MCP server（`scripts/mcp_server.py`，28 个工具） | ✅ 本次交付 |
+| M13 | 概念继承图：服务端 tidy-tree 布局 + 原生 SVG（零依赖、内网可用）· 缩放/拖拽/点击进详情 · 按根/状态过滤 · `/api/graph` 结构+布局数据 | ✅ 本次交付 |
+
+## M12 · Agent 可操控性补全
+
+- **活清单**：`GET /api/agent/manifest`（Bearer 认证）——运行时内省全部 API 路由（新版 Starlette 懒加载路由已展开）、当前工况词表（GOLD 阶段/泳道/组别/目标、KE 状态与列名映射、查重阈值、LLM 是否可用）、4 条常用工作流配方、幂等键与错误约定。agent 首次接入调它即可自举，无需人工文档
+- **MCP server**：`scripts/mcp_server.py`（官方 `mcp` SDK，stdio）。28 个工具覆盖：概念/算子/查重/提交审核/TMP 回填/GOLDKE 篇级与泳道/issue/KE 上传/体检/迁移/变更日志
+
+```jsonc
+// .mcp.json 接入示例
+{"mcpServers": {"ontology": {"command": "python", "args": ["scripts/mcp_server.py"],
+  "env": {"ONTOLOGY_BASE_URL": "http://127.0.0.1:8000", "ONTOLOGY_TOKEN": "ke_..."}}}}
+```
+
+- 验证：`tests/test_agent.py`——Token 签发/吊销、manifest 结构、MCP 工具注册数、agent 经 MCP 完成「提交→审核→回填」全流程
 
 ## M8 · GOLDKE 管理（执行方案口径）
 
