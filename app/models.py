@@ -299,6 +299,7 @@ class GoldItem(Base):
     concepts: Mapped[list] = mapped_column(JSON, default=list)          # 引用概念/TMP 列表
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft→reviewed→gold
     version: Mapped[int] = mapped_column(Integer, default=1)
+    validation: Mapped[Optional[dict]] = mapped_column(JSON)  # M20：KE 校验缓存（engine/ok/errors/warnings/validated_at）
     created_by: Mapped[str] = mapped_column(String(64))
     updated_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

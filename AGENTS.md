@@ -32,8 +32,9 @@ curl -b ck.txt -X POST http://127.0.0.1:8000/api/tokens -H "Content-Type: applic
 | --- | --- | --- |
 | KE 进度 | `POST /api/ke/upload` | multipart CSV **全量上传**（幂等：按 组+题目ID 覆盖；带「篇编号+KE内容」列会同步入成品库草稿） |
 | | `GET /api/ke/groups` | 各组今日上传状态 / 最近批次 |
-| GOLD 成品 | `GET/POST /api/gold/items` · `GET/PATCH/DELETE /api/gold/items/{id}` · `POST /api/gold/items/{id}/status` | CRUD + 状态流转（draft→reviewed→gold） |
-| | `GET /api/gold/items/export.csv` / `.json` | 导出（过滤参数同列表：article_code/status/group_name/q） |
+| GOLD 成品 | `GET/POST /api/gold/items` · `GET/PATCH/DELETE /api/gold/items/{id}` · `POST /api/gold/items/{id}/status` | CRUD + 状态流转（draft→reviewed→gold；→gold 有 KE 结构强校验，422 阻断） |
+| | `GET /api/gold/items/export.csv` / `.json` / `.manifest.json` | 导出（过滤参数同列表：article_code/status/group_name/q）；manifest = 逐条 sha256 + 整体 digest（数据版本守卫） |
+| | `POST /api/gold/items/{id}/validate` · `POST /api/gold/items/validate-all` | M20 KE 校验：单条问题明细 / 批量重算（reviewer/admin） |
 | GOLD 管理 | `/api/gold/articles` · `/api/gold/schedule` · `/api/gold/issues` · `/api/gold/samples` · `/api/gold/stats` | 篇任务 / 泳道 / 分歧 / 抽查 / 汇总 |
 | KE 复核 | `GET /api/ke/review/queue` · `POST /api/ke/review` · `POST /api/ke/review/batch` · `GET /api/ke/review/history` | 待复核队列 / 逐条打标（写回任务并留痕）/ 批量 / 留痕查询（仅 reviewer/admin） |
 | 用户与组 | `GET/POST /api/admin/users` · `PATCH /api/admin/users/{uid}` · `POST /api/admin/users/{uid}/password` | 建号 / 改角色与组 / 重置密码（仅 admin） |

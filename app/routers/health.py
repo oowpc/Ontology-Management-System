@@ -69,13 +69,17 @@ _CSV_KINDS = {
     "operators": (["id", "名称", "算子数", "问题"],
                   "operator_count",
                   lambda d: [[x["id"], x["name"], x["operator_count"], x["issue"]] for x in d["operator_count"]]),
+    "gold_validation": (["篇编号", "KE编号", "状态", "错误数", "警告数", "首个问题"],
+                        "gold_validation",
+                        lambda d: [[x["article_code"], x["ke_id"], x["status"], x["error_count"],
+                                    x["warning_count"], x["first_issue"]] for x in d["gold_validation"]]),
 }
 
 
 @router.get("/health/report.csv")
 def report_csv(kind: str, db: Session = Depends(get_db), user: dict = Depends(require_role())):
     if kind not in _CSV_KINDS:
-        raise HTTPException(400, "kind 取值：unused / orphan / similar / operators")
+        raise HTTPException(400, f"kind 取值：{' / '.join(_CSV_KINDS)}")
     r = _latest_report(db)
     if not r:
         raise HTTPException(404, "还没有体检报告，请先运行体检")

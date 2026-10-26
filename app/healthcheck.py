@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .models import Concept, HealthReport, Operator, UsageStat
+from .models import Concept, GoldItem, HealthReport, Operator, UsageStat
 from .similarity import score_against
 
 KIND_LABELS = {
@@ -15,6 +15,7 @@ KIND_LABELS = {
     "similar": "近义候选对",
     "cross_domain": "跨领域近义对",
     "operators": "算子过多/过少",
+    "gold_validation": "成品 KE 校验",
 }
 
 
@@ -85,6 +86,30 @@ def check_operator_counts(db: Session) -> list[dict]:
     return out
 
 
+def check_gold_validation(db: Session) -> list[dict]:
+    """M20：成品库 KE 校验问题清单（错误在前，按错误数降序）。
+
+    缓存为当前引擎版本的直接用缓存，否则重算并刷新缓存（体检顺带当批量校验跑）。
+    """
+    from .ke import ke_validate
+
+    out = []
+    for it in db.scalars(select(GoldItem).order_by(GoldItem.id)).all():
+        cached = it.validation or {}
+        if cached.get("engine") != ke_validate.ENGINE_VERSION:
+            cached = ke_validate.validate_item(db, it)
+        if cached.get("ok") and not cached.get("warning_count"):
+            continue
+        first = (cached.get("errors") or cached.get("warnings") or [{}])[0]
+        out.append({"id": it.id, "article_code": it.article_code, "ke_id": it.ke_id,
+                    "status": it.status, "error_count": cached.get("error_count", 0),
+                    "warning_count": cached.get("warning_count", 0),
+                    "first_issue": first.get("message", "")})
+    db.commit()  # 刷新过的校验缓存随体检落库
+    out.sort(key=lambda x: (-x["error_count"], -x["warning_count"]))
+    return out
+
+
 def run_health(db: Session, trigger_type: str) -> HealthReport:
     similar = check_similar_pairs(db)
     details = {
@@ -93,6 +118,7 @@ def run_health(db: Session, trigger_type: str) -> HealthReport:
         "similar_pairs": similar,
         "cross_domain": [p for p in similar if p["cross_domain"]],
         "operator_count": check_operator_counts(db),
+        "gold_validation": check_gold_validation(db),
     }
     report = HealthReport(
         trigger_type=trigger_type,

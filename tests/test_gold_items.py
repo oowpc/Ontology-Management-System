@@ -27,14 +27,14 @@ def test_item_lifecycle_and_lock(client):
     login(client, "reviewer")
     r = client.post("/api/gold/items", json={
         "article_code": "篇13", "ke_id": "KE-M01", "group_name": "一组",
-        "ke_text": "初始内容", "concepts": ["利率"]})
+        "ke_text": "output={生命周期专用算子(a)|var a: String}", "concepts": ["利率"]})
     assert r.status_code == 201
     iid = r.json()["id"]
     # 幂等键冲突
     assert client.post("/api/gold/items", json={"article_code": "篇13", "ke_id": "KE-M01"}).status_code == 409
 
     login(client, "annotator")   # 一组标注员
-    r = client.patch(f"/api/gold/items/{iid}", json={"ke_text": "标注员修订"})
+    r = client.patch(f"/api/gold/items/{iid}", json={"ke_text": "output={生命周期专用算子(b)|var b: String} -- 标注员修订"})
     assert r.status_code == 200 and r.json()["version"] == 2
     assert client.post(f"/api/gold/items/{iid}/status", json={"status": "gold"}).status_code == 403
 
@@ -46,7 +46,7 @@ def test_item_lifecycle_and_lock(client):
     assert client.patch(f"/api/gold/items/{iid}", json={"ke_text": "x"}).status_code == 403
     r = client.post("/api/ke/upload", files={"file": ("t.csv", CSV_PROTECT, "text/csv")})
     assert r.json()["items"]["protected"] == 1            # 定稿条目不被上传覆盖
-    assert client.get(f"/api/gold/items/{iid}").json()["ke_text"] == "标注员修订"
+    assert client.get(f"/api/gold/items/{iid}").json()["ke_text"].startswith("output={生命周期专用算子(b)")
 
     # 写操作全留痕（create + update + status ≥ 3 条）
     from sqlalchemy import func, select

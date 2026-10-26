@@ -84,6 +84,8 @@ class Settings:
     gold_target_new: int = _int("GOLD_TARGET_NEW", 400)       # 本期新增目标
     gold_stages: list = _json_list("GOLD_STAGES", DEFAULT_GOLD_STAGES)  # 篇级阶段流水线
     gold_slots: list = _json_list("GOLD_SLOTS", DEFAULT_GOLD_SLOTS)     # 泳道时段
+    # M20：定稿（→gold）强校验 KE 内容（结构错误阻断；词表 warning 不阻断）。0=关闭门槛
+    gold_finalize_validate: bool = os.environ.get("GOLD_FINALIZE_VALIDATE", "1") == "1"
 
     # LLM（OpenAI 兼容端点；留空则相关功能优雅降级）
     llm_base_url: str = os.environ.get("LLM_BASE_URL", "")

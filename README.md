@@ -40,6 +40,8 @@ python -m uvicorn app.main:app --reload
 | M17 | Issue 管理闭环：分歧→讨论→结论→回填（7 表：issue+cases+待讨论+观点+评论+关联+影响清单）· IS 编号 · 结案强校验 · 重开留痕 · 概念/算子/题目页「相关 Issue」+ 预填提单 · MCP +5 工具 | ✅ 本次交付 |
 | M18 | KE 看板 UI 迁移：Python 字符串模板（ke/template.py）→ Jinja 模板 `templates/ke/dashboard.html`，结构/样式/口径文字全部可直接编辑；metrics/service 数据逻辑零改动 | ✅ 本次交付 |
 | M19 | 适配现行协作 xlsx：上传支持 .xlsx（QA 问答/Lean 题目标注 两种表头自动识别）· 多人 KE 列合成标注人 · Lean 的 conclusion 进复核结论、wpcke 进成品库 · 别家表头回退 KE_COLUMN_MAP | ✅ 本次交付 |
+| M20 | KE 校验引擎：生产方言解析（全角标点/跨行 output/并列 const/比较约束宽待）· 结构 error（缺 output/形态错/已知签名 arity 不符）+ 词表 warning（未入库引用）· 定稿强校验（→gold 阻断，GOLD_FINALIZE_VALIDATE 可关）· 上传/编辑/入库即时校验 · 体检「成品校验」tab | ✅ 本次交付 |
+| M22 | 导出指纹 manifest：`export.manifest.json` 逐条 sha256 + 链式 digest（对接下游数据版本守卫） | ✅ 本次交付 |
 
 ## M12 · Agent 可操控性补全
 
@@ -53,6 +55,18 @@ python -m uvicorn app.main:app --reload
 ```
 
 - 验证：`tests/test_agent.py`——Token 签发/吊销、manifest 结构、MCP 工具注册数、agent 经 MCP 完成「提交→审核→回填」全流程
+
+## M20 · KE 校验引擎（参考 NL2KE ke_validate 口径，适配生产方言）
+
+- **分级**：error（无法识别的行 / 缺 output 或多 output / 括号失衡 / concept·const·op 声明形态错 / 已知签名 arity 不符）**阻断定稿**；warning（概念/算子/常量未入库、变量未绑定、重复声明）不阻断，是「大本体整理」阶段的待办信号
+- **方言宽待**（来自 244 条真实成品的适配）：全角标点自动归一（字符串内部不动）、output 跨行拼接、并列 `const A,B:类型`、`op 名(主体)=类型` 写法、绑定段比较约束（`>=`/`<:`/裸谓词调用）、行首项目符号
+- **挂接**：入库/编辑/上传即时校验（结果缓存 `gold_items.validation`，引擎版本变更批量重算）→ 列表「校验」列徽标 → 编辑页问题明细 → 体检「成品校验」tab（可下 CSV）→ 定稿门槛（422 + 首条错误提示）
+- **实测**：首批 244 条真实成品 90 条有结构错误（讨论笔记混入成品库、缺 output、签名冲突），全部在之前不可见
+- API：`POST /api/gold/items/{id}/validate`（单条明细）· `POST /api/gold/items/validate-all`（批量，幂等只补陈旧缓存）
+
+## M22 · 导出指纹 manifest（数据版本守卫）
+
+`GET /api/gold/items/export.manifest.json`（过滤参数同列表）：逐条 `sha256(ke_text.strip())` + 按（篇，编号）排序的链式 `digest` + 状态分布。下游实验平台可据此校验手头数据与库中是否同一版本（对应 NL2KE 冻结 manifest 口径）。
 
 ## M19 · 适配现行协作 xlsx（上传即入）
 

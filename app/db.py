@@ -62,6 +62,7 @@ def _migrate():
 _NEW_COLUMNS = {  # (表, 列): DDL 类型 —— 已有库补列在此登记（create_all 不会改已有表）
     ("users", "group_name"): "VARCHAR(64)",
     ("ke_tasks", "article_code"): "VARCHAR(32)",
+    ("gold_items", "validation"): "JSON",
 }
 
 

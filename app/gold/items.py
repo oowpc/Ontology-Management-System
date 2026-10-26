@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
@@ -18,7 +19,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import log_change, snapshot
+from ..config import settings
 from ..db import get_db
+from ..ke import ke_validate
 from ..models import GoldItem
 from ..security import current_user, require_role
 from ..templating import templates
@@ -47,11 +50,17 @@ def can_finalize(user: dict) -> bool:
 # ---------------- 服务层 ----------------
 
 def item_dict(it: GoldItem) -> dict:
+    v = it.validation or None
     return {"id": it.id, "article_code": it.article_code, "ke_id": it.ke_id,
             "group_name": it.group_name, "ke_text": it.ke_text, "concepts": it.concepts,
             "status": it.status, "status_label": ITEM_STATUS_LABELS.get(it.status, it.status),
             "version": it.version, "created_by": it.created_by, "updated_by": it.updated_by,
-            "created_at": it.created_at, "updated_at": it.updated_at}
+            "created_at": it.created_at, "updated_at": it.updated_at,
+            "validation": ({  # M20：校验缓存摘要（全量问题清单走 POST .../validate 获取）
+                "ok": v.get("ok"), "error_count": v.get("error_count", 0),
+                "warning_count": v.get("warning_count", 0),
+                "engine": v.get("engine"), "validated_at": v.get("validated_at"),
+            } if v else None)}
 
 
 def get_item_or_404(db: Session, iid: int) -> GoldItem:
@@ -89,6 +98,7 @@ def create_item(db: Session, *, article_code, ke_id, group_name, ke_text, concep
                   created_by=actor, updated_by=actor)
     db.add(it)
     db.flush()
+    ke_validate.validate_item(db, it)           # M20：入库即校验（结果随条目缓存）
     log_change(db, "gold_item", it.id, "create", None, snapshot(it), actor)
     db.commit()
     db.refresh(it)
@@ -106,6 +116,7 @@ def update_item(db: Session, it: GoldItem, changes: dict, actor: str) -> GoldIte
         it.concepts = list(changes["concepts"])
     it.updated_by = actor
     db.flush()
+    ke_validate.validate_item(db, it)           # M20：内容/引用变更后重校
     log_change(db, "gold_item", it.id, "update", before, snapshot(it), actor)
     db.commit()
     db.refresh(it)
@@ -115,6 +126,16 @@ def update_item(db: Session, it: GoldItem, changes: dict, actor: str) -> GoldIte
 def set_status(db: Session, it: GoldItem, status: str, actor: str) -> GoldItem:
     if status not in ITEM_STATUS:
         raise HTTPException(400, f"状态取值：{' / '.join(ITEM_STATUS)}")
+    if status == "gold" and settings.gold_finalize_validate:
+        # M20 定稿门槛（对应 NL2KE「规则校验失败不得冻结」）：结构错误一律不得定稿，
+        # 词表 warning 不阻断（标注先行、本体后补是正常流程，warning 留缓存可见）
+        res = ke_validate.validate_item(db, it)
+        if not res["ok"]:
+            first = res["errors"][0] if res["errors"] else {}
+            raise HTTPException(
+                422, f"定稿校验未通过：{res['error_count']} 个结构错误"
+                f"（第 {first.get('line', '?')} 行：{first.get('message', '')}）。"
+                "修正 KE 内容后再定稿；明细见 POST /api/gold/items/{id}/validate")
     before = snapshot(it)
     it.status = status
     it.updated_by = actor
@@ -136,7 +157,7 @@ def ingest_rows(db: Session, group: str, rows, uploader: str) -> dict:
 
     幂等且守锁定：已复核 / GOLD 条目绝不被上传覆盖（计入 protected）。
     """
-    stats = {"created": 0, "updated": 0, "protected": 0}
+    stats = {"created": 0, "updated": 0, "protected": 0, "ke_invalid": 0}
     for r in rows:
         art, content = (r.get("article") or "").strip(), (r.get("content") or "").strip()
         if not content or not art:
@@ -144,18 +165,24 @@ def ingest_rows(db: Session, group: str, rows, uploader: str) -> dict:
         it = db.scalar(select(GoldItem).where(GoldItem.article_code == art,
                                               GoldItem.ke_id == r["id"]))
         if it is None:
-            db.add(GoldItem(article_code=art, ke_id=r["id"], group_name=group,
-                            ke_text=content, status="draft",
-                            created_by=uploader, updated_by=uploader))
+            it = GoldItem(article_code=art, ke_id=r["id"], group_name=group,
+                          ke_text=content, status="draft",
+                          created_by=uploader, updated_by=uploader)
+            db.add(it)
+            db.flush()
+            ke_validate.validate_item(db, it)   # M20：上传入库即校验
             stats["created"] += 1
         elif it.status == "draft":
             if it.ke_text != content:
                 it.ke_text = content
                 it.version += 1
                 it.updated_by = uploader
+                ke_validate.validate_item(db, it)
                 stats["updated"] += 1
         else:
             stats["protected"] += 1
+        if it.validation and not it.validation.get("ok"):
+            stats["ke_invalid"] += 1
     db.commit()
     return stats
 
@@ -231,9 +258,57 @@ def api_export_json(article_code: str | None = None, status: str | None = None,
     return {"items": [item_dict(i) for i in items], "total": len(items)}
 
 
+@router.post("/api/gold/items/validate-all")
+def api_validate_all(db: Session = Depends(get_db),
+                     user: dict = Depends(require_role(*EDIT_ROLES))):
+    """M20：批量重校全部成品（引擎版本旧的才重算）。返回 通过/警告/错误 汇总。"""
+    return ke_validate.validate_all(db)
+
+
+@router.get("/api/gold/items/export.manifest.json")
+def api_export_manifest(article_code: str | None = None, status: str | None = None,
+                        group_name: str | None = None, q: str | None = None,
+                        db: Session = Depends(get_db), user: dict = Depends(require_role())):
+    """M22：导出指纹 manifest（对应 NL2KE 冻结 manifest / 数据版本守卫）。
+
+    逐条 sha256（ke_text 去首尾空白后哈希）+ 整体 digest（按 篇+编号 排序后链式哈希），
+    下游（实验平台 prepare 等）可用它校验「手头的 gold 数据与库中是否同一版本」。
+    """
+    import hashlib
+    filters = dict(article_code=article_code, status=status, group_name=group_name, q=q)
+    items = db.scalars(_query(db, **filters)).all()
+    items = sorted(items, key=lambda i: (i.article_code, i.ke_id))
+    fps = []
+    for it in items:
+        fps.append({"article_code": it.article_code, "ke_id": it.ke_id,
+                    "status": it.status, "version": it.version,
+                    "sha256": hashlib.sha256((it.ke_text or "").strip().encode("utf-8")).hexdigest()})
+    chain = hashlib.sha256()
+    for f in fps:
+        chain.update(f"{f['article_code']}/{f['ke_id']}:{f['sha256']}\n".encode("utf-8"))
+    by_status: dict[str, int] = {}
+    for it in items:
+        by_status[it.status] = by_status.get(it.status, 0) + 1
+    return {"version": 1,
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "filters": {k: v for k, v in filters.items() if v},
+            "total": len(fps), "by_status": by_status,
+            "digest": chain.hexdigest(), "fingerprints": fps}
+
+
 @router.get("/api/gold/items/{iid}")
 def api_item(iid: int, db: Session = Depends(get_db), user: dict = Depends(require_role())):
     return item_dict(get_item_or_404(db, iid))
+
+
+@router.post("/api/gold/items/{iid}/validate")
+def api_item_validate(iid: int, db: Session = Depends(get_db),
+                      user: dict = Depends(require_role())):
+    """M20：重校单条并返回完整问题清单（errors 阻断定稿；warnings 不阻断）。"""
+    it = get_item_or_404(db, iid)
+    result = ke_validate.validate_item(db, it)
+    db.commit()
+    return {"id": it.id, "article_code": it.article_code, "ke_id": it.ke_id, **result}
 
 
 @router.patch("/api/gold/items/{iid}")
@@ -287,6 +362,16 @@ def items_page(request: Request, article_code: str | None = None, status: str | 
         "status_list": ITEM_STATUS, "status_labels": ITEM_STATUS_LABELS,
         "edit_roles": EDIT_ROLES,
     })
+
+
+@router.post("/gold/items/validate-all")
+def items_validate_all_page(db: Session = Depends(get_db), user: dict = Depends(current_user)):
+    if user["role"] not in EDIT_ROLES:
+        raise HTTPException(403, "批量校验仅审核员/管理员")
+    s = ke_validate.validate_all(db)
+    return RedirectResponse(
+        f"/gold/items?ok=校验完成：{s['checked']} 条重算（✓{s['ok']} ⚠{s['warn']} ✗{s['error']}，跳过已最新 {s['skipped']}）",
+        status_code=303)
 
 
 @router.get("/gold/items/new")

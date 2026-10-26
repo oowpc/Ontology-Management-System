@@ -6,7 +6,11 @@
   <div>
     <a class="btn" href="/api/gold/items/export.csv?{{ qs }}">导出 CSV</a>
     <a class="btn" href="/api/gold/items/export.json?{{ qs }}">导出 JSON</a>
-    {% if user.role in edit_roles %}<a class="btn primary" href="/gold/items/new">+ 补录条目</a>{% endif %}
+    <a class="btn" href="/api/gold/items/export.manifest.json?{{ qs }}" title="逐条 sha256 指纹 + 整体 digest，供下游校验数据版本">指纹 manifest</a>
+    {% if user.role in edit_roles %}
+    <form class="inline" method="post" action="/gold/items/validate-all"><button class="btn" type="submit">全部校验</button></form>
+    <a class="btn primary" href="/gold/items/new">+ 补录条目</a>
+    {% endif %}
   </div>
 </div>
 <form class="filters" method="get" action="/gold/items">
@@ -23,7 +27,7 @@
   <button class="btn" type="submit">过滤</button>
 </form>
 <table class="data">
-  <thead><tr><th>篇</th><th>KE 编号</th><th>组别</th><th>KE 内容</th><th>引用概念</th><th>状态</th><th class="num">版本</th><th>更新时间</th><th>操作</th></tr></thead>
+  <thead><tr><th>篇</th><th>KE 编号</th><th>组别</th><th>KE 内容</th><th>引用概念</th><th>状态</th><th>校验</th><th class="num">版本</th><th>更新时间</th><th>操作</th></tr></thead>
   <tbody>
   {% for i in items %}
   <tr>
@@ -33,6 +37,13 @@
     <td>{{ i.ke_text[:80] }}{{ '…' if i.ke_text|length > 80 }}</td>
     <td>{% for c in i.concepts %}<span class="chip">{{ c }}</span>{% endfor %}</td>
     <td><span class="badge {{ {'draft':'draft','reviewed':'merged','gold':'approved'}[i.status] }}">{{ status_labels[i.status] }}</span></td>
+    <td>
+      {% set v = i.validation %}
+      {% if not v %}<span class="badge draft">未校验</span>
+      {% elif not v.ok %}<span class="badge disabled" title="{{ v.errors[0].message if v.errors }}">✗ 错误 {{ v.error_count }}</span>
+      {% elif v.warning_count %}<span class="badge pending" title="词表/引用类提示，不阻断定稿">⚠ {{ v.warning_count }}</span>
+      {% else %}<span class="badge approved">✓</span>{% endif %}
+    </td>
     <td class="num">v{{ i.version }}</td>
     <td>{{ i.updated_at|dt }}</td>
     <td class="ops">
@@ -45,9 +56,10 @@
     </td>
   </tr>
   {% else %}
-  <tr><td colspan="9" class="empty">暂无成品条目（每日上传 CSV 带「篇编号 + KE内容」列会自动入库为草稿）</td></tr>
+  <tr><td colspan="10" class="empty">暂无成品条目（每日上传 CSV 带「篇编号 + KE内容」列会自动入库为草稿）</td></tr>
   {% endfor %}
 </tbody>
 </table>
 <p class="muted">口径：草稿可由本组标注员或审核员修改；已复核 / GOLD 仅审核员、管理员可改；全部写操作在「变更日志」留痕。列表最多显示 200 条，完整数据请用导出。</p>
+<p class="muted">M20 校验口径：✗ 结构错误（无法识别的行 / 缺 output / 括号失衡 / 已知签名 arity 不符）<b>阻断定稿</b>；⚠ 词表提示（概念/算子/常量未入库、变量未绑定）不阻断，是大本体整理阶段的待办信号。单条问题明细：<code>POST /api/gold/items/{id}/validate</code>。</p>
 {% endblock %}

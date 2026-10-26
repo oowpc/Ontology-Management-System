@@ -83,6 +83,8 @@ async def ke_upload_submit(request: Request, db: Session = Depends(get_db),
     if ingest["created"] or ingest["updated"] or ingest["protected"]:
         ok += (f"；成品库：新增草稿 {ingest['created']}，更新 {ingest['updated']}，"
                f"定稿保护 {ingest['protected']}")
+    if ingest.get("ke_invalid"):
+        ok += f"；⚠ {ingest['ke_invalid']} 条 KE 有结构错误（成品库可见明细，定稿前须修正）"
     return RedirectResponse(f"/ke/upload?ok={quote(ok)}", status_code=303)
 
 

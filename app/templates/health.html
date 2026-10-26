@@ -65,6 +65,20 @@
     </tbody>
   </table>
   <p class="muted">验收口径：各领域大本体内容不存在明显冲突 → 此表应为空或逐条有结论。</p>
+  {% elif kind == 'gold_validation' %}
+  <table class="data">
+    <thead><tr><th>篇</th><th>KE 编号</th><th>状态</th><th class="num">错误</th><th class="num">警告</th><th>首个问题</th></tr></thead>
+    <tbody>
+    {% for x in report.details.gold_validation %}
+    <tr><td><code>{{ x.article_code }}</code></td><td>{{ x.ke_id }}</td>
+        <td><span class="badge {{ {'draft':'draft','reviewed':'merged','gold':'approved'}.get(x.status, 'draft') }}">{{ x.status }}</span></td>
+        <td class="num">{% if x.error_count %}<span class="badge disabled">✗ {{ x.error_count }}</span>{% else %}0{% endif %}</td>
+        <td class="num">{% if x.warning_count %}<span class="badge pending">⚠ {{ x.warning_count }}</span>{% else %}0{% endif %}</td>
+        <td class="muted">{{ x.first_issue }}</td></tr>
+    {% else %}<tr><td colspan="6" class="empty">全部成品通过校验（含无警告）</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">口径：✗ 结构错误阻断定稿（reviewed→gold）；⚠ 词表提示不阻断。单条明细：<code>POST /api/gold/items/{id}/validate</code>；批量重算：成品库页「全部校验」。</p>
   {% else %}
   <table class="data">
     <thead><tr><th>ID</th><th>名称</th><th class="num">算子数</th><th>问题</th></tr></thead>
@@ -83,7 +97,7 @@
 {% if runs %}
 <h2>历史报告</h2>
 <table class="data">
-  <thead><tr><th>ID</th><th>触发</th><th class="num">未使用</th><th class="num">孤立</th><th class="num">近义对</th><th class="num">算子失衡</th><th>时间</th></tr></thead>
+  <thead><tr><th>ID</th><th>触发</th><th class="num">未使用</th><th class="num">孤立</th><th class="num">近义对</th><th class="num">算子失衡</th><th class="num">成品问题</th><th>时间</th></tr></thead>
   <tbody>
   {% for r in runs %}
   <tr><td>{{ r.id }}</td><td>{{ '手动' if r.trigger_type == 'manual' else '定时' }}</td>
@@ -91,6 +105,7 @@
       <td class="num">{{ r.summary.get('orphan', 0) }}</td>
       <td class="num">{{ r.summary.get('similar_pairs', 0) }}</td>
       <td class="num">{{ r.summary.get('operator_count', 0) }}</td>
+      <td class="num">{{ r.summary.get('gold_validation', 0) }}</td>
       <td class="muted">{{ r.created_at|dt }}</td></tr>
   {% endfor %}
   </tbody>

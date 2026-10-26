@@ -3,6 +3,28 @@
 {% block content %}
 <h1>{{ '编辑' if it and it.id else '补录' }}成品条目</h1>
 {% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+{% if it and it.id and it.validation %}
+{% set v = it.validation %}
+<div class="panel">
+  <b>KE 校验</b>（{{ v.validated_at }}）：
+  {% if v.ok and not v.warning_count %}<span class="badge approved">✓ 通过</span>
+  {% elif v.ok %}<span class="badge pending">⚠ {{ v.warning_count }} 条提示（不阻断定稿）</span>
+  {% else %}<span class="badge disabled">✗ {{ v.error_count }} 个结构错误（阻断定稿）</span>{% endif %}
+  {% if v.errors or v.warnings %}
+  <table class="data" style="margin-top:8px">
+    <thead><tr><th>级别</th><th class="num">行</th><th>问题</th></tr></thead>
+    <tbody>
+    {% for e in v.errors %}
+    <tr><td><span class="badge disabled">错误</span></td><td class="num">{{ e.line or '—' }}</td><td>{{ e.message }}</td></tr>
+    {% endfor %}
+    {% for w in v.warnings %}
+    <tr><td><span class="badge pending">提示</span></td><td class="num">{{ w.line or '—' }}</td><td>{{ w.message }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
 <form class="form wide" method="post">
   <label>篇编号 *
     <input name="article_code" value="{{ it.article_code if it else '' }}" {{ 'readonly' if it and it.id }} required autocomplete="off">
