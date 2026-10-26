@@ -42,6 +42,7 @@ python -m uvicorn app.main:app --reload
 | M19 | 适配现行协作 xlsx：上传支持 .xlsx（QA 问答/Lean 题目标注 两种表头自动识别）· 多人 KE 列合成标注人 · Lean 的 conclusion 进复核结论、wpcke 进成品库 · 别家表头回退 KE_COLUMN_MAP | ✅ 本次交付 |
 | M20 | KE 校验引擎：生产方言解析（全角标点/跨行 output/并列 const/比较约束宽待）· 结构 error（缺 output/形态错/已知签名 arity 不符）+ 词表 warning（未入库引用）· 定稿强校验（→gold 阻断，GOLD_FINALIZE_VALIDATE 可关）· 上传/编辑/入库即时校验 · 体检「成品校验」tab | ✅ 本次交付 |
 | M22 | 导出指纹 manifest：`export.manifest.json` 逐条 sha256 + 链式 digest（对接下游数据版本守卫） | ✅ 本次交付 |
+| M23 | LLM 加固：429/5xx/网络错误指数退避重试（LLM_MAX_RETRIES）· usage/耗时/成败落 llm_calls 台账 · `GET /api/llm/usage` 分场景汇总 | ✅ 本次交付 |
 
 ## M12 · Agent 可操控性补全
 
@@ -55,6 +56,10 @@ python -m uvicorn app.main:app --reload
 ```
 
 - 验证：`tests/test_agent.py`——Token 签发/吊销、manifest 结构、MCP 工具注册数、agent 经 MCP 完成「提交→审核→回填」全流程
+
+## M23 · LLM 加固
+
+`chat()` 内部换为带重试的 `chat_with_usage`（口径参考 kelab/llm.py）：429/5xx/网络错误指数退避（1s/2s/4s…封顶 8s，次数 LLM_MAX_RETRIES 默认 2），4xx 不重试；每次调用（含失败）落 `llm_calls` 台账（场景/模型/tokens/耗时/重试次数/错误），`GET /api/llm/usage` 分场景汇总（reviewer/admin）。降级口径不变：彻底失败仍返回 None，主流程不受阻断。
 
 ## M20 · KE 校验引擎（参考 NL2KE ke_validate 口径，适配生产方言）
 

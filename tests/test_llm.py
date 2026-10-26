@@ -40,6 +40,101 @@ def test_llm_dedup_mocked(client, monkeypatch):
     assert d["items"][0]["verdict"] == "same"
 
 
+# ---------- M23：重试退避 + usage 台账 ----------
+
+class _Resp:
+    def __init__(self, status, payload=None, text=""):
+        self.status_code = status
+        self._payload = payload or {}
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+def _enable_http_mock(monkeypatch, responder):
+    from app import llm
+    monkeypatch.setattr(llm.settings, "llm_base_url", "http://mock-llm")
+    monkeypatch.setattr(llm.settings, "llm_model", "mock-model")
+    monkeypatch.setattr(llm.time, "sleep", lambda s: None)   # 退避不真睡
+    monkeypatch.setattr(llm.httpx, "post", responder)
+
+
+def _llm_calls(scene):
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import LlmCall
+    db = SessionLocal()
+    try:
+        return db.scalars(select(LlmCall).where(LlmCall.scene == scene)).all()
+    finally:
+        db.close()
+
+
+def test_llm_retry_then_success_records_usage(client, monkeypatch):
+    """429 退避重试 → 成功；台账记录 attempts=2 与 token 用量。"""
+    from app import llm
+    state = {"n": 0}
+
+    def responder(url, **kw):
+        state["n"] += 1
+        if state["n"] == 1:
+            return _Resp(429, text="rate limited")
+        return _Resp(200, {"choices": [{"message": {"content": "你好"}}],
+                           "usage": {"prompt_tokens": 11, "completion_tokens": 7}})
+
+    _enable_http_mock(monkeypatch, responder)
+    out = llm.chat([{"role": "user", "content": "hi"}], scene="retry_ok")
+    assert out == "你好" and state["n"] == 2
+    rows = _llm_calls("retry_ok")
+    assert len(rows) == 1 and rows[0].ok and rows[0].attempts == 2
+    assert rows[0].prompt_tokens == 11 and rows[0].completion_tokens == 7
+
+
+def test_llm_persistent_failure_returns_none_and_records(client, monkeypatch):
+    """持续 500 → 重试耗尽返回 None（降级）；台账 ok=False；4xx 不重试。"""
+    from app import llm
+    state = {"n": 0}
+
+    def responder(url, **kw):
+        state["n"] += 1
+        return _Resp(500, text="server boom")
+
+    _enable_http_mock(monkeypatch, responder)
+    assert llm.chat([{"role": "user", "content": "hi"}], scene="retry_fail") is None
+    from app.config import settings
+    assert state["n"] == settings.llm_max_retries + 1
+    rows = _llm_calls("retry_fail")
+    assert len(rows) == 1 and not rows[0].ok and "500" in rows[0].error
+
+    state["n"] = 0
+
+    def responder_400(url, **kw):
+        state["n"] += 1
+        return _Resp(400, text="bad request")
+
+    monkeypatch.setattr(llm.httpx, "post", responder_400)
+    assert llm.chat([{"role": "user", "content": "hi"}], scene="no_retry_4xx") is None
+    assert state["n"] == 1          # 4xx 不重试
+    assert _llm_calls("no_retry_4xx")[0].attempts == 1
+
+
+def test_llm_usage_api(client, monkeypatch):
+    """GET /api/llm/usage 汇总台账（reviewer/admin）。"""
+    from app import llm
+    _enable_http_mock(monkeypatch, lambda url, **kw: _Resp(
+        200, {"choices": [{"message": {"content": "ok"}}], "usage": {"prompt_tokens": 3}}))
+    llm.chat([{"role": "user", "content": "x"}], scene="usage_api")
+
+    login(client, "reviewer")
+    r = client.get("/api/llm/usage")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["enabled"] is True
+    assert d["totals"]["calls"] >= 1 and d["totals"]["prompt_tokens"] >= 3
+    assert "usage_api" in d["scenes"] and d["scenes"]["usage_api"]["ok"] == 1
+
+
 def test_llm_review_suggest_mocked(client, monkeypatch):
     # 先造一条待审单
     login(client, "annotator")

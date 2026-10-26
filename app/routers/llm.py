@@ -44,3 +44,33 @@ def review_suggest(data: ReviewSuggestRequest, db: Session = Depends(get_db),
     if result is None:
         return {"llm": False}
     return {"llm": True, **result}
+
+
+@router.get("/usage")
+def usage(db: Session = Depends(get_db),
+          user: dict = Depends(require_role("reviewer", "admin"))):
+    """M23：LLM 调用台账汇总（按场景聚合：次数/tokens/均耗时/失败数/最近错误）。"""
+    from sqlalchemy import select
+
+    from ..models import LlmCall
+    # Python 侧聚合（台账量级小，免拼方言无关的 SQL）
+    scenes: dict[str, dict] = {}
+    all_calls = db.scalars(select(LlmCall).order_by(LlmCall.id.desc()).limit(5000)).all()
+    for c in all_calls:
+        s = scenes.setdefault(c.scene or "(未标注)", {
+            "calls": 0, "ok": 0, "failed": 0, "prompt_tokens": 0,
+            "completion_tokens": 0, "latency_ms_sum": 0, "last_error": ""})
+        s["calls"] += 1
+        s["ok" if c.ok else "failed"] += 1
+        s["prompt_tokens"] += c.prompt_tokens or 0
+        s["completion_tokens"] += c.completion_tokens or 0
+        s["latency_ms_sum"] += c.latency_ms or 0
+        if not c.ok and c.error and not s["last_error"]:
+            s["last_error"] = c.error
+    for s in scenes.values():
+        s["avg_latency_ms"] = round(s.pop("latency_ms_sum") / s["calls"]) if s["calls"] else 0
+    totals = {"calls": sum(s["calls"] for s in scenes.values()),
+              "failed": sum(s["failed"] for s in scenes.values()),
+              "prompt_tokens": sum(s["prompt_tokens"] for s in scenes.values()),
+              "completion_tokens": sum(s["completion_tokens"] for s in scenes.values())}
+    return {"enabled": llm.enabled(), "totals": totals, "scenes": scenes}

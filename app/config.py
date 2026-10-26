@@ -92,6 +92,7 @@ class Settings:
     llm_api_key: str = os.environ.get("LLM_API_KEY", "")
     llm_model: str = os.environ.get("LLM_MODEL", "")
     llm_timeout: float = _float("LLM_TIMEOUT", 45)
+    llm_max_retries: int = _int("LLM_MAX_RETRIES", 2)   # M23：429/5xx/网络错误退避重试次数
 
 
 settings = Settings()

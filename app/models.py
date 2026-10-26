@@ -336,6 +336,24 @@ class KeReview(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+# ================= M23 · LLM 调用台账 =================
+
+class LlmCall(Base):
+    """LLM 调用台账：场景 / 模型 / token 用量 / 耗时 / 重试次数 / 成败（成本与稳定性可见）。"""
+    __tablename__ = "llm_calls"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scene: Mapped[str] = mapped_column(String(32), index=True)   # semantic_dedup / suggest_review / …
+    model: Mapped[str] = mapped_column(String(64), default="")
+    prompt_tokens: Mapped[Optional[int]] = mapped_column(Integer)
+    completion_tokens: Mapped[Optional[int]] = mapped_column(Integer)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=1)
+    ok: Mapped[bool] = mapped_column(default=True)
+    error: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 # ================= 题目级视图 =================
 
 class Question(Base):

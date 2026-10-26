@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import httpx
 from sqlalchemy import select
@@ -22,32 +23,115 @@ from .config import settings
 from .models import Concept, Submission
 from .similarity import find_similar
 
+# M23：429/5xx/网络错误指数退避重试（口径参考 NL2KE kelab/llm.py）
+RETRIABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
+
+
+class _HttpError(Exception):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+class _RetriableError(Exception):
+    pass
+
 
 def enabled() -> bool:
     return bool(settings.llm_base_url and settings.llm_model)
 
 
-def chat(messages: list[dict], *, temperature=0.2, max_tokens=1200, timeout=None) -> str | None:
-    """OpenAI 兼容 /chat/completions；任何失败返回 None（绝不阻断主流程）。"""
-    if not enabled():
-        return None
+def _record_usage(scene: str, *, latency_ms: int, attempts: int, ok: bool,
+                  prompt_tokens=None, completion_tokens=None, error: str = ""):
+    """调用台账落库；任何失败静默（绝不阻断主流程）。"""
+    try:
+        from .db import SessionLocal
+        from .models import LlmCall
+        db = SessionLocal()
+        try:
+            db.add(LlmCall(scene=scene, model=settings.llm_model,
+                           prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+                           latency_ms=latency_ms, attempts=attempts, ok=ok,
+                           error=(error or "")[:250]))
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        pass
+
+
+def _post_once(messages: list[dict], *, temperature: float, max_tokens: int, timeout: float):
+    """单次请求 → (content, usage)。HTTP 错误按状态分类抛出。"""
     try:
         resp = httpx.post(
             settings.llm_base_url.rstrip("/") + "/chat/completions",
             headers={"Authorization": f"Bearer {settings.llm_api_key or 'none'}"},
             json={"model": settings.llm_model, "messages": messages,
                   "temperature": temperature, "max_tokens": max_tokens},
-            timeout=timeout or settings.llm_timeout,
+            timeout=timeout,
         )
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"]
-    except Exception:
+    except (httpx.HTTPError, TimeoutError) as exc:
+        raise _RetriableError(f"网络错误：{exc}") from exc
+    if resp.status_code >= 400:
+        raise _HttpError(resp.status_code, resp.text[:200])
+    data = resp.json()
+    return data["choices"][0]["message"]["content"], (data.get("usage") or {})
+
+
+def chat_with_usage(messages: list[dict], *, scene: str = "", temperature=0.2,
+                    max_tokens=1200, timeout=None) -> dict | None:
+    """带重试的调用：返回 {content, prompt_tokens, completion_tokens, latency_ms, attempts}。
+
+    可重试错误（429/5xx/网络）指数退避（1s/2s/4s…封顶 8s），4xx 立即放弃；
+    彻底失败返回 None（优雅降级口径不变）。每次调用（含失败）落 llm_calls 台账。
+    """
+    if not enabled():
         return None
+    attempts, error = 0, ""
+    started = time.perf_counter()
+    while attempts <= settings.llm_max_retries:
+        attempts += 1
+        try:
+            content, usage = _post_once(messages, temperature=temperature,
+                                        max_tokens=max_tokens,
+                                        timeout=timeout or settings.llm_timeout)
+            latency = int((time.perf_counter() - started) * 1000)
+            result = {"content": content,
+                      "prompt_tokens": usage.get("prompt_tokens"),
+                      "completion_tokens": usage.get("completion_tokens"),
+                      "latency_ms": latency, "attempts": attempts}
+            _record_usage(scene, latency_ms=latency, attempts=attempts, ok=True,
+                          prompt_tokens=result["prompt_tokens"],
+                          completion_tokens=result["completion_tokens"])
+            return result
+        except _HttpError as exc:
+            error = f"HTTP {exc.status}: {exc}"
+            if exc.status not in RETRIABLE_STATUS or attempts > settings.llm_max_retries:
+                break
+        except _RetriableError as exc:
+            error = str(exc)
+            if attempts > settings.llm_max_retries:
+                break
+        except Exception as exc:  # 解析错误等：不重试
+            error = str(exc)
+            break
+        time.sleep(min(2 ** (attempts - 1), 8))
+    latency = int((time.perf_counter() - started) * 1000)
+    _record_usage(scene, latency_ms=latency, attempts=attempts, ok=False, error=error)
+    return None
 
 
-def chat_json(messages: list[dict], **kw) -> dict | None:
+def chat(messages: list[dict], *, scene: str = "", temperature=0.2, max_tokens=1200,
+         timeout=None) -> str | None:
+    """OpenAI 兼容 /chat/completions；任何失败返回 None（绝不阻断主流程）。"""
+    result = chat_with_usage(messages, scene=scene, temperature=temperature,
+                             max_tokens=max_tokens, timeout=timeout)
+    return result["content"] if result else None
+
+
+def chat_json(messages: list[dict], *, scene: str = "", **kw) -> dict | None:
     """期望 JSON 输出；容错解析（剥 ```json 围栏、截取首尾花括号）。"""
-    text = chat(messages, **kw)
+    text = chat(messages, scene=scene, **kw)
     if not text:
         return None
     text = text.strip()
@@ -101,7 +185,7 @@ def semantic_dedup(db: Session, *, name: str, aliases, parent_id=None, limit=8) 
             "- distinct：不同概念\n"
             '输出 JSON：{"items":[{"id": 候选编号数字, "verdict": "same|near|distinct", "reason": "不超过30字"}]}'
         )},
-    ])
+    ], scene="semantic_dedup")
     if not data or not isinstance(data.get("items"), list):
         return None
     by_id = {c.id: c for c in concepts}
@@ -146,7 +230,7 @@ def suggest_review(db: Session, submission_id: int) -> dict | None:
             '输出 JSON：{"action":"approve|reject|merge","comment":"可直接填写的审核意见（50字内）",'
             '"merge_target":"合并目标概念名或 null","rationale":"判断依据（30字内）"}'
         )},
-    ])
+    ], scene="suggest_review")
     if not data or data.get("action") not in ("approve", "reject", "merge"):
         return None
     merge_target_id = None
