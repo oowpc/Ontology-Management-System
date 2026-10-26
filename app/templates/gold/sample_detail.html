@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}抽查 #{{ sample.id }} · GOLDKE{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>抽查 #{{ sample.id }} · {{ sample.scope }}
+    {% if sample.status == 'open' %}<span class="badge pending">评表中</span>
+    {% else %}<span class="badge approved">已关闭</span>{% endif %}
+  </h1>
+  <div>
+    <a class="btn" href="/gold/samples">返回列表</a>
+    {% if sample.status == 'open' and user.role in sampler_roles %}
+    <form class="inline" method="post" action="/gold/samples/{{ sample.id }}/close"
+          onsubmit="return confirm('关闭抽查？需全部样本有最终结论')">
+      <button class="btn primary" type="submit">关闭抽查</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <b>统计</b>：
+  样本 {{ stats.total }} · 已定论 {{ stats.finalized }} · 通过 {{ stats.passed }} ·
+  通过率 <b>{{ '%.1f%%'|format(stats.pass_rate * 100) if stats.pass_rate is not none else '—' }}</b>
+  {% if stats.wilson_lo is not none %}
+  <span class="muted">（Wilson 95% CI [{{ '%.1f%%'|format(stats.wilson_lo * 100) }}, {{ '%.1f%%'|format(stats.wilson_hi * 100) }}]）</span>
+  {% endif %}
+  · 双评一致率 <b>{{ '%.0f%%'|format(stats.agreement_rate * 100) if stats.agreement_rate is not none else '—' }}</b>
+  <span class="muted">（{{ stats.agree }}/{{ stats.paired }}）</span>
+  {% if stats.disagreement_count %}· <span class="badge disabled">{{ stats.disagreement_count }} 条待仲裁</span>{% endif %}
+  <br>
+  <span class="muted">抽样参数：总体 {{ sample.params.get('population', '—') }} 条 · 分层等距（按组别）·
+    seed <code>{{ sample.params.get('seed', '—') }}</code> · 每条需 {{ stats.required_reviews }} 人盲评 ·
+    创建 {{ sample.checker }}（{{ sample.created_at|dt }}）{{ '· ' + sample.note if sample.note }}</span>
+</div>
+
+<table class="data">
+  <thead><tr><th>篇 / KE 编号</th><th>KE 内容</th><th>M20 校验</th><th>复核结论（盲评）</th><th>最终</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for i in items %}
+  <tr>
+    <td><code>{{ i.article_code }}</code><br>{{ i.ke_id }}</td>
+    <td><pre class="ke-content">{{ i.ke_text[:300] }}{{ '…' if i.ke_text|length > 300 }}</pre></td>
+    <td>{% if i.validation_ok is none %}<span class="badge draft">未校验</span>
+        {% elif i.validation_ok %}<span class="badge approved">✓</span>
+        {% else %}<span class="badge disabled">✗ {{ i.validation_errors }}</span>{% endif %}</td>
+    <td>
+      {% if i.blind %}<span class="muted">他人结论盲化中（你已评或定局后可见）</span>{% endif %}
+      {% for r in i.reviews %}
+      <div><b>{{ r.reviewer }}</b>：<span class="badge {{ 'approved' if r.verdict == '通过' else 'disabled' }}">{{ r.verdict }}</span>
+        {% if r.note %}<span class="muted">{{ r.note }}</span>{% endif %}</div>
+      {% endfor %}
+      {% if i.my_verdict %}<div class="muted">我：{{ i.my_verdict }}</div>{% endif %}
+      <div class="muted">{{ i.review_count }}/{{ stats.required_reviews }} 人</div>
+    </td>
+    <td>
+      {% if i.final_verdict %}<span class="badge {{ 'approved' if i.final_verdict == '通过' else 'disabled' }}">{{ i.final_verdict }}</span>
+        {% if i.arbiter %}<br><span class="muted">仲裁 {{ i.arbiter }}</span>{% endif %}
+      {% elif i.review_count >= stats.required_reviews %}<span class="badge disabled">分歧待仲裁</span>
+      {% else %}<span class="badge draft">待评</span>{% endif %}
+    </td>
+    <td class="ops">
+      {% if sample.status == 'open' and user.role in sampler_roles and not i.my_verdict %}
+      <form class="inline" method="post" action="/gold/samples/{{ sample.id }}/reviews">
+        <input type="hidden" name="gold_item_id" value="{{ i.gold_item_id }}">
+        <select name="verdict"><option>通过</option><option>不通过</option></select>
+        <input name="note" placeholder="备注" size="8">
+        <button class="btn" type="submit">打标</button>
+      </form>
+      {% endif %}
+      {% if sample.status == 'open' and user.role in sampler_roles
+            and i.review_count >= stats.required_reviews and not i.final_verdict %}
+      <form class="inline" method="post" action="/gold/samples/{{ sample.id }}/items/{{ i.gold_item_id }}/arbitrate">
+        <select name="verdict"><option>通过</option><option>不通过</option></select>
+        <input name="note" placeholder="仲裁理由" size="8">
+        <button class="btn primary" type="submit">仲裁</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p class="muted">盲评口径：他人结论在「你已打标」或「该条目已定局」前对你不可见；两人结论一致自动落定，分歧进入仲裁。全部样本定论后才可关闭抽查（关闭时回填通过率到列表与 GOLD 总览）。</p>
+{% endblock %}

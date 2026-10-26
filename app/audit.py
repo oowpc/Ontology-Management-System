@@ -17,6 +17,7 @@ RESTORABLE = {
 ACTION_LABELS = {
     "create": "创建", "update": "修改", "status": "状态变更",
     "merge": "合并", "rollback": "回滚", "import": "导入", "delete": "删除",
+    "review": "抽检打标", "arbitrate": "仲裁", "close": "关闭",
 }
 
 

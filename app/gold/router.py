@@ -13,7 +13,7 @@ from ..db import get_db
 from ..models import GoldArticle, GoldIssue, GoldIssueComment, GoldSample
 from ..security import current_user, require_role
 from ..templating import templates
-from . import service
+from . import sampling, service
 from .service import GROUPS, ISSUE_STATUS_LABELS, STAGE_LABELS, STAGES
 
 router = APIRouter(tags=["gold"])
@@ -205,12 +205,31 @@ class SampleIn(BaseModel):
     note: str = ""
 
 
+class AutoSampleIn(BaseModel):
+    """M21 系统抽样：size 与 rate 二选一（size 优先；rate 默认 0.1）。"""
+    group_name: str = ""
+    article_code: str = ""
+    status: str = ""
+    size: int = 0
+    rate: float = 0.1
+    seed: int | None = None
+    note: str = ""
+
+
+class SampleReviewIn(BaseModel):
+    gold_item_id: int
+    verdict: str
+    note: str = ""
+
+
+class ArbitrateIn(BaseModel):
+    verdict: str
+    note: str = ""
+
+
 @router.get("/api/gold/samples")
 def api_samples(db: Session = Depends(get_db), user: dict = Depends(require_role())):
-    rows = db.scalars(select(GoldSample).order_by(GoldSample.id.desc()).limit(100)).all()
-    return {"items": [{"id": s.id, "sample_date": s.sample_date, "scope": s.scope,
-                       "total": s.total, "passed": s.passed, "checker": s.checker,
-                       "note": s.note, "created_at": s.created_at} for s in rows]}
+    return {"items": sampling.sample_list(db)}
 
 
 @router.post("/api/gold/samples", status_code=201)
@@ -219,11 +238,56 @@ def api_sample_create(data: SampleIn, db: Session = Depends(get_db),
     if data.passed > data.total:
         raise HTTPException(400, "通过数不能大于抽查总数")
     s = GoldSample(sample_date=data.sample_date, scope=data.scope, total=data.total,
-                   passed=data.passed, note=data.note, checker=user["username"])
+                   passed=data.passed, note=data.note, checker=user["username"],
+                   kind="manual")
     db.add(s)
     db.commit()
     db.refresh(s)
     return {"id": s.id, "pass_rate": (s.passed / s.total) if s.total else None}
+
+
+@router.post("/api/gold/samples/auto", status_code=201)
+def api_sample_auto(data: AutoSampleIn, db: Session = Depends(get_db),
+                    user: dict = Depends(require_role(*sampling.SAMPLER_ROLES))):
+    """M21：系统抽样创建抽查（分层等距，seed 落 params 可复现）。"""
+    s = sampling.create_auto_sample(db, actor=user["username"], **data.model_dump())
+    return {"id": s.id, "total": s.total, "params": s.params, "scope": s.scope}
+
+
+@router.get("/api/gold/samples/{sid}")
+def api_sample_detail(sid: int, db: Session = Depends(get_db),
+                      user: dict = Depends(require_role())):
+    s = sampling.get_sample_or_404(db, sid)
+    return sampling.sample_detail(db, s, viewer=user["username"], viewer_role=user["role"])
+
+
+@router.post("/api/gold/samples/{sid}/reviews", status_code=201)
+def api_sample_review(sid: int, data: SampleReviewIn, db: Session = Depends(get_db),
+                      user: dict = Depends(require_role(*sampling.SAMPLER_ROLES))):
+    s = sampling.get_sample_or_404(db, sid)
+    r = sampling.add_review(db, s, gold_item_id=data.gold_item_id,
+                            reviewer=user["username"], verdict=data.verdict, note=data.note)
+    return {"id": r.id, "sample_id": sid, "gold_item_id": r.gold_item_id,
+            "verdict": r.verdict}
+
+
+@router.post("/api/gold/samples/{sid}/items/{gid}/arbitrate")
+def api_sample_arbitrate(sid: int, gid: int, data: ArbitrateIn,
+                         db: Session = Depends(get_db),
+                         user: dict = Depends(require_role(*sampling.SAMPLER_ROLES))):
+    s = sampling.get_sample_or_404(db, sid)
+    si = sampling.arbitrate(db, s, gold_item_id=gid, arbiter=user["username"],
+                            verdict=data.verdict, note=data.note)
+    return {"gold_item_id": gid, "final_verdict": si.final_verdict, "arbiter": si.arbiter}
+
+
+@router.post("/api/gold/samples/{sid}/close")
+def api_sample_close(sid: int, db: Session = Depends(get_db),
+                     user: dict = Depends(require_role(*sampling.SAMPLER_ROLES))):
+    s = sampling.get_sample_or_404(db, sid)
+    s = sampling.close_sample(db, s, user["username"])
+    return {"id": s.id, "status": s.status, "total": s.total, "passed": s.passed,
+            "pass_rate": (s.passed / s.total) if s.total else None}
 
 
 # ==================== 页面 ====================
@@ -447,10 +511,13 @@ async def gold_issue_status(iid: int, request: Request, db: Session = Depends(ge
 @router.get("/gold/samples")
 def gold_samples(request: Request, db: Session = Depends(get_db),
                  user: dict = Depends(current_user)):
-    rows = db.scalars(select(GoldSample).order_by(GoldSample.id.desc()).limit(100)).all()
+    from ..models import GoldItem
     return templates.TemplateResponse(request=request, name="gold/samples.html", context={
-        "request": request, "user": user, "items": rows,
+        "request": request, "user": user, "items": sampling.sample_list(db),
         "today": datetime.now().strftime("%Y-%m-%d"),
+        "groups": service.list_groups(db),
+        "codes": db.scalars(select(GoldItem.article_code).distinct().order_by(GoldItem.article_code)).all(),
+        "sampler_roles": sampling.SAMPLER_ROLES,
     })
 
 
@@ -465,9 +532,89 @@ async def gold_sample_new(request: Request, db: Session = Depends(get_db),
     s = GoldSample(sample_date=str(form.get("sample_date", "")),
                    scope=str(form.get("scope", "")).strip(),
                    total=total, passed=passed,
-                   note=str(form.get("note", "")), checker=user["username"])
+                   note=str(form.get("note", "")), checker=user["username"], kind="manual")
     if not s.scope:
         return RedirectResponse("/gold/samples?err=抽查范围不能为空", status_code=303)
     db.add(s)
     db.commit()
     return RedirectResponse("/gold/samples?ok=抽查已登记", status_code=303)
+
+
+@router.post("/gold/samples/auto")
+async def gold_sample_auto(request: Request, db: Session = Depends(get_db),
+                           user: dict = Depends(current_user)):
+    if user["role"] not in sampling.SAMPLER_ROLES:
+        raise HTTPException(403, "系统抽样仅审核员/管理员可创建")
+    form = await request.form()
+    try:
+        s = sampling.create_auto_sample(
+            db,
+            group_name=str(form.get("group_name", "")),
+            article_code=str(form.get("article_code", "")),
+            status=str(form.get("status", "")),
+            size=_int_or_none(form.get("size")) or 0,
+            rate=float(str(form.get("rate") or 0.1)),
+            seed=_int_or_none(form.get("seed")),
+            note=str(form.get("note", "")),
+            actor=user["username"])
+    except (HTTPException, ValueError) as e:
+        detail = e.detail if isinstance(e, HTTPException) else str(e)
+        return RedirectResponse(f"/gold/samples?err={detail}", status_code=303)
+    return RedirectResponse(f"/gold/samples/{s.id}?ok=已抽样 {s.total} 条，开始双人盲评", status_code=303)
+
+
+@router.get("/gold/samples/{sid}")
+def gold_sample_detail(sid: int, request: Request, db: Session = Depends(get_db),
+                       user: dict = Depends(current_user)):
+    s = sampling.get_sample_or_404(db, sid)
+    d = sampling.sample_detail(db, s, viewer=user["username"], viewer_role=user["role"])
+    return templates.TemplateResponse(request=request, name="gold/sample_detail.html", context={
+        "request": request, "user": user, **d,
+        "sampler_roles": sampling.SAMPLER_ROLES,
+    })
+
+
+@router.post("/gold/samples/{sid}/reviews")
+async def gold_sample_review(sid: int, request: Request, db: Session = Depends(get_db),
+                             user: dict = Depends(current_user)):
+    if user["role"] not in sampling.SAMPLER_ROLES:
+        raise HTTPException(403, "抽检打标仅审核员/管理员（标注员回避）")
+    s = sampling.get_sample_or_404(db, sid)
+    form = await request.form()
+    try:
+        sampling.add_review(db, s, gold_item_id=_int_or_none(form.get("gold_item_id")) or 0,
+                            reviewer=user["username"], verdict=str(form.get("verdict", "")),
+                            note=str(form.get("note", "")))
+    except HTTPException as e:
+        return RedirectResponse(f"/gold/samples/{sid}?err={e.detail}", status_code=303)
+    return RedirectResponse(f"/gold/samples/{sid}?ok=已打标", status_code=303)
+
+
+@router.post("/gold/samples/{sid}/items/{gid}/arbitrate")
+async def gold_sample_arbitrate(sid: int, gid: int, request: Request,
+                                db: Session = Depends(get_db),
+                                user: dict = Depends(current_user)):
+    if user["role"] not in sampling.SAMPLER_ROLES:
+        raise HTTPException(403, "仲裁仅审核员/管理员")
+    s = sampling.get_sample_or_404(db, sid)
+    form = await request.form()
+    try:
+        sampling.arbitrate(db, s, gold_item_id=gid, arbiter=user["username"],
+                           verdict=str(form.get("verdict", "")),
+                           note=str(form.get("note", "")))
+    except HTTPException as e:
+        return RedirectResponse(f"/gold/samples/{sid}?err={e.detail}", status_code=303)
+    return RedirectResponse(f"/gold/samples/{sid}?ok=仲裁已落定", status_code=303)
+
+
+@router.post("/gold/samples/{sid}/close")
+def gold_sample_close(sid: int, db: Session = Depends(get_db),
+                      user: dict = Depends(current_user)):
+    if user["role"] not in sampling.SAMPLER_ROLES:
+        raise HTTPException(403, "关闭仅审核员/管理员")
+    s = sampling.get_sample_or_404(db, sid)
+    try:
+        sampling.close_sample(db, s, user["username"])
+    except HTTPException as e:
+        return RedirectResponse(f"/gold/samples/{sid}?err={e.detail}", status_code=303)
+    return RedirectResponse(f"/gold/samples/{sid}?ok=抽查已关闭", status_code=303)

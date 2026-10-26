@@ -210,7 +210,7 @@ def upsert_schedule_cell(day_index: int, slot: str, group_name: str, task: str,
 
 
 @mcp.tool()
-def list_issues(status: str = "", cluster: str = "") -> dict:
+def list_gold_issues(status: str = "", cluster: str = "") -> dict:
     """标注分歧 issue 列表（open/resolved/escalated；可按聚类过滤）。"""
     params = {k: v for k, v in {"status": status, "cluster": cluster}.items() if v}
     return api("GET", "/api/gold/issues", params=params)
@@ -332,6 +332,72 @@ def issue_list_impacts(issue_id: int) -> dict:
 def issue_reopen(issue_id: int) -> dict:
     """重新打开已结案 issue（状态回 discussing，留痕）。"""
     return api("POST", f"/api/issues/{issue_id}/reopen")
+
+
+# ---------------- M20-M23 · 成品校验 / 指纹 / 抽检闭环 / LLM 台账 ----------------
+
+@mcp.tool()
+def gold_validate_item(item_id: int) -> dict:
+    """重校单条成品 KE（M20）：返回 errors（阻断定稿）/warnings（不阻断）明细并刷新缓存。"""
+    return api("POST", f"/api/gold/items/{item_id}/validate")
+
+
+@mcp.tool()
+def gold_validate_all() -> dict:
+    """批量重校全部成品（引擎版本旧的才重算；reviewer/admin）。"""
+    return api("POST", "/api/gold/items/validate-all")
+
+
+@mcp.tool()
+def gold_export_manifest(article_code: str = "", status: str = "", group_name: str = "") -> dict:
+    """M22：导出指纹 manifest（逐条 sha256 + 链式 digest，数据版本守卫）。"""
+    params = {k: v for k, v in {"article_code": article_code, "status": status,
+                                "group_name": group_name}.items() if v}
+    return api("GET", "/api/gold/items/export.manifest.json", params=params)
+
+
+@mcp.tool()
+def gold_sample_auto_create(group_name: str = "", article_code: str = "", status: str = "",
+                            size: int = 0, rate: float = 0.1, seed: int | None = None,
+                            note: str = "") -> dict:
+    """M21：系统抽样创建抽查（分层等距，seed 可复现；size 与 rate 二选一，size 优先）。"""
+    return api("POST", "/api/gold/samples/auto", json={
+        "group_name": group_name, "article_code": article_code, "status": status,
+        "size": size, "rate": rate, "seed": seed, "note": note})
+
+
+@mcp.tool()
+def gold_sample_detail(sample_id: int) -> dict:
+    """抽查详情：样本清单 + 统计（通过率含 Wilson 95% CI、双评一致率、待仲裁数）。
+
+    盲评口径：他人结论对未评者盲化（你已评或该条目定局后可见）。"""
+    return api("GET", f"/api/gold/samples/{sample_id}")
+
+
+@mcp.tool()
+def gold_sample_review(sample_id: int, gold_item_id: int, verdict: str, note: str = "") -> dict:
+    """抽检打标：verdict=通过|不通过；每人每条一次（重复 409）；需双人，分歧待仲裁。"""
+    return api("POST", f"/api/gold/samples/{sample_id}/reviews",
+               json={"gold_item_id": gold_item_id, "verdict": verdict, "note": note})
+
+
+@mcp.tool()
+def gold_sample_arbitrate(sample_id: int, gold_item_id: int, verdict: str, note: str = "") -> dict:
+    """仲裁分歧条目（须已有两人且结论不一致）。"""
+    return api("POST", f"/api/gold/samples/{sample_id}/items/{gold_item_id}/arbitrate",
+               json={"verdict": verdict, "note": note})
+
+
+@mcp.tool()
+def gold_sample_close(sample_id: int) -> dict:
+    """关闭抽查（需全部样本有最终结论）；关闭时回填 total/passed。"""
+    return api("POST", f"/api/gold/samples/{sample_id}/close")
+
+
+@mcp.tool()
+def llm_usage() -> dict:
+    """M23：LLM 调用台账汇总（分场景次数/tokens/均耗时/失败数；reviewer/admin）。"""
+    return api("GET", "/api/llm/usage")
 
 
 if __name__ == "__main__":

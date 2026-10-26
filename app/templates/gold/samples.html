@@ -1,31 +1,60 @@
 {% extends "base.html" %}
 {% block title %}抽查记录 · GOLDKE{% endblock %}
 {% block content %}
-<div class="page-head"><h1>验收抽查记录（{{ items|length }}）</h1></div>
+<div class="page-head"><h1>验收抽查（{{ items|length }}）</h1></div>
+
+{% if user.role in sampler_roles %}
 <div class="panel">
-  <form class="filters" method="post" action="/gold/samples/new">
+  <b>系统抽样</b><span class="muted">（分层等距：按组别分层、层内等距；seed 留档可复现）</span>
+  <form class="filters" method="post" action="/gold/samples/auto" style="margin-top:6px">
+    <select name="group_name"><option value="">全部组别</option>
+      {% for g in groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}</select>
+    <select name="article_code"><option value="">全部篇</option>
+      {% for c in codes %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select>
+    <select name="status"><option value="">全部状态</option>
+      <option value="draft">草稿</option><option value="reviewed">已复核</option><option value="gold">GOLD·定稿</option></select>
+    <input name="size" type="number" min="0" placeholder="条数(空=按比例)" style="width:130px">
+    <input name="rate" type="number" min="0.01" max="1" step="0.05" value="0.1" title="抽样比例" style="width:80px">
+    <input name="seed" type="number" placeholder="seed(空=随机)" style="width:110px">
+    <input name="note" placeholder="备注" style="width:140px">
+    <button class="btn primary" type="submit">抽样建批</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="panel">
+  <b>手工登记</b><span class="muted">（只记数字的旧口径；需要样本清单/双人盲评请用系统抽样）</span>
+  <form class="filters" method="post" action="/gold/samples/new" style="margin-top:6px">
     <input name="sample_date" type="date" value="{{ today }}">
-    <input name="scope" placeholder="抽查范围（如 育儿·A组·篇1）" style="width:220px" required>
+    <input name="scope" placeholder="抽查范围（如 育儿·一组·篇1）" style="width:220px" required>
     <input name="total" type="number" min="0" placeholder="抽查数" style="width:90px" required>
     <input name="passed" type="number" min="0" placeholder="通过数" style="width:90px" required>
     <input name="note" placeholder="备注（语法校验等）" style="width:200px">
-    <button class="btn primary" type="submit">登记抽查</button>
+    <button class="btn" type="submit">登记</button>
   </form>
 </div>
+
 <table class="data">
-  <thead><tr><th>ID</th><th>日期</th><th>范围</th><th class="num">抽查</th><th class="num">通过</th><th class="num">通过率</th><th>检查人</th><th>备注</th></tr></thead>
+  <thead><tr><th>ID</th><th>日期</th><th>范围</th><th>方式</th><th class="num">样本</th><th class="num">已定论</th><th class="num">通过</th><th class="num">通过率</th><th>状态</th><th>检查人</th><th>备注</th></tr></thead>
   <tbody>
   {% for s in items %}
   <tr>
-    <td>{{ s.id }}</td><td>{{ s.sample_date }}</td><td>{{ s.scope }}</td>
-    <td class="num">{{ s.total }}</td><td class="num">{{ s.passed }}</td>
+    <td>{% if s.kind == 'auto' %}<a href="/gold/samples/{{ s.id }}">{{ s.id }}</a>{% else %}{{ s.id }}{% endif %}</td>
+    <td>{{ s.sample_date }}</td><td>{{ s.scope }}</td>
+    <td>{% if s.kind == 'auto' %}<span class="badge merged">系统抽样</span>{% else %}<span class="badge draft">手工登记</span>{% endif %}</td>
+    <td class="num">{{ s.item_count if s.kind == 'auto' else s.total }}</td>
+    <td class="num">{{ s.finalized if s.kind == 'auto' else '—' }}</td>
+    <td class="num">{{ s.passed }}</td>
     <td class="num">{{ '%.0f%%'|format(s.passed * 100 / s.total) if s.total else '—' }}</td>
+    <td>{% if s.kind == 'auto' %}
+      {% if s.status == 'open' %}<span class="badge pending">评表中</span>{% else %}<span class="badge approved">已关闭</span>{% endif %}
+    {% else %}—{% endif %}</td>
     <td>{{ s.checker }}</td><td class="muted">{{ s.note or '—' }}</td>
   </tr>
   {% else %}
-  <tr><td colspan="8" class="empty">暂无抽查记录</td></tr>
+  <tr><td colspan="11" class="empty">暂无抽查记录</td></tr>
   {% endfor %}
   </tbody>
 </table>
-<p class="muted">验收口径：400 条 KE 进行 sample 抽查质量（语法校验等），抽查率与通过条件阈值见《数据标注执行方案·验收期》。</p>
+<p class="muted">验收口径：400 条 KE 进行 sample 抽查质量（语法校验等）。系统抽样口径（M21）：双人盲评（每条 2 名复核人独立打标），分歧第三人仲裁；全部定论后方可关闭，通过率带 Wilson 95% 置信区间（详见抽查详情页）。</p>
 {% endblock %}

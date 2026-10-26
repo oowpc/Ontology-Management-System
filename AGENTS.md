@@ -10,7 +10,7 @@
 curl -H "Authorization: Bearer ke_..." http://127.0.0.1:8000/api/agent/manifest
 ```
 
-返回：按域分组的全部 API 路由、当前工况词表（GOLD 阶段/泳道时段/组别/目标、KE 状态词表与列名映射、查重阈值、LLM 是否可用）、常用工作流、幂等键与错误约定。另有 MCP server（`scripts/mcp_server.py`，28 个工具，见 §5）。
+返回：按域分组的全部 API 路由、当前工况词表（GOLD 阶段/泳道时段/组别/目标、KE 状态词表与列名映射、查重阈值、LLM 是否可用）、常用工作流、幂等键与错误约定。另有 MCP server（`scripts/mcp_server.py`，43 个工具，见 §5）。
 
 ## 1. 认证
 
@@ -36,6 +36,7 @@ curl -b ck.txt -X POST http://127.0.0.1:8000/api/tokens -H "Content-Type: applic
 | | `GET /api/gold/items/export.csv` / `.json` / `.manifest.json` | 导出（过滤参数同列表：article_code/status/group_name/q）；manifest = 逐条 sha256 + 整体 digest（数据版本守卫） |
 | | `POST /api/gold/items/{id}/validate` · `POST /api/gold/items/validate-all` | M20 KE 校验：单条问题明细 / 批量重算（reviewer/admin） |
 | GOLD 管理 | `/api/gold/articles` · `/api/gold/schedule` · `/api/gold/issues` · `/api/gold/samples` · `/api/gold/stats` | 篇任务 / 泳道 / 分歧 / 抽查 / 汇总 |
+| | `POST /api/gold/samples/auto` · `GET /api/gold/samples/{id}` · `POST …/{id}/reviews` · `POST …/{id}/items/{gid}/arbitrate` · `POST …/{id}/close` | M21 抽检闭环：分层等距抽样（seed 可复现）→ 双人盲评（重复打标 409）→ 分歧仲裁 → 关闭回填通过率（Wilson 95% CI + 一致率） |
 | KE 复核 | `GET /api/ke/review/queue` · `POST /api/ke/review` · `POST /api/ke/review/batch` · `GET /api/ke/review/history` | 待复核队列 / 逐条打标（写回任务并留痕）/ 批量 / 留痕查询（仅 reviewer/admin） |
 | 用户与组 | `GET/POST /api/admin/users` · `PATCH /api/admin/users/{uid}` · `POST /api/admin/users/{uid}/password` | 建号 / 改角色与组 / 重置密码（仅 admin） |
 | 本体 | `/api/concepts` · `/api/operators` · `/api/submissions`（含 approve/reject/merge/batch）· `/api/tmp` · `/api/health` · `/api/io` | 查重 / 审核 / 回填 / 体检 / 导入导出 |
@@ -66,4 +67,4 @@ curl -b ck.txt -X POST http://127.0.0.1:8000/api/tokens -H "Content-Type: applic
   "env": {"ONTOLOGY_BASE_URL": "http://127.0.0.1:8000", "ONTOLOGY_TOKEN": "ke_..."}}}}
 ```
 
-28 个工具覆盖：whoami / get_manifest / 概念与算子 CRUD / 查重 / 提交审核 / TMP 回填 / GOLDKE 篇级与泳道 / issue 话题评论 / KE 上传与组别状态 / 体检 / 导出与变更日志。工具即 §2 端点的薄封装，错误同样返回 `{error, detail}`。
+43 个工具覆盖：whoami / get_manifest / 概念与算子 CRUD / 查重 / 提交审核 / TMP 回填 / GOLDKE 篇级与泳道 / issue 话题评论与正式 Issue 闭环 / KE 上传与组别状态 / 成品校验与指纹 manifest / 抽检闭环（抽样-盲评-仲裁-关闭）/ 体检 / 导出与变更日志 / LLM 台账。工具即 §2 端点的薄封装，错误同样返回 `{error, detail}`。

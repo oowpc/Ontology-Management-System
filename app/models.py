@@ -268,8 +268,16 @@ class GoldIssueComment(Base):
 
 
 class GoldSample(Base):
-    """验收抽查记录：按范围抽样做语法校验等。"""
+    """验收抽查记录：按范围抽样做语法校验等。
+
+    M21 起分两态：kind=manual 手工登记（只记 total/passed 数字）；
+    kind=auto 系统抽样（分层等距抽样落样本清单 → 双人盲评 → 分歧仲裁 → 关闭时回填
+    total/passed），params 存抽样参数（含 seed，可复现），status=open/closed。"""
     __tablename__ = "gold_samples"
+    __table_args__ = (
+        CheckConstraint("kind IN ('manual','auto') OR kind IS NULL", name="ck_gold_samples_kind"),
+        CheckConstraint("status IN ('open','closed') OR status IS NULL", name="ck_gold_samples_status"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sample_date: Mapped[str] = mapped_column(String(16))
@@ -277,6 +285,45 @@ class GoldSample(Base):
     total: Mapped[int] = mapped_column(Integer, default=0)
     passed: Mapped[int] = mapped_column(Integer, default=0)
     checker: Mapped[str] = mapped_column(String(64))
+    note: Mapped[str] = mapped_column(Text, default="")
+    kind: Mapped[Optional[str]] = mapped_column(String(8))          # NULL=manual（旧数据）
+    params: Mapped[Optional[dict]] = mapped_column(JSON)            # auto：filters/size/rate/seed
+    status: Mapped[Optional[str]] = mapped_column(String(8))        # auto: open/closed；manual: NULL
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class GoldSampleItem(Base):
+    """M21：系统抽样的样本清单（分层等距抽样结果，落库可查可复核）。"""
+    __tablename__ = "gold_sample_items"
+    __table_args__ = (
+        UniqueConstraint("sample_id", "gold_item_id", name="uq_sample_item"),
+        CheckConstraint("final_verdict IN ('通过','不通过') OR final_verdict IS NULL",
+                        name="ck_gsi_final"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sample_id: Mapped[int] = mapped_column(ForeignKey("gold_samples.id"), index=True)
+    gold_item_id: Mapped[int] = mapped_column(ForeignKey("gold_items.id"), index=True)
+    article_code: Mapped[str] = mapped_column(String(32), default="")   # 冗余展示
+    ke_id: Mapped[str] = mapped_column(String(64), default="")
+    final_verdict: Mapped[Optional[str]] = mapped_column(String(8))     # 双人一致或仲裁落定
+    arbiter: Mapped[Optional[str]] = mapped_column(String(64))
+    arbitrated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+class GoldSampleReview(Base):
+    """M21：双人盲评留痕——(样本, 条目, 复核人) 唯一，重复提交 409。"""
+    __tablename__ = "gold_sample_reviews"
+    __table_args__ = (
+        UniqueConstraint("sample_id", "gold_item_id", "reviewer", name="uq_sample_review"),
+        CheckConstraint("verdict IN ('通过','不通过')", name="ck_gsr_verdict"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sample_id: Mapped[int] = mapped_column(ForeignKey("gold_samples.id"), index=True)
+    gold_item_id: Mapped[int] = mapped_column(ForeignKey("gold_items.id"), index=True)
+    reviewer: Mapped[str] = mapped_column(String(64))
+    verdict: Mapped[str] = mapped_column(String(8))                     # 通过 / 不通过
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

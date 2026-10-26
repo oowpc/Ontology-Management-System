@@ -63,6 +63,9 @@ _NEW_COLUMNS = {  # (表, 列): DDL 类型 —— 已有库补列在此登记（
     ("users", "group_name"): "VARCHAR(64)",
     ("ke_tasks", "article_code"): "VARCHAR(32)",
     ("gold_items", "validation"): "JSON",
+    ("gold_samples", "kind"): "VARCHAR(8)",
+    ("gold_samples", "params"): "JSON",
+    ("gold_samples", "status"): "VARCHAR(8)",
 }
 
 
