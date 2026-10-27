@@ -2,8 +2,11 @@
 {% block title %}标注批次 · 本体管理系统{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>标注批次</h1>
-  <span class="muted">CO 双盲 → 逐题对齐 → 本体合并 → KE → GOLD → 交叉检查</span>
+  <div>
+    <h1>标注批次</h1>
+    <span class="muted">CO 双盲 → 逐题对齐 → 本体合并 → KE → GOLD → 交叉检查</span>
+  </div>
+  <a class="btn" href="/annotation/versions">本体版本</a>
 </div>
 
 {% if can_create %}
@@ -27,9 +30,10 @@
     <div class="form-row">
       <label>来源名称<input name="source_name" placeholder="数据集/文章/题目集"></label>
       <label>来源版本/commit<input name="source_version"></label>
-      <label>校验和 sha256<input name="source_checksum"></label>
+      <label>本体领域<input name="domain" value="通用" placeholder="金融 / 政务 / 数学…"></label>
     </div>
     <div class="form-row">
+      <label>校验和 sha256<input name="source_checksum"></label>
       <label>指南版本<input name="guide_version" placeholder="如 v0.4"></label>
       <label>统计单位<input name="statistical_unit" value="标注单元"></label>
       <label>验收门槛<input name="acceptance_threshold" placeholder="如 100% 结构校验通过"></label>

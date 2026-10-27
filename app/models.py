@@ -685,6 +685,7 @@ class AnnotationBatch(Base):
     source_version: Mapped[str] = mapped_column(String(128), default="")
     source_checksum: Mapped[str] = mapped_column(String(128), default="")
     source_type: Mapped[str] = mapped_column(String(16), default="policy")  # policy/query/sql/lean/sparql/other
+    domain: Mapped[str] = mapped_column(String(64), default="通用", index=True)
     guide_version: Mapped[str] = mapped_column(String(64), default="")
     statistical_unit: Mapped[str] = mapped_column(String(64), default="标注单元")
     acceptance_threshold: Mapped[str] = mapped_column(String(256), default="")
@@ -891,4 +892,23 @@ class AnnotationCrossReview(Base):
     scope: Mapped[str] = mapped_column(String(256), default="")
     conclusion: Mapped[str] = mapped_column(String(16))
     findings: Mapped[Optional[list]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class QueryRun(Base):
+    """SQL/LEAN/SPARQL 执行/编译留痕：可复现、可复核，不覆盖历史。"""
+    __tablename__ = "query_runs"
+    __table_args__ = (CheckConstraint("side IN ('A','B') OR side IS NULL", name="ck_qr_side"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("annotation_batches.id"), index=True)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("annotation_units.id"), index=True)
+    side: Mapped[Optional[str]] = mapped_column(String(1))
+    source_type: Mapped[str] = mapped_column(String(16), default="sql")
+    command: Mapped[Optional[dict]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(16), default="passed")  # passed/failed/error
+    stdout: Mapped[str] = mapped_column(Text, default="")
+    stderr: Mapped[str] = mapped_column(Text, default="")
+    result: Mapped[Optional[dict]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

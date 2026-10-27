@@ -19,6 +19,8 @@
     <tr><th>创建</th><td>{{ i.created_by }} · {{ i.created_at|dt }}</td></tr>
     {% if i.annotation_batch_id or i.annotation_unit_id or i.annotation_stage %}
     <tr><th>标注上下文</th><td>批次 #{{ i.annotation_batch_id or '—' }} · 单元 #{{ i.annotation_unit_id or '—' }} · 阶段 {{ i.annotation_stage or '—' }}</td></tr>
+    {% if i.annotation_versions %}<tr><th>涉及版本</th><td><pre>{{ i.annotation_versions|tojson(indent=2) }}</pre></td></tr>{% endif %}
+    {% if i.annotation_evidence %}<tr><th>evidence</th><td><pre>{{ i.annotation_evidence|tojson(indent=2) }}</pre></td></tr>{% endif %}
     {% endif %}
     {% if i.resolved_at %}<tr><th>结案时间</th><td>{{ i.resolved_at|dt }}</td></tr>{% endif %}
     <tr><th>状态流转</th><td>

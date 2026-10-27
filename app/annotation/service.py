@@ -3,6 +3,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import tempfile
+import uuid
 from datetime import datetime
 
 from fastapi import HTTPException
@@ -13,8 +20,9 @@ from ..audit import log_change, snapshot
 from ..models import (AnnotationBatch, AnnotationCrossReview, AnnotationEvidence,
                       AnnotationMember, AnnotationUnit, CoAlignment, CoAnnotation,
                       CoMergeLog, Concept, ConceptParent, GoldKe, KeAnnotation,
-                      OntologyVersion, Operator, User)
+                      OntologyVersion, Operator, QueryRun, User)
 from ..paster import check_type_expr
+from ..services import concept_parents_map, set_concept_parents
 
 STATE_LABELS = {
     "draft": "草稿",
@@ -187,6 +195,7 @@ def create_batch(db: Session, data: dict, actor: dict) -> AnnotationBatch:
         source_version=str(data.get("source_version") or "").strip(),
         source_checksum=str(data.get("source_checksum") or "").strip(),
         source_type=str(data.get("source_type") or "policy").strip(),
+        domain=str(data.get("domain") or "通用").strip() or "通用",
         guide_version=str(data.get("guide_version") or "").strip(),
         statistical_unit=str(data.get("statistical_unit") or "标注单元").strip(),
         acceptance_threshold=str(data.get("acceptance_threshold") or "").strip(),
@@ -440,6 +449,12 @@ def submit_alignment(db: Session, unit: AnnotationUnit, data: dict, actor: dict)
         "operators": _lines(data.get("operators")),
         "decision": str(data.get("decision") or "include"),
     }
+    concept_rows = _json_field(data.get("concept_rows"), "concept_rows")
+    operator_rows = _json_field(data.get("operator_rows"), "operator_rows")
+    if concept_rows:
+        aligned["concept_rows"] = concept_rows
+    if operator_rows:
+        aligned["operator_rows"] = operator_rows
     differences = _lines(data.get("differences"))
     align = CoAlignment(
         batch_id=batch.id, unit_id=unit.id, version=latest + 1, is_current=True,
@@ -769,9 +784,18 @@ def advance_state(db: Session, batch: AnnotationBatch, action: str, actor: dict,
                 missing.append(u.unit_id)
         if missing:
             raise HTTPException(400, f"还有 {len(missing)} 个单元缺 A/B KE")
-        if any(u.source_type in {"sql", "lean", "sparql"} and not
-               all((k.execution or {}) for k in current_ke(db, u.id)) for u in units):
-            raise HTTPException(400, "SQL/LEAN/SPARQL 单元缺执行/编译结果")
+        for u in units:
+            if u.source_type not in {"sql", "lean", "sparql"}:
+                continue
+            for side in ("A", "B"):
+                ke = db.scalar(select(KeAnnotation).where(
+                    KeAnnotation.unit_id == u.id, KeAnnotation.side == side,
+                    KeAnnotation.is_current.is_(True)))
+                run = db.scalar(select(QueryRun).where(
+                    QueryRun.unit_id == u.id, QueryRun.side == side,
+                    QueryRun.status == "passed").order_by(QueryRun.id.desc()))
+                if not ((ke and ke.execution) or run):
+                    raise HTTPException(400, f"单元 {u.unit_id} 的 {side} 侧缺执行/编译结果")
         batch.state = "gold_merge"
     elif action == "start_cross":
         if batch.state != "gold_merge":
@@ -779,6 +803,9 @@ def advance_state(db: Session, batch: AnnotationBatch, action: str, actor: dict,
         missing = [u.unit_id for u in units if not current_gold(db, u.id)]
         if missing:
             raise HTTPException(400, f"还有 {len(missing)} 个单元缺 GOLD")
+        cross = {m.username for m in _members(db, batch.id) if m.role == "cross_checker"}
+        if len(cross) < 2:
+            raise HTTPException(400, "交叉检查组至少需要 2 名成员")
         batch.state = "cross_review"
     elif action == "validate":
         if batch.state != "cross_review":
@@ -817,6 +844,15 @@ def advance_state(db: Session, batch: AnnotationBatch, action: str, actor: dict,
 
 def batch_stats(db: Session, batch: AnnotationBatch) -> dict:
     units = list_units(db, batch)
+    co_atoms = {"A": 0, "B": 0}
+    aligned_atoms = 0
+    for u in units:
+        for c in current_co(db, u.id):
+            co_atoms[c.side] += len(c.concepts or []) + len(c.constants or []) + len(c.operators or [])
+        a = current_alignment(db, u.id)
+        if a:
+            aligned_atoms += sum(len((a.aligned or {}).get(k) or [])
+                                 for k in ("concepts", "constants", "operators"))
     return {
         "units": len(units),
         "co_a": sum(1 for u in units if _has_current(db, CoAnnotation, u.id, side="A")),
@@ -825,6 +861,8 @@ def batch_stats(db: Session, batch: AnnotationBatch) -> dict:
         "ke_a": sum(1 for u in units if _has_current(db, KeAnnotation, u.id, side="A")),
         "ke_b": sum(1 for u in units if _has_current(db, KeAnnotation, u.id, side="B")),
         "gold": sum(1 for u in units if current_gold(db, u.id)),
+        "co_atoms_a": co_atoms["A"], "co_atoms_b": co_atoms["B"],
+        "aligned_atoms": aligned_atoms,
     }
 
 
@@ -877,10 +915,19 @@ def unit_context(db: Session, unit: AnnotationUnit, user: dict) -> dict:
     can_submit_ke_now = (
         state == "ke_blind" and my_side and can_annotate_side(db, batch, user, my_side)
         and align is not None and align.conclusion != "pending")
+    runs = latest_runs(db, unit.id) if can_view else []
+    if can_view and state == "ke_blind" and not privileged:
+        runs = [r for r in runs if r.side in sides]
+    latest_run = next((r for r in runs if r.side == my_side and r.status == "passed"), None)
+    can_run = (can_view and state in {"ke_blind", "gold_merge", "cross_review",
+                                      "validation", "rework"}
+               and unit.source_type in {"sql", "lean", "sparql"}
+               and (my_side or _is_admin(user) or bool(roles & {"lead", "arbiter"})))
     return {
         "batch": batch, "unit": unit, "evidence": list_evidence(db, unit),
         "co_a": co.get("A"), "co_b": co.get("B"),
         "alignment": align, "ke_a": ke.get("A"), "ke_b": ke.get("B"), "gold": gold,
+        "runs": runs, "latest_run": latest_run,
         "roles": roles, "sides": sides, "my_side": my_side,
         "can_view_data": can_view,
         "can_submit_co": (state == "co_blind" and my_side is not None
@@ -888,6 +935,264 @@ def unit_context(db: Session, unit: AnnotationUnit, user: dict) -> dict:
         "can_align": state == "co_alignment" and can_align(db, batch, user),
         "can_submit_ke": bool(can_submit_ke_now),
         "can_submit_gold": state == "gold_merge" and can_align(db, batch, user),
+        "can_run_query": can_run,
         "can_add_evidence": can_view and state != "passed",
         "state": state, "state_label": STATE_LABELS.get(state, state),
     }
+
+
+_OP_RE = re.compile(r"^([^\s(]+)\s*\(([^)]*)\)\s*:\s*(.+)$")
+
+
+def _op_rows(alignment: CoAlignment) -> list[dict]:
+    aligned = alignment.aligned or {}
+    rows = aligned.get("operator_rows")
+    if isinstance(rows, list):
+        return [r for r in rows if isinstance(r, dict) and r.get("name") and r.get("subject")]
+    out = []
+    for line in aligned.get("operators") or []:
+        m = _OP_RE.match(str(line).strip())
+        if m:
+            out.append({"name": m.group(1).strip(), "subject": m.group(2).strip(),
+                        "return_type": m.group(3).strip()})
+    return out
+
+
+def _concept_rows(alignment: CoAlignment) -> list[dict]:
+    aligned = alignment.aligned or {}
+    rows = aligned.get("concept_rows")
+    if isinstance(rows, list):
+        return [r for r in rows if isinstance(r, dict) and r.get("name")]
+    return [{"name": n} for n in (aligned.get("concepts") or []) if str(n).strip()]
+
+
+def apply_alignments(db: Session, batch: AnnotationBatch, actor: dict,
+                     label: str | None = None) -> dict:
+    """把逐题对齐结果合并进全局本体，并生成一个 CO_M 草稿版本。"""
+    require_manage(db, batch, actor)
+    if batch.state not in {"co_merge", "rework"}:
+        raise HTTPException(400, "只有本体合并阶段可应用对齐结果")
+    units = list_units(db, batch)
+    aligns = [(u, current_alignment(db, u.id)) for u in units]
+    aligns = [(u, a) for u, a in aligns if a]
+    if not aligns:
+        raise HTTPException(400, "没有可应用的逐题对齐结果")
+    stats = {"concepts_created": 0, "concepts_updated": 0, "operators_created": 0,
+             "operators_updated": 0, "skipped": [], "constants": 0, "units": len(aligns)}
+    all_names = set(db.scalars(select(Concept.name)).all())
+    parent_wanted: list[tuple[str, str]] = []
+    # 第一遍：所有概念（跨单元先建齐，保证算子/父类可解析）
+    for unit, a in aligns:
+        stats["constants"] += len((a.aligned or {}).get("constants") or [])
+        for row in _concept_rows(a):
+            name = str(row.get("name") or "").strip()
+            if not name:
+                continue
+            existing = db.scalar(select(Concept).where(Concept.name == name))
+            definition = str(row.get("definition") or "")
+            aliases = [str(x).strip() for x in (row.get("aliases") or []) if str(x).strip()]
+            if existing is None:
+                existing = Concept(name=name, domain=batch.domain or "通用",
+                                   aliases=aliases, definition=definition,
+                                   status="approved", created_by=actor["username"],
+                                   reviewed_by=actor["username"],
+                                   ontology_module=f"annotation:{batch.batch_id}")
+                db.add(existing)
+                db.flush()
+                log_change(db, "concept", existing.id, "create", None, snapshot(existing),
+                           actor["username"])
+                stats["concepts_created"] += 1
+                all_names.add(name)
+            else:
+                before = snapshot(existing)
+                changed = False
+                if definition and not (existing.definition or ""):
+                    existing.definition = definition
+                    changed = True
+                if aliases:
+                    merged = list(existing.aliases or [])
+                    for x in aliases:
+                        if x not in merged:
+                            merged.append(x)
+                    if merged != (existing.aliases or []):
+                        existing.aliases = merged
+                        changed = True
+                if changed:
+                    log_change(db, "concept", existing.id, "import", before,
+                               snapshot(existing), actor["username"])
+                    stats["concepts_updated"] += 1
+            parent = str(row.get("parent") or "").strip()
+            if parent:
+                parent_wanted.append((name, parent))
+    db.flush()
+    # 第二遍：父类
+    for name, parent_name in parent_wanted:
+        c = db.scalar(select(Concept).where(Concept.name == name))
+        p = db.scalar(select(Concept).where(Concept.name == parent_name))
+        if not c or not p:
+            stats["skipped"].append(f"父类 {name} <: {parent_name}：概念不存在")
+            continue
+        current = [x["id"] for x in concept_parents_map(db, [c.id]).get(c.id, [])]
+        if p.id in current:
+            continue
+        try:
+            set_concept_parents(db, c, [p.id] + current)
+        except HTTPException as e:
+            stats["skipped"].append(f"父类 {name} <: {parent_name}：{e.detail}")
+    # 第三遍：算子
+    for unit, a in aligns:
+        for row in _op_rows(a):
+            name = str(row.get("name") or "").strip()
+            subj_name = str(row.get("subject") or "").strip()
+            ret = str(row.get("return_type") or "").strip()
+            subj = db.scalar(select(Concept).where(Concept.name == subj_name))
+            if not subj or not ret:
+                stats["skipped"].append(f"算子 {name}({subj_name})：主体/返回类型缺失")
+                continue
+            if check_type_expr(ret, all_names):
+                stats["skipped"].append(f"算子 {name}({subj_name})：返回类型 {ret} 不合法")
+                continue
+            op = db.scalar(select(Operator).where(Operator.name == name,
+                                                  Operator.subject_concept_id == subj.id))
+            if op is None:
+                op = Operator(name=name, subject_concept_id=subj.id,
+                              owner_concept_id=None, param_types=[],
+                              return_type=ret, status="approved",
+                              source_uri=None, ontology_module=f"annotation:{batch.batch_id}",
+                              created_by=actor["username"])
+                db.add(op)
+                db.flush()
+                log_change(db, "operator", op.id, "create", None, snapshot(op), actor["username"])
+                stats["operators_created"] += 1
+            elif op.return_type != ret:
+                before = snapshot(op)
+                op.return_type = ret
+                log_change(db, "operator", op.id, "import", before, snapshot(op),
+                           actor["username"])
+                stats["operators_updated"] += 1
+        db.add(CoMergeLog(batch_id=batch.id, action="merge",
+                          source_units=[unit.unit_id], target="CO_M",
+                          reason=f"apply alignment #{a.id}", created_by=actor["username"]))
+    db.flush()
+    label = (label or "").strip() or f"CO_M-{batch.batch_id}-{uuid.uuid4().hex[:6]}"
+    latest = db.scalar(select(OntologyVersion).where(
+        OntologyVersion.status == "released").order_by(OntologyVersion.id.desc()))
+    version = create_version(db, batch, {
+        "label": label, "parent_version_id": latest.id if latest else None,
+        "note": "由逐题对齐结果自动应用",
+    }, actor)
+    version.merge_log = [stats]
+    db.commit()
+    return {"stats": stats, "version_id": version.id, "label": version.label}
+
+
+def latest_runs(db: Session, unit_id: int, side: str | None = None) -> list[QueryRun]:
+    stmt = select(QueryRun).where(QueryRun.unit_id == unit_id)
+    if side:
+        stmt = stmt.where(QueryRun.side == side)
+    return db.scalars(stmt.order_by(QueryRun.id.desc())).all()
+
+
+def run_query(db: Session, unit: AnnotationUnit, side: str, actor: dict) -> QueryRun:
+    batch = get_batch_or_404(db, unit.batch_id)
+    require_view_batch(db, batch, actor)
+    if side not in {"A", "B"}:
+        raise HTTPException(400, "side 必须是 A/B")
+    if batch.state not in {"ke_blind", "gold_merge", "cross_review", "validation", "rework"}:
+        raise HTTPException(400, "当前阶段不能执行查询/编译")
+    roles = roles_for(db, batch, actor)
+    if not (_is_admin(actor) or side in sides_for(db, batch, actor)
+            or roles & {"lead", "arbiter", "batch_owner", "project_owner"}):
+        raise HTTPException(403, "无权执行该侧查询")
+    payload = unit.source_payload or {}
+    source_type = unit.source_type
+    status, stdout, stderr, result = "failed", "", "", {}
+    command = {"source_type": source_type}
+    if source_type == "sql":
+        schema = str(payload.get("schema_sql") or "")
+        target = str(payload.get("target_sql") or payload.get("sql") or "")
+        command.update({"schema_sql": schema[:2000], "target_sql": target[:2000]})
+        if not target.strip():
+            raise HTTPException(400, "source_payload 缺 target_sql")
+        if ";" in target.strip().rstrip(";"):
+            raise HTTPException(400, "target_sql 只允许单条语句")
+        conn = sqlite3.connect(":memory:")
+        try:
+            if schema.strip():
+                conn.executescript(schema)
+            plan = conn.execute("EXPLAIN " + target).fetchall()
+            result = {"plan": [list(map(str, row)) for row in plan[:50]]}
+            status = "passed"
+            stdout = f"SQL 计划通过，{len(plan)} 行"
+        except Exception as e:  # noqa: BLE001
+            stderr = str(e)
+        finally:
+            conn.close()
+    elif source_type == "sparql":
+        try:
+            from rdflib import Graph
+        except ModuleNotFoundError:
+            raise HTTPException(400, "SPARQL 执行需要安装 rdflib")
+        rdf = str(payload.get("rdf") or payload.get("ttl") or "")
+        query = str(payload.get("target_sparql") or payload.get("sparql") or "")
+        command.update({"target_sparql": query[:2000]})
+        if not rdf.strip() or not query.strip():
+            raise HTTPException(400, "source_payload 缺 rdf / target_sparql")
+        g = Graph()
+        try:
+            g.parse(data=rdf, format=str(payload.get("rdf_format") or "turtle"))
+        except Exception:
+            g.parse(data=rdf, format="xml")
+        try:
+            res = g.query(query)
+            if res.type == "ASK":
+                result = {"ask": bool(res.askAnswer)}
+            else:
+                rows = []
+                for row in res:
+                    if hasattr(row, "__getitem__") and res.vars:
+                        rows.append({str(v): str(row[v]) for v in res.vars})
+                    else:
+                        rows.append([str(x) for x in row])
+                    if len(rows) >= 100:
+                        break
+                result = {"vars": [str(v) for v in (res.vars or [])], "rows": rows}
+            status = "passed"
+            stdout = f"SPARQL 执行通过"
+        except Exception as e:  # noqa: BLE001
+            stderr = str(e)
+    elif source_type == "lean":
+        lean = os.environ.get("LEAN_BIN") or shutil.which("lean")
+        source = str(payload.get("lean_source") or "")
+        command["lean_bin"] = lean or ""
+        if not lean:
+            raise HTTPException(400, "未配置 LEAN 执行器（设置 LEAN_BIN）")
+        if not source.strip():
+            raise HTTPException(400, "source_payload 缺 lean_source")
+        tmp = tempfile.NamedTemporaryFile("w", suffix=".lean", delete=False, encoding="utf-8")
+        try:
+            tmp.write(source)
+            tmp.close()
+            proc = subprocess.run([lean, tmp.name], capture_output=True, text=True, timeout=30)
+            stdout, stderr = proc.stdout[-8000:], proc.stderr[-8000:]
+            status = "passed" if proc.returncode == 0 else "failed"
+            result = {"returncode": proc.returncode}
+        except subprocess.TimeoutExpired:
+            status, stderr = "failed", "LEAN 执行超时（30s）"
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+    else:
+        raise HTTPException(400, "该单元不是 SQL/LEAN/SPARQL 类型")
+    run = QueryRun(batch_id=batch.id, unit_id=unit.id, side=side,
+                   source_type=source_type, command=command, status=status,
+                   stdout=stdout[-8000:], stderr=stderr[-8000:], result=result,
+                   created_by=actor["username"])
+    db.add(run)
+    db.flush()
+    log_change(db, "query_run", run.id, "create", None, snapshot(run), actor["username"])
+    db.commit()
+    db.refresh(run)
+    return run

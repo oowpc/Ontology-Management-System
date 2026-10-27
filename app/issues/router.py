@@ -1,6 +1,7 @@
 """Issue 管理：/issues（页面）与 /api/issues/*（第①步：列表 + 新建/编辑）。"""
 from __future__ import annotations
 
+import json
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -188,6 +189,20 @@ async def issue_new(request: Request, db: Session = Depends(get_db),
         entity_link = {"entity_type": str(form["entity_type"]),
                        "entity_id": int(form["entity_id"])}
     try:
+        versions_raw = str(form.get("annotation_versions") or "").strip()
+        evidence_raw = str(form.get("annotation_evidence") or "").strip()
+        annotation_versions = json.loads(versions_raw) if versions_raw else None
+        annotation_evidence = json.loads(evidence_raw) if evidence_raw else None
+        if annotation_versions is not None and not isinstance(annotation_versions, list):
+            raise ValueError("涉及版本必须是 JSON 数组")
+        if annotation_evidence is not None and not isinstance(annotation_evidence, dict):
+            raise ValueError("evidence 必须是 JSON 对象")
+    except Exception as e:  # noqa: BLE001
+        return templates.TemplateResponse(request=request, name="issues/form.html", context=_form_ctx(
+            db, request, user, i=None, error=f"标注版本/evidence JSON 不合法：{e}",
+            prefill=None, values=form,
+        ), status_code=400)
+    try:
         i = service.create_issue(
             db, title=str(form.get("title", "")), type_tag=str(form.get("type_tag", "")),
             description=str(form.get("description", "")),
@@ -199,6 +214,8 @@ async def issue_new(request: Request, db: Session = Depends(get_db),
             annotation_batch_id=int(form["annotation_batch_id"]) if str(form.get("annotation_batch_id", "")).isdigit() else None,
             annotation_unit_id=int(form["annotation_unit_id"]) if str(form.get("annotation_unit_id", "")).isdigit() else None,
             annotation_stage=str(form.get("annotation_stage", "")),
+            annotation_versions=annotation_versions,
+            annotation_evidence=annotation_evidence,
             actor=user["username"])
     except HTTPException as e:
         return templates.TemplateResponse(request=request, name="issues/form.html", context=_form_ctx(

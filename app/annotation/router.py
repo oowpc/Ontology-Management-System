@@ -1,17 +1,21 @@
 """SOP 手工标注工作流页面。"""
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import (AnnotationBatch, AnnotationCrossReview, AnnotationMember,
-                      AnnotationUnit, CoMergeLog, OntologyVersion, User)
+from ..models import (AnnotationBatch, AnnotationCrossReview, AnnotationEvidence,
+                      AnnotationMember, AnnotationUnit, AuditLog, CoAlignment,
+                      CoAnnotation, CoMergeLog, GoldKe, Issue, KeAnnotation,
+                      OntologyVersion, QueryRun, User)
 from ..security import current_user
 from ..templating import templates
 from . import service
@@ -30,6 +34,16 @@ def _back(path: str, ok: str | None = None, err: str | None = None):
 
 def _usernames(db: Session) -> list[str]:
     return list(db.scalars(select(User.username).order_by(User.username)))
+
+
+def _dict(obj) -> dict:
+    out = {}
+    for col in obj.__table__.columns:
+        v = getattr(obj, col.name)
+        if hasattr(v, "isoformat"):
+            v = v.isoformat()
+        out[col.name] = v
+    return out
 
 
 @router.get("")
@@ -57,9 +71,9 @@ async def create_batch(request: Request, db: Session = Depends(get_db),
     try:
         batch = service.create_batch(db, {k: form.get(k) for k in (
             "batch_id", "name", "source_name", "source_version", "source_checksum",
-            "source_type", "guide_version", "statistical_unit", "acceptance_threshold",
-            "annotator_a", "annotator_b", "lead", "arbiter", "cross_checkers",
-            "project_owner", "note")}, user)
+            "source_type", "domain", "guide_version", "statistical_unit",
+            "acceptance_threshold", "annotator_a", "annotator_b", "lead", "arbiter",
+            "cross_checkers", "project_owner", "note")}, user)
     except HTTPException as e:
         return _back("/annotation", err=e.detail)
     return _back(f"/annotation/batches/{batch.id}", ok="批次已创建")
@@ -212,6 +226,129 @@ async def add_cross_review(bid: int, request: Request, db: Session = Depends(get
     return _back(f"/annotation/batches/{bid}", ok="交叉检查结论已记录")
 
 
+@router.get("/versions")
+def versions_page(request: Request, db: Session = Depends(get_db),
+                  user: dict = Depends(current_user)):
+    if user.get("role") == "admin":
+        versions = db.scalars(select(OntologyVersion).order_by(
+            OntologyVersion.id.desc())).all()
+    else:
+        ids = db.scalars(select(AnnotationMember.batch_id).where(
+            AnnotationMember.username == user["username"]).distinct()).all()
+        versions = db.scalars(select(OntologyVersion).where(
+            OntologyVersion.batch_id.in_(ids)).order_by(
+            OntologyVersion.id.desc())).all() if ids else []
+    rows = []
+    for v in versions:
+        b = db.get(AnnotationBatch, v.batch_id)
+        rows.append({"version": v, "batch": b,
+                     "can_manage": bool(b and service.can_manage(db, b, user)),
+                     "can_approve": bool(b and service.can_project_approve(db, b, user))})
+    return templates.TemplateResponse(request=request, name="annotation/versions.html", context={
+        "request": request, "user": user, "rows": rows,
+    })
+
+
+@router.post("/batches/{bid}/apply")
+async def apply_alignments(bid: int, request: Request, db: Session = Depends(get_db),
+                           user: dict = Depends(current_user)):
+    batch = service.get_batch_or_404(db, bid)
+    form = await request.form()
+    try:
+        res = service.apply_alignments(db, batch, user,
+                                       str(form.get("label") or "") or None)
+    except HTTPException as e:
+        return _back(f"/annotation/batches/{bid}", err=e.detail)
+    st = res["stats"]
+    return _back(f"/annotation/batches/{bid}",
+                 ok=f"已应用：概念 +{st['concepts_created']} / 算子 +{st['operators_created']}；"
+                    f"版本 {res['label']}（草稿，需冻结）")
+
+
+@router.get("/batches/{bid}/export")
+def export_batch(bid: int, db: Session = Depends(get_db),
+                 user: dict = Depends(current_user)):
+    batch = service.get_batch_or_404(db, bid)
+    if not (service.can_manage(db, batch, user) or service.can_project_approve(db, batch, user)):
+        raise HTTPException(403, "仅组长/批次负责人/项目负责人可导出归档")
+    units = service.list_units(db, batch)
+    unit_ids = [u.id for u in units]
+    evidence = db.scalars(select(AnnotationEvidence).where(
+        AnnotationEvidence.batch_id == bid).order_by(AnnotationEvidence.id)).all()
+    co = db.scalars(select(CoAnnotation).where(CoAnnotation.batch_id == bid)
+                    .order_by(CoAnnotation.id)).all()
+    align = db.scalars(select(CoAlignment).where(CoAlignment.batch_id == bid)
+                       .order_by(CoAlignment.id)).all()
+    ke = db.scalars(select(KeAnnotation).where(KeAnnotation.batch_id == bid)
+                    .order_by(KeAnnotation.id)).all()
+    gold = db.scalars(select(GoldKe).where(GoldKe.batch_id == bid)
+                      .order_by(GoldKe.id)).all()
+    runs = db.scalars(select(QueryRun).where(QueryRun.batch_id == bid)
+                      .order_by(QueryRun.id)).all()
+    versions = db.scalars(select(OntologyVersion).where(OntologyVersion.batch_id == bid)
+                          .order_by(OntologyVersion.id)).all()
+    logs = db.scalars(select(CoMergeLog).where(CoMergeLog.batch_id == bid)
+                      .order_by(CoMergeLog.id)).all()
+    reviews = db.scalars(select(AnnotationCrossReview).where(
+        AnnotationCrossReview.batch_id == bid).order_by(AnnotationCrossReview.id)).all()
+    issue_cond = Issue.annotation_batch_id == bid
+    if unit_ids:
+        issue_cond = issue_cond | Issue.annotation_unit_id.in_(unit_ids)
+    issues = db.scalars(select(Issue).where(issue_cond).order_by(Issue.id)).all()
+    version_ids = [v.id for v in versions]
+    audit_cond = (AuditLog.entity_type == "annotation_batch") & (AuditLog.entity_id == bid)
+    if version_ids:
+        audit_cond = audit_cond | ((AuditLog.entity_type == "ontology_version")
+                                   & AuditLog.entity_id.in_(version_ids))
+    audits = db.scalars(select(AuditLog).where(audit_cond).order_by(AuditLog.id)).all()
+    files = {
+        "batch.json": {"batch": _dict(batch), "stats": service.batch_stats(db, batch),
+                       "members": [_dict(m) for m in service._members(db, bid)]},
+        "units.json": [_dict(u) for u in units],
+        "evidence.json": [_dict(e) for e in evidence],
+        "co_annotations.json": [_dict(c) for c in co],
+        "co_alignments.json": [_dict(a) for a in align],
+        "ke_annotations.json": [_dict(k) for k in ke],
+        "gold_kes.json": [_dict(g) for g in gold],
+        "query_runs.json": [_dict(r) for r in runs],
+        "ontology_versions.json": [_dict(v) for v in versions],
+        "merge_logs.json": [_dict(l) for l in logs],
+        "cross_reviews.json": [_dict(r) for r in reviews],
+        "issues.json": [_dict(i) for i in issues],
+        "audit.json": [_dict(a) for a in audits],
+    }
+    readme = ("# 标注批次归档\n\n"
+              f"- 批次：{batch.batch_id} {batch.name}\n"
+              f"- 状态：{service.STATE_LABELS.get(batch.state, batch.state)}\n"
+              f"- 来源：{batch.source_name} {batch.source_version}\n"
+              f"- 校验和：{batch.source_checksum}\n\n"
+              "文件：batch/units/evidence/CO/对齐/KE/GOLD/query_runs/versions/merge_logs/"
+              "cross_reviews/issues/audit。\n")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            z.writestr(name, json.dumps(data, ensure_ascii=False, indent=2))
+        z.writestr("README.md", readme)
+    return Response(buf.getvalue(), media_type="application/zip",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="annotation-{batch.batch_id}.zip"'})
+
+
+@router.post("/units/{uid}/run-query")
+async def run_query(uid: int, request: Request, db: Session = Depends(get_db),
+                    user: dict = Depends(current_user)):
+    unit = service.get_unit_or_404(db, uid)
+    form = await request.form()
+    try:
+        run = service.run_query(db, unit, str(form.get("side") or ""), user)
+    except HTTPException as e:
+        return _back(f"/annotation/units/{uid}", err=e.detail)
+    if run.status == "passed":
+        return _back(f"/annotation/units/{uid}", ok="执行/编译通过，已记录运行结果")
+    return _back(f"/annotation/units/{uid}",
+                 err=f"执行失败：{(run.stderr or '见运行记录')[:200]}")
+
+
 @router.get("/units/{uid}")
 def unit_detail(uid: int, request: Request, db: Session = Depends(get_db),
                 user: dict = Depends(current_user)):
@@ -273,6 +410,8 @@ async def submit_alignment(uid: int, request: Request, db: Session = Depends(get
             "conclusion": form.get("conclusion"), "decision": form.get("decision"),
             "concepts": form.get("concepts"), "constants": form.get("constants"),
             "operators": form.get("operators"), "differences": form.get("differences"),
+            "concept_rows": form.get("concept_rows"),
+            "operator_rows": form.get("operator_rows"),
             "reason": form.get("reason"), "evidence_ids": form.getlist("evidence_ids"),
         }, user)
     except HTTPException as e:

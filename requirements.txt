@@ -14,3 +14,4 @@ httpx>=0.27
 openpyxl>=3.1
 # PostgreSQL 路径（DB_URL=postgresql+psycopg://…；CI PG lane 验证，SQLite 单库可不管）
 psycopg[binary]>=3.1
+rdflib>=7.0

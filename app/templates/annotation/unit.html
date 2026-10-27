@@ -137,6 +137,10 @@
     <label>对齐算子（一行一个）<textarea name="operators" rows="3">{{ (((alignment.aligned or {}).get('operators') or [])|join('\n')) if alignment else '' }}</textarea></label>
     <label>差异 / 分歧点（一行一条）<textarea name="differences" rows="2">{{ (alignment.differences or [])|join('\n') if alignment else '' }}</textarea></label>
     <label>理由<textarea name="reason" rows="2">{{ alignment.reason if alignment else '' }}</textarea></label>
+    <details><summary>结构化概念行 / 算子行（JSON，可选；用于自动应用 CO_M）</summary>
+      <label>概念行 JSON<textarea name="concept_rows" rows="4" placeholder='[{"name":"概念A","parent":"概念B","definition":"...","aliases":[]}]'>{{ (alignment.aligned.get('concept_rows')|tojson(indent=2)) if alignment and alignment.aligned and alignment.aligned.get('concept_rows') else '' }}</textarea></label>
+      <label>算子行 JSON<textarea name="operator_rows" rows="4" placeholder='[{"name":"hasX","subject":"概念A","return_type":"概念B"}]'>{{ (alignment.aligned.get('operator_rows')|tojson(indent=2)) if alignment and alignment.aligned and alignment.aligned.get('operator_rows') else '' }}</textarea></label>
+    </details>
     {% if evidence %}
     <details><summary>关联 evidence</summary>
       {% for e in evidence %}<label class="inline"><input type="checkbox" name="evidence_ids" value="{{ e.id }}" {{ 'checked' if alignment and e.id in (alignment.evidence_ids or []) }}> #{{ e.id }} {{ e.quote[:40] }}</label><br>{% endfor %}
@@ -169,13 +173,14 @@
 </div>
 {% if can_submit_ke %}
 {% set myke = ke_a if my_side == 'A' else ke_b %}
+{% set exec_val = (myke.execution if myke and myke.execution else (latest_run.result if latest_run else None)) %}
 <div class="panel">
   <h3>提交我的 {{ my_side }} 侧 KE</h3>
   <form class="form" method="post" action="/annotation/units/{{ unit.id }}/ke">
     <input type="hidden" name="side" value="{{ my_side }}">
     <label>KE 内容<textarea name="content" rows="6" required>{{ myke.content if myke else '' }}</textarea></label>
     <div class="form-row">
-      <label>执行/编译结果 JSON<textarea name="execution" rows="3">{{ (myke.execution|tojson(indent=2)) if myke and myke.execution is mapping else (myke.execution if myke and myke.execution else '') }}</textarea></label>
+      <label>执行/编译结果 JSON<textarea name="execution" rows="3">{{ (exec_val|tojson(indent=2)) if exec_val is mapping else (exec_val or '') }}</textarea></label>
       <label>自检 JSON<textarea name="self_check" rows="3">{{ (myke.self_check|tojson(indent=2)) if myke and myke.self_check is mapping else (myke.self_check if myke and myke.self_check else '') }}</textarea></label>
     </div>
     {% if evidence %}
@@ -189,6 +194,34 @@
 {% endif %}
 {% if not can_submit_ke and state == 'ke_blind' %}
 <p class="muted">当前不可提交 KE：需要 CO 已对齐且不是待裁决状态。</p>
+{% endif %}
+
+{% if unit.source_type in ['sql', 'lean', 'sparql'] %}
+<h2>执行 / 编译记录</h2>
+<div class="panel">
+  <table class="data">
+    <thead><tr><th>时间</th><th>侧</th><th>类型</th><th>状态</th><th>输出/错误</th><th>详情</th></tr></thead>
+    <tbody>
+    {% for r in runs %}
+    <tr>
+      <td class="muted">{{ r.created_at|dt }}</td>
+      <td>{{ r.side or '—' }}</td>
+      <td>{{ r.source_type }}</td>
+      <td><span class="badge {{ 'approved' if r.status == 'passed' else 'disabled' }}">{{ r.status }}</span></td>
+      <td class="muted">{{ (r.stdout or r.stderr or '—')[:120] }}</td>
+      <td><details><summary>查看</summary><pre>{{ (r.result or {})|tojson(indent=2) }}</pre><pre>{{ r.stderr }}</pre></details></td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="empty">暂无执行记录</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if can_run_query %}
+  <form class="ann-actions" method="post" action="/annotation/units/{{ unit.id }}/run-query">
+    {% if my_side %}<input type="hidden" name="side" value="{{ my_side }}">{% else %}<select name="side"><option value="A">A</option><option value="B">B</option></select>{% endif %}
+    <button class="btn primary" type="submit">执行 / 编译校验</button>
+    <span class="muted">SQL 用 schema_sql + target_sql；SPARQL 用 rdf + target_sparql；LEAN 用 lean_source（需 LEAN_BIN）。</span>
+  </form>
+  {% endif %}
+</div>
 {% endif %}
 
 {% if gold or can_submit_gold %}

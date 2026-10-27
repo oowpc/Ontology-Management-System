@@ -14,6 +14,10 @@
   <input type="hidden" name="annotation_unit_id" value="{{ prefill.annotation_unit_id }}">
   <input type="hidden" name="annotation_stage" value="{{ prefill.annotation_stage }}">
   <p class="muted">标注上下文：批次 #{{ prefill.annotation_batch_id }} · 单元 #{{ prefill.annotation_unit_id }} · 阶段 {{ prefill.annotation_stage }}</p>
+  <div class="form-row">
+    <label>涉及版本（JSON 数组，可选）<textarea name="annotation_versions" rows="2" placeholder='["CO_M-v1","GOLD-v1"]'></textarea></label>
+    <label>evidence（JSON 对象，可选）<textarea name="annotation_evidence" rows="2" placeholder='{"quote":"...","locator":{"page":1}}'></textarea></label>
+  </div>
   {% endif %}
   <label>标题（需要决定的问题，勿用「关于/讨论/记录」开头）*
     <input name="title" value="{{ i.title if i else '' }}" required placeholder="例：「跨省居住地与户籍地不一致」应如何建模？">

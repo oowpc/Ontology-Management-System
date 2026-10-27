@@ -6,7 +6,13 @@
     <h1>{{ batch.batch_id }} <span class="badge approved">{{ STATE_LABELS.get(batch.state, batch.state) }}</span></h1>
     <div class="muted">{{ batch.name }} · {{ batch.source_name or '未填来源' }} {{ batch.source_version }}</div>
   </div>
-  <a class="btn" href="/annotation">← 批次列表</a>
+  <div>
+    {% if can_manage or can_approve %}
+    <a class="btn" href="/annotation/batches/{{ batch.id }}/export">导出归档 ZIP</a>
+    {% endif %}
+    <a class="btn" href="/annotation/versions">本体版本</a>
+    <a class="btn" href="/annotation">← 批次列表</a>
+  </div>
 </div>
 
 <div class="ann-grid">
@@ -14,6 +20,7 @@
     <h2>批次信息</h2>
     <table class="kv">
       <tr><th>来源类型</th><td>{{ batch.source_type }}</td></tr>
+      <tr><th>本体领域</th><td>{{ batch.domain or '通用' }}</td></tr>
       <tr><th>校验和</th><td class="muted">{{ batch.source_checksum or '—' }}</td></tr>
       <tr><th>指南版本</th><td>{{ batch.guide_version or '—' }}</td></tr>
       <tr><th>统计单位</th><td>{{ batch.statistical_unit }}</td></tr>
@@ -30,9 +37,21 @@
       <tr><th>已对齐</th><td>{{ stats.aligned }}</td></tr>
       <tr><th>KE A / B</th><td>{{ stats.ke_a }} / {{ stats.ke_b }}</td></tr>
       <tr><th>GOLD</th><td>{{ stats.gold }}</td></tr>
+      <tr><th>原子结果（CO）</th><td>A {{ stats.co_atoms_a }} / B {{ stats.co_atoms_b }} · 对齐后 {{ stats.aligned_atoms }}</td></tr>
     </table>
   </div>
 </div>
+
+{% if can_manage and batch.state == 'co_merge' %}
+<div class="panel">
+  <h2>应用对齐结果</h2>
+  <p class="muted">把逐题 CO_ALIGNED 合并进全局本体，并自动生成 CO_M 草稿版本。可先在校验后冻结发布。</p>
+  <form class="ann-actions" method="post" action="/annotation/batches/{{ batch.id }}/apply">
+    <input name="label" placeholder="版本号（留空自动生成）">
+    <button class="btn primary" type="submit" onclick="return confirm('确认把对齐结果写入全局本体？')">应用并生成版本</button>
+  </form>
+</div>
+{% endif %}
 
 {% if can_manage or can_cross or can_approve %}
 <div class="panel">
@@ -126,7 +145,7 @@
 </div>
 
 <div class="panel">
-  <h2>本体版本</h2>
+  <h2>本体版本 <a class="muted" href="/annotation/versions" style="font-weight:normal">全部版本</a></h2>
   <table class="data">
     <thead><tr><th>版本</th><th>状态</th><th>概念/算子</th><th>校验</th><th>创建</th><th>操作</th></tr></thead>
     <tbody>
