@@ -5,3 +5,4 @@ data/
 .env
 
 .claude/settings.local.json
+.coverage
