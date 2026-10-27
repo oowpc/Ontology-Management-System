@@ -6,16 +6,14 @@
   {% if user.role in ['reviewer','admin'] %}<a class="btn primary" href="/operators/new">+ 新建算子</a>{% endif %}
 </div>
 <form class="filters" method="get" action="/operators">
-  <select name="subject_concept_id">
-    <option value="">全部主体概念</option>
-    {% for p in concepts %}
-    <option value="{{ p.id }}" {{ 'selected' if subject_concept_id == p.id }}>{{ p.name }}</option>
-    {% endfor %}
-  </select>
+  <div class="picker" data-picker="single" data-name="subject_concept_id"
+       data-omit-empty="1"
+       data-selected='{{ selected_subject|tojson }}'
+       data-placeholder="按主体概念筛选…"></div>
   <input type="search" name="q" value="{{ q or '' }}" placeholder="算子名称">
   <button class="btn" type="submit">过滤</button>
 </form>
-<p class="muted">共 {{ operators|length }} 条</p>
+<p class="muted">共 {{ total }} 条</p>
 <table class="data">
   <thead>
     <tr><th>ID</th><th>名称</th><th>主体概念</th><th>参数类型</th><th>返回类型</th><th>所属概念</th><th>状态</th><th>操作</th></tr>
@@ -44,4 +42,12 @@
   {% endfor %}
   </tbody>
 </table>
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="btn" href="?page={{ page - 1 }}{% if subject_concept_id %}&subject_concept_id={{ subject_concept_id }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ pages }} 页</span>
+  {% if page < pages %}<a class="btn" href="?page={{ page + 1 }}{% if subject_concept_id %}&subject_concept_id={{ subject_concept_id }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">下一页</a>{% endif %}
+</div>
+{% endif %}
 {% endblock %}
+{% block scripts %}<script src="/static/picker.js?v=20261027a"></script>{% endblock %}

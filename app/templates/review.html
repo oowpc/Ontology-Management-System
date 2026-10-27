@@ -32,7 +32,7 @@
   <table class="kv">
     <tr><th>别名</th><td>{{ s.aliases|join('、') or '—' }}</td></tr>
     <tr><th>定义</th><td>{{ s.definition or '—' }}</td></tr>
-    <tr><th>建议父类</th><td>{{ s.suggested_parent_name or '—' }}</td></tr>
+    <tr><th>建议父类</th><td>{% if s.suggested_parent_names %}{% for name in s.suggested_parent_names %}{% if loop.first %}<span class="chip">主</span> {{ name }}{% else %}、<span class="muted">次</span> {{ name }}{% endif %}{% endfor %}{% else %}{{ s.suggested_parent_name or '—' }}{% endif %}</td></tr>
     <tr><th>理由</th><td>{{ s.reason }}</td></tr>
     <tr><th>附题目</th><td>{{ s.sample_question }}</td></tr>
     {% if s.status != 'pending' %}
@@ -67,10 +67,9 @@
     <div class="actions">
       <button class="btn primary" name="action" value="approve" type="submit">通过</button>
       <button class="btn" name="action" value="reject" type="submit">驳回</button>
-      <select name="merge_target_id">
-        <option value="">（合并到已有概念…）</option>
-        {% for t in approved_concepts %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
-      </select>
+      <div class="picker" data-picker="single" data-name="merge_target_id"
+           data-status="approved" data-selected="null"
+           data-placeholder="合并到已有概念…"></div>
       <button class="btn" name="action" value="merge" type="submit" onclick="return confirmMerge(this)">合并</button>
       {% if llm_enabled %}
       <button class="btn" type="button" onclick="llmSuggest(this, {{ s.id }})">LLM 建议</button>
@@ -84,4 +83,4 @@
 <div class="panel empty">当前没有{{ '待审的' if status == 'pending' else '符合条件的' }}提交单</div>
 {% endfor %}
 {% endblock %}
-{% block scripts %}<script src="/static/app.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/picker.js?v=20261027a"></script><script src="/static/app.js?v=20261027a"></script>{% endblock %}

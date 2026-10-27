@@ -2,13 +2,15 @@
 M4 会把审计快照统一挂到这里的写操作上。"""
 from __future__ import annotations
 
+from collections import defaultdict
+
 from fastapi import HTTPException
 from sqlalchemy import String as SAString, cast, func, select
 from sqlalchemy.orm import Session
 
-from .audit import log_change, snapshot
+from .audit import concept_snapshot, log_change, snapshot
 from .config import settings
-from .models import Concept, Operator, UsageStat
+from .models import Concept, ConceptParent, Operator, UsageStat
 from .similarity import SimilarityBlock, find_similar
 
 VALID_STATUS = {"draft", "pending", "approved", "disabled"}
@@ -30,6 +32,93 @@ def get_operator_or_404(db: Session, oid: int) -> Operator:
     return o
 
 
+def concept_parents_map(db: Session, concept_ids) -> dict[int, list[dict]]:
+    """concept_id -> [{id, name}]，主父类在前、其余按声明序。"""
+    ids = [i for i in concept_ids if i]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(ConceptParent, Concept)
+        .join(Concept, Concept.id == ConceptParent.parent_id)
+        .where(ConceptParent.concept_id.in_(ids))
+        .order_by(ConceptParent.concept_id, ConceptParent.is_primary.desc(),
+                  ConceptParent.position, Concept.name)
+    ).all()
+    out: dict[int, list[dict]] = defaultdict(list)
+    for link, parent in rows:
+        out[link.concept_id].append({"id": parent.id, "name": parent.name})
+    return out
+
+
+def would_create_cycle(db: Session, concept_id: int | None, new_parent_ids) -> bool:
+    """按 concept_parents 全图判断：把 new_parent_ids 挂到 concept_id 上是否成环。"""
+    if new_parent_ids is None:
+        ids: list[int] = []
+    elif isinstance(new_parent_ids, int):
+        ids = [new_parent_ids]
+    else:
+        ids = [int(x) for x in new_parent_ids if x is not None]
+    ids = [i for i in ids if i is not None]
+    if not ids or concept_id is None:
+        return False
+    for pid in ids:
+        if pid == concept_id:
+            return True
+        stack = [pid]
+        seen: set[int] = set()
+        while stack:
+            cur = stack.pop()
+            if cur == concept_id:
+                return True
+            if cur in seen:
+                continue
+            seen.add(cur)
+            stack.extend(db.scalars(
+                select(ConceptParent.parent_id).where(ConceptParent.concept_id == cur)).all())
+    return False
+
+
+def set_concept_parents(db: Session, c: Concept, parent_ids) -> bool:
+    """整体替换概念父类集合；第一个为主父类，同步 legacy parent_id。"""
+    ids: list[int] = []
+    seen: set[int] = set()
+    for raw in parent_ids or []:
+        if raw is None:
+            continue
+        pid = int(raw)
+        if pid not in seen:
+            seen.add(pid)
+            ids.append(pid)
+    if c.id is not None and c.id in ids:
+        raise HTTPException(400, "不能把自己作为父类")
+    for pid in ids:
+        get_concept_or_404(db, pid)
+
+    existing = {l.parent_id: l for l in db.scalars(
+        select(ConceptParent).where(ConceptParent.concept_id == c.id)).all()}
+    changed = set(existing) != set(ids) or (
+        set(existing) == set(ids) and any(
+            existing[pid].position != pos or bool(existing[pid].is_primary) != (pos == 0)
+            for pos, pid in enumerate(ids)))
+    if not changed:
+        primary = ids[0] if ids else None
+        if c.parent_id != primary:
+            c.parent_id = primary
+        return False
+
+    if would_create_cycle(db, c.id, ids):
+        raise HTTPException(400, "会形成循环继承")
+    for link in existing.values():
+        db.delete(link)
+    db.flush()
+    for pos, pid in enumerate(ids):
+        db.add(ConceptParent(concept_id=c.id, parent_id=pid,
+                             is_primary=(pos == 0), position=pos))
+    c.parent_id = ids[0] if ids else None
+    db.flush()
+    return True
+
+
 def query_concepts(db: Session, *, status=None, parent_id=None, q=None, domain=None, page=1, size=50):
     stmt = select(Concept)
     if status:
@@ -37,7 +126,9 @@ def query_concepts(db: Session, *, status=None, parent_id=None, q=None, domain=N
             raise HTTPException(400, "非法状态")
         stmt = stmt.where(Concept.status == status)
     if parent_id is not None:
-        stmt = stmt.where(Concept.parent_id == parent_id)
+        stmt = stmt.where(Concept.id.in_(
+            select(ConceptParent.concept_id).where(ConceptParent.parent_id == parent_id)
+        ))
     if domain:
         stmt = stmt.where(Concept.domain == domain)
     if q and q.strip():
@@ -68,16 +159,23 @@ def name_map(db: Session, ids) -> dict[int, str]:
 
 # ---------- 序列化 ----------
 
-def concept_dict(c: Concept, *, parents=None, stats=None) -> dict:
+def concept_dict(c: Concept, *, parents=None, stats=None, parent_details=None) -> dict:
     u = (stats or {}).get(c.id)
+    parent_name = (parents or {}).get(c.parent_id) if c.parent_id else None
+    if parent_details is None:
+        parent_details = [{"id": c.parent_id, "name": parent_name}] if c.parent_id else []
     return {
         "id": c.id,
         "name": c.name,
         "domain": c.domain or "通用",
         "aliases": c.aliases or [],
         "definition": c.definition or "",
+        "source_uri": c.source_uri or "",
+        "ontology_module": c.ontology_module or "",
         "parent_id": c.parent_id,
-        "parent_name": (parents or {}).get(c.parent_id) if c.parent_id else None,
+        "parent_name": parent_name,
+        "parents": parent_details,
+        "parent_names": [p["name"] for p in parent_details],
         "status": c.status,
         "merged_into_id": c.merged_into_id,
         "created_by": c.created_by,
@@ -101,6 +199,8 @@ def operator_dict(o: Operator, *, names=None) -> dict:
         "owner_name": names.get(owner_id),
         "param_types": o.param_types or [],
         "return_type": o.return_type,
+        "source_uri": o.source_uri or "",
+        "ontology_module": o.ontology_module or "",
         "status": o.status,
         "created_by": o.created_by,
         "created_at": o.created_at,
@@ -110,19 +210,11 @@ def operator_dict(o: Operator, *, names=None) -> dict:
 
 # ---------- 概念写操作 ----------
 
-def would_create_cycle(db: Session, concept_id: int, new_parent_id: int | None) -> bool:
-    pid, seen = new_parent_id, set()
-    while pid is not None:
-        if pid == concept_id or pid in seen:
-            return True
-        seen.add(pid)
-        p = db.get(Concept, pid)
-        pid = p.parent_id if p else None
-    return False
-
-
 def create_concept(db: Session, *, name, aliases, definition, parent_id, status, actor,
-                   check_similar: bool = False, domain: str = "通用") -> Concept:
+                   check_similar: bool = False, domain: str = "通用",
+                   parents: list[int] | None = None,
+                   source_uri: str | None = None,
+                   ontology_module: str | None = None) -> Concept:
     name = (name or "").strip()
     if not name:
         raise HTTPException(400, "名称不能为空")
@@ -130,28 +222,33 @@ def create_concept(db: Session, *, name, aliases, definition, parent_id, status,
         raise HTTPException(400, "非法初始状态")
     if db.scalar(select(Concept).where(Concept.name == name)):
         raise HTTPException(409, f"概念「{name}」已存在")
-    if parent_id is not None:
-        get_concept_or_404(db, parent_id)
+    parent_ids = list(parents) if parents is not None else ([parent_id] if parent_id is not None else [])
+    primary_parent = parent_ids[0] if parent_ids else None
+    if primary_parent is not None:
+        get_concept_or_404(db, primary_parent)
     if check_similar:
-        hits = [s for s in find_similar(db, name=name, aliases=aliases, parent_id=parent_id)
+        hits = [s for s in find_similar(db, name=name, aliases=aliases, parent_id=primary_parent)
                 if s["score"] >= settings.similarity_block_threshold]
         if hits:
             raise SimilarityBlock(name, hits)
     c = Concept(
         name=name, domain=(domain or "通用").strip() or "通用",
         aliases=list(aliases or []), definition=definition or "",
-        parent_id=parent_id, status=status, created_by=actor, reviewed_by=actor,
+        source_uri=(source_uri or None), ontology_module=(ontology_module or None),
+        parent_id=primary_parent, status=status, created_by=actor, reviewed_by=actor,
     )
     db.add(c)
     db.flush()
-    log_change(db, "concept", c.id, "create", None, snapshot(c), actor)
+    set_concept_parents(db, c, parent_ids)
+    db.flush()
+    log_change(db, "concept", c.id, "create", None, concept_snapshot(db, c), actor)
     db.commit()
     db.refresh(c)
     return c
 
 
 def update_concept(db: Session, c: Concept, changes: dict, actor: str) -> Concept:
-    before = snapshot(c)
+    before = concept_snapshot(db, c)
     if "name" in changes:
         new_name = (changes["name"] or "").strip()
         if not new_name:
@@ -169,15 +266,20 @@ def update_concept(db: Session, c: Concept, changes: dict, actor: str) -> Concep
         if not d:
             raise HTTPException(400, "领域不能为空")
         c.domain = d
-    if "parent_id" in changes:
+    if "source_uri" in changes:
+        c.source_uri = (changes["source_uri"] or None)
+    if "ontology_module" in changes:
+        c.ontology_module = (changes["ontology_module"] or None)
+    if "parents" in changes and changes["parents"] is not None:
+        set_concept_parents(db, c, changes["parents"])
+    elif "parent_id" in changes:
+        # 兼容单父类表单：只调整主父类，保留其余父类（清空请用 API parents=[]）
         pid = changes["parent_id"]
-        if pid is not None:
-            get_concept_or_404(db, pid)
-            if would_create_cycle(db, c.id, pid):
-                raise HTTPException(400, "会形成循环继承")
-        c.parent_id = pid
+        current = concept_parents_map(db, [c.id]).get(c.id, [])
+        rest = [p["id"] for p in current[1:] if p["id"] != pid]
+        set_concept_parents(db, c, ([pid] if pid is not None else []) + rest)
     db.flush()
-    log_change(db, "concept", c.id, "update", before, snapshot(c), actor)
+    log_change(db, "concept", c.id, "update", before, concept_snapshot(db, c), actor)
     db.commit()
     db.refresh(c)
     return c
@@ -208,7 +310,9 @@ def _check_operator_dup(db: Session, name: str, subject_id: int, exclude_id: int
 
 
 def create_operator(db: Session, *, name, subject_concept_id, owner_concept_id,
-                    param_types, return_type, actor) -> Operator:
+                    param_types, return_type, actor,
+                    source_uri: str | None = None,
+                    ontology_module: str | None = None) -> Operator:
     name = (name or "").strip()
     return_type = (return_type or "").strip()
     if not name or not return_type:
@@ -220,6 +324,7 @@ def create_operator(db: Session, *, name, subject_concept_id, owner_concept_id,
     o = Operator(
         name=name, subject_concept_id=subject_concept_id, owner_concept_id=owner_concept_id,
         param_types=list(param_types or []), return_type=return_type,
+        source_uri=(source_uri or None), ontology_module=(ontology_module or None),
         status="approved", created_by=actor,
     )
     db.add(o)
@@ -256,6 +361,10 @@ def update_operator(db: Session, o: Operator, changes: dict, actor: str) -> Oper
         if not rt:
             raise HTTPException(400, "返回类型不能为空")
         o.return_type = rt
+    if "source_uri" in changes:
+        o.source_uri = (changes["source_uri"] or None)
+    if "ontology_module" in changes:
+        o.ontology_module = (changes["ontology_module"] or None)
     db.flush()
     log_change(db, "operator", o.id, "update", before, snapshot(o), actor)
     db.commit()

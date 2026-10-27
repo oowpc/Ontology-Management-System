@@ -111,9 +111,15 @@ def render_keol_md(items, known_concepts: set[str], known_ops: set[str],
             new_consts[kname] = {"type": c["type"], "label": label}
 
         for c in parsed.concepts:
-            if c["name"] in known_concepts or c["name"] in new_concepts:
+            parents = list(c.get("parents") or ([] if not c.get("parent") else [c["parent"]]))
+            if c["name"] in known_concepts:
                 continue
-            new_concepts[c["name"]] = {"parent": c.get("parent") or "", "label": label}
+            if c["name"] in new_concepts:
+                for p in parents:
+                    if p not in new_concepts[c["name"]]["parents"]:
+                        new_concepts[c["name"]]["parents"].append(p)
+                continue
+            new_concepts[c["name"]] = {"parents": parents, "label": label}
         for o in parsed.ops:
             key = (o["name"], o["subject"])
             if o["name"] in known_ops or key in new_ops:
@@ -160,12 +166,19 @@ def render_keol_md(items, known_concepts: set[str], known_ops: set[str],
     allowed = set(known_concepts) | KEOL_BUILTIN_TYPES | set(new_concepts)
     decl: list[str] = []
     for name, c in sorted(new_concepts.items()):
-        parent = c["parent"]
-        if parent and parent not in allowed:
-            decl.append(f"concept {name}  -- 来源 {c['label']}；原父类「{parent}」未入库，待评审")
+        parents = list(c.get("parents") or ([] if not c.get("parent") else [c["parent"]]))
+        valid = [p for p in parents if p in allowed]
+        missing = [p for p in parents if p not in allowed]
+        if not valid and missing:
+            decl.append(f"concept {name}  -- 来源 {c['label']}；"
+                        f"原父类「{'、'.join(missing)}」未入库，待评审")
             stats["commented"] += 1
-        elif parent:
-            decl.append(f"concept {name} <: {parent}")
+        elif valid:
+            for parent in valid:
+                decl.append(f"concept {name} <: {parent}")
+            if missing:
+                decl.append(f"-- 待定：concept {name} 的父类「{'、'.join(missing)}」未入库")
+                stats["commented"] += 1
         else:
             decl.append(f"concept {name}")
         stats["concepts_new"] += 1

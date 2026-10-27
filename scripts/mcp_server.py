@@ -17,7 +17,11 @@ from __future__ import annotations
 import os
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+
+try:  # mcp < 2
+    from mcp.server.fastmcp import FastMCP
+except ModuleNotFoundError:  # mcp 2.x: FastMCP renamed to MCPServer
+    from mcp.server.mcpserver import MCPServer as FastMCP
 
 BASE_URL = os.environ.get("ONTOLOGY_BASE_URL", "http://127.0.0.1:8000")
 TOKEN = os.environ.get("ONTOLOGY_TOKEN", "")

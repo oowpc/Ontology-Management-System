@@ -68,6 +68,7 @@ def _split_top(text: str, sep: str = ",") -> list[str]:
 def parse_keol(text: str) -> dict:
     """文本 → 结构化条目。返回 {concepts, operators, consts, facts, errors}。"""
     out = {"concepts": [], "operators": [], "consts": [], "facts": [], "errors": []}
+    concepts_by_name: dict[str, dict] = {}
     in_fence = False
     for ln, raw in enumerate((text or "").splitlines(), 1):
         line = raw.strip()
@@ -82,7 +83,18 @@ def parse_keol(text: str) -> dict:
             continue
         m = RE_CONCEPT.match(line)
         if m:
-            out["concepts"].append({"name": m.group(1), "parent": m.group(2), "line": ln})
+            name, parent = m.group(1), m.group(2)
+            row = concepts_by_name.get(name)
+            if row is None:
+                concepts_by_name[name] = {
+                    "name": name, "parent": parent,
+                    "parents": [parent] if parent else [], "line": ln,
+                }
+            else:
+                if parent and parent not in row["parents"]:
+                    row["parents"].append(parent)
+                if row["parent"] is None:
+                    row["parent"] = parent
             continue
         m = RE_OP.match(line)
         if m:
@@ -106,6 +118,7 @@ def parse_keol(text: str) -> dict:
             })
             continue
         out["errors"].append({"line": ln, "text": line[:120], "reason": "无法识别的行"})
+    out["concepts"] = list(concepts_by_name.values())
     return out
 
 
@@ -131,6 +144,7 @@ def build_report(db: Session, parsed: dict, domain: str = "通用") -> dict:
     by_name = {c.name: c for c in db.scalars(select(Concept)).all()}
     ops_known = {(o.name, o.subject_concept_id) for o in db.scalars(select(Operator)).all()}
     subject_ids = {c.name: c.id for c in by_name.values()}
+    parsed_concept_names = {c["name"] for c in parsed["concepts"]}
 
     concepts = []
     for item in parsed["concepts"]:
@@ -143,12 +157,13 @@ def build_report(db: Session, parsed: dict, domain: str = "通用") -> dict:
             if sim:
                 row["status"] = "similar"
                 row["similar"] = [{"name": s["name"], "score": s["score"]} for s in sim]
-        if item["parent"] and item["parent"] not in known and \
-                item["parent"] not in {c["name"] for c in parsed["concepts"]}:
-            row.setdefault("warnings", []).append(f"父类「{item['parent']}」未声明（将挂空）")
+        parent_names = item.get("parents") or ([] if not item.get("parent") else [item["parent"]])
+        missing = [p for p in parent_names if p not in known and p not in parsed_concept_names]
+        if missing:
+            row.setdefault("warnings", []).append(
+                "父类「" + "、".join(missing) + "」未声明（将挂空）")
         concepts.append(row)
 
-    parsed_concept_names = {c["name"] for c in parsed["concepts"]}
     operators = []
     for item in parsed["operators"]:
         row = {**item, "status": "new", "issues": []}
@@ -228,10 +243,19 @@ def import_parsed(db: Session, parsed: dict, *, domain: str, actor: str,
             if item["name"] in name_to_id:
                 stats["concepts_skipped"] += 1
                 continue
-            pid = name_to_id.get(item["parent"]) if item["parent"] else None
+            parent_names = item.get("parents") or ([] if not item.get("parent") else [item["parent"]])
+            parent_ids = []
+            for parent_name in parent_names:
+                pid = name_to_id.get(parent_name)
+                if pid is None:
+                    stats["problems"].append(
+                        f"concept {item['name']}: 父类「{parent_name}」未声明，已跳过该父类")
+                else:
+                    parent_ids.append(pid)
             try:
                 c = create_concept(db, name=item["name"], aliases=[], definition="",
-                                   parent_id=pid, status="approved", actor=actor,
+                                   parent_id=parent_ids[0] if parent_ids else None,
+                                   parents=parent_ids, status="approved", actor=actor,
                                    domain=domain)
                 name_to_id[c.name] = c.id
                 stats["concepts_created"] += 1

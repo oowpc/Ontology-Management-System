@@ -16,6 +16,7 @@
     <tr><th>所属概念</th><td>{{ owner_name }}</td></tr>
     <tr><th>参数类型</th><td>{{ (o.param_types or [])|join('、') or '—' }}</td></tr>
     <tr><th>返回类型</th><td>{{ o.return_type }}</td></tr>
+    <tr><th>来源</th><td>{% if o.ontology_module %}<span class="chip">{{ o.ontology_module }}</span> {% endif %}{% if o.source_uri %}<a class="source-uri" href="{{ o.source_uri }}" target="_blank" rel="noopener">{{ o.source_uri }}</a>{% elif not o.ontology_module %}—{% endif %}</td></tr>
     <tr><th>创建</th><td>{{ o.created_by }} · {{ o.created_at|dt }}</td></tr>
   </table>
 </div>

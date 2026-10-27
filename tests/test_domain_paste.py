@@ -70,7 +70,10 @@ def test_parse_keol():
     from app.paster import parse_keol
     p = parse_keol(SAMPLE_TEXT)
     assert len(p["concepts"]) == 5
-    assert p["concepts"][1] == {"name": "粘贴育儿补贴对象", "parent": "粘贴补贴对象", "line": 4}
+    assert p["concepts"][1] == {
+        "name": "粘贴育儿补贴对象", "parent": "粘贴补贴对象",
+        "parents": ["粘贴补贴对象"], "line": 4,
+    }
     assert len(p["operators"]) == 2
     assert p["operators"][0]["subject"] == "粘贴补贴标准"
     assert p["operators"][0]["param_types"] == []

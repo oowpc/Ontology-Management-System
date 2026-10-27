@@ -7,22 +7,18 @@
   <label>名称 *
     <input name="name" value="{{ o.name if o else '' }}" required>
   </label>
-  <label>主体概念 *
-    <select name="subject_concept_id" required>
-      <option value="">（选择概念）</option>
-      {% for p in concepts %}
-      <option value="{{ p.id }}" {{ 'selected' if o and o.subject_concept_id == p.id }}>{{ p.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>所属概念（缺省 = 主体概念）
-    <select name="owner_concept_id">
-      <option value="">（同主体）</option>
-      {% for p in concepts %}
-      <option value="{{ p.id }}" {{ 'selected' if o and o.owner_concept_id == p.id }}>{{ p.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
+  <div class="field">
+    <span>主体概念 *</span>
+    <div class="picker" data-picker="single" data-name="subject_concept_id"
+         data-selected='{{ selected_subject|tojson }}'
+         data-placeholder="搜索主体概念…"></div>
+  </div>
+  <div class="field">
+    <span>所属概念（缺省 = 主体概念）</span>
+    <div class="picker" data-picker="single" data-name="owner_concept_id"
+         data-selected='{{ selected_owner|tojson }}'
+         data-placeholder="搜索所属概念…"></div>
+  </div>
   <label>参数类型列表（逗号 / 换行分隔）
     <textarea name="param_types" rows="3" placeholder="行政区划&#10;人">{{ ((o.param_types or [])|join('，')) if o else '' }}</textarea>
   </label>
@@ -35,3 +31,4 @@
   </div>
 </form>
 {% endblock %}
+{% block scripts %}<script src="/static/picker.js?v=20261027a"></script>{% endblock %}

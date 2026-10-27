@@ -7,8 +7,8 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .audit import log_change, snapshot
-from .models import Concept, Submission, TmpMapping
+from .audit import concept_snapshot, log_change, snapshot
+from .models import Concept, ConceptParent, Submission, TmpMapping
 from .services import get_concept_or_404, name_map
 from .similarity import find_similar
 
@@ -30,7 +30,8 @@ def get_submission_or_404(db: Session, sid: int) -> Submission:
 
 
 def create_submission(db: Session, *, name, aliases, definition, suggested_parent_id,
-                      reason, sample_question, actor, domain: str = "通用") -> Submission:
+                      reason, sample_question, actor, domain: str = "通用",
+                      suggested_parent_ids: list[int] | None = None) -> Submission:
     """标注员提交新概念：同事务建 pending 概念 + 提交单（含查重快照）+ TMP。"""
     name = (name or "").strip()
     if not name:
@@ -39,24 +40,36 @@ def create_submission(db: Session, *, name, aliases, definition, suggested_paren
         raise HTTPException(400, "必须填写「为什么现有概念不够」")
     if not (sample_question or "").strip():
         raise HTTPException(400, "必须填写「附题目」")
-    if suggested_parent_id is None:
+    parent_ids: list[int] = []
+    for pid in ([suggested_parent_id] if suggested_parent_id is not None else []) + list(suggested_parent_ids or []):
+        if pid is None:
+            continue
+        if pid not in parent_ids:
+            parent_ids.append(pid)
+    if not parent_ids:
         raise HTTPException(400, "必须选择建议父类")
-    get_concept_or_404(db, suggested_parent_id)
+    for pid in parent_ids:
+        get_concept_or_404(db, pid)
+    primary_parent = parent_ids[0]
     if db.scalar(select(Concept).where(Concept.name == name)):
         raise HTTPException(409, f"概念名「{name}」已被占用")
-    similar = find_similar(db, name=name, aliases=aliases, parent_id=suggested_parent_id)
+    similar = find_similar(db, name=name, aliases=aliases, parent_id=primary_parent)
     concept = Concept(
         name=name, domain=(domain or "通用").strip() or "通用",
         aliases=list(aliases or []), definition=definition or "",
-        parent_id=suggested_parent_id, status="pending", created_by=actor,
+        parent_id=primary_parent, status="pending", created_by=actor,
     )
     db.add(concept)
     db.flush()
-    log_change(db, "concept", concept.id, "create", None, snapshot(concept), actor)
+    for pos, pid in enumerate(parent_ids):
+        db.add(ConceptParent(concept_id=concept.id, parent_id=pid,
+                             is_primary=(pos == 0), position=pos))
+    db.flush()
+    log_change(db, "concept", concept.id, "create", None, concept_snapshot(db, concept), actor)
     sub = Submission(
         concept_id=concept.id, reason=reason.strip(), sample_question=sample_question.strip(),
-        suggested_parent_id=suggested_parent_id, similar_snapshot=similar,
-        status="pending", submitted_by=actor,
+        suggested_parent_id=primary_parent, suggested_parent_ids=parent_ids,
+        similar_snapshot=similar, status="pending", submitted_by=actor,
     )
     db.add(sub)
     db.flush()
@@ -179,7 +192,8 @@ def batch_action(db: Session, ids, action, comment, reviewer):
 def submission_dict(db: Session, sub: Submission) -> dict:
     c = db.get(Concept, sub.concept_id)
     tmp = _tmp_of(db, sub.id)
-    names = name_map(db, [sub.suggested_parent_id, sub.merge_target_id])
+    parent_ids = list(sub.suggested_parent_ids or ([sub.suggested_parent_id] if sub.suggested_parent_id else []))
+    names = name_map(db, parent_ids + [sub.merge_target_id])
     return {
         "id": sub.id,
         "concept_id": sub.concept_id,
@@ -189,7 +203,9 @@ def submission_dict(db: Session, sub: Submission) -> dict:
         "definition": (c.definition or "") if c else "",
         "concept_status": c.status if c else None,
         "suggested_parent_id": sub.suggested_parent_id,
+        "suggested_parent_ids": parent_ids,
         "suggested_parent_name": names.get(sub.suggested_parent_id),
+        "suggested_parent_names": [names.get(pid) for pid in parent_ids if names.get(pid)],
         "reason": sub.reason,
         "sample_question": sub.sample_question,
         "similar_snapshot": sub.similar_snapshot or [],

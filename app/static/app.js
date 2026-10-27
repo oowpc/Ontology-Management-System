@@ -28,7 +28,9 @@
     var name = nameEl.value.trim();
     if (!name) { panel.innerHTML = '<span class="muted">输入名称后自动查重</span>'; return; }
     var aliases = splitAliases(document.querySelector("#f-aliases").value);
-    var pid = document.querySelector("#f-parent").value;
+    var parentEl = document.querySelector('input[name="suggested_parent_id"]')
+      || document.querySelector("#f-parent");
+    var pid = parentEl ? parentEl.value : "";
     var qs = new URLSearchParams();
     qs.set("name", name);
     aliases.forEach(function (a) { qs.append("aliases", a); });
@@ -70,11 +72,14 @@
     var form = document.querySelector("#submit-form");
     if (form) {
       var handler = debounce(checkSimilar, 300);
-      ["#f-name", "#f-aliases", "#f-parent"].forEach(function (sel) {
+      ["#f-name", "#f-aliases"].forEach(function (sel) {
         var el = document.querySelector(sel);
         if (el) { el.addEventListener("input", handler); el.addEventListener("change", handler); }
       });
       checkSimilar();
+      document.addEventListener("picker:change", function (e) {
+        if (e.target.closest("#submit-form")) checkSimilar();
+      });
     }
     var llmBtn = document.querySelector("#llm-dedup-btn");
     if (llmBtn) {
@@ -91,7 +96,11 @@
           body: JSON.stringify({
             name: name,
             aliases: splitAliases(document.querySelector("#f-aliases").value),
-            parent_id: parseInt(document.querySelector("#f-parent").value, 10) || null
+            parent_id: (function () {
+              var el = document.querySelector('input[name="suggested_parent_id"]')
+                || document.querySelector("#f-parent");
+              return el ? (parseInt(el.value, 10) || null) : null;
+            })()
           })
         }).then(function (r) { return r.json(); })
           .then(function (data) {
@@ -144,7 +153,13 @@
         var form = card.querySelector("form.review-actions");
         form.querySelector("textarea[name=comment]").value = data.comment || "";
         if (data.merge_target_id) {
-          form.querySelector("select[name=merge_target_id]").value = String(data.merge_target_id);
+          var pickerEl = form.querySelector('.picker[data-name="merge_target_id"]');
+          if (pickerEl && pickerEl._picker) {
+            fetch("/api/concepts/" + data.merge_target_id, { headers: { "Accept": "application/json" } })
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (c) { if (c) pickerEl._picker.set(c.id, c.name); })
+              .catch(function () {});
+          }
         }
         var label = { approve: "建议通过", reject: "建议驳回", merge: "建议合并" }[data.action] || data.action;
         rationale.textContent = label + "：" + (data.rationale || "");
@@ -155,8 +170,9 @@
   // 审核页：合并前确认目标概念
   window.confirmMerge = function (btn) {
     var form = btn.closest("form");
-    var sel = form.querySelector('select[name="merge_target_id"]');
-    if (!sel.value) { alert("请选择合并目标概念"); return false; }
-    return confirm("确认合并到「" + sel.options[sel.selectedIndex].text + "」？新概念将被停用，TMP 指向合并目标。");
+    var el = form.querySelector('.picker[data-name="merge_target_id"]');
+    var sel = el && el._picker ? el._picker.selected[0] : null;
+    if (!sel) { alert("请选择合并目标概念"); return false; }
+    return confirm("确认合并到「" + sel.name + "」？新概念将被停用，TMP 指向合并目标。");
   };
 })();

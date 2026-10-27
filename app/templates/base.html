@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="csrf-token" content="{{ request.session.get('csrf', '') if request is defined else '' }}">
 <title>{% block title %}本体管理系统{% endblock %}</title>
-<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/app.css?v=20261027a">
 </head>
 <body>
 <header class="topbar">

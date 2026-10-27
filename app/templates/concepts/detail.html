@@ -21,7 +21,8 @@
     <tr><th>领域</th><td><span class="chip">{{ c.domain or '通用' }}</span></td></tr>
     <tr><th>别名</th><td>{{ (c.aliases or [])|join('、') or '—' }}</td></tr>
     <tr><th>定义</th><td>{{ c.definition or '—' }}</td></tr>
-    <tr><th>父类</th><td>{% if c.parent_id %}<a href="/concepts/{{ c.parent_id }}">{{ parent_name }}</a>{% else %}—（根概念）{% endif %}</td></tr>
+    <tr><th>来源</th><td>{% if c.ontology_module %}<span class="chip">{{ c.ontology_module }}</span> {% endif %}{% if c.source_uri %}<a class="source-uri" href="{{ c.source_uri }}" target="_blank" rel="noopener">{{ c.source_uri }}</a>{% elif not c.ontology_module %}—{% endif %}</td></tr>
+    <tr><th>父类</th><td>{% if all_parents %}{% for p in all_parents %}{% if loop.first %}<span class="chip">主</span> {% endif %}<a href="/concepts/{{ p.id }}">{{ p.name }}</a>{% if not loop.last %}、{% endif %}{% endfor %}{% elif c.parent_id %}<a href="/concepts/{{ c.parent_id }}">{{ parent_name }}</a>{% else %}—（根概念）{% endif %}{% if all_parents|length > 1 %} <span class="muted">（{{ all_parents|length }} 个父类）</span>{% endif %}</td></tr>
     <tr><th>创建</th><td>{{ c.created_by }} · {{ c.created_at|dt }}</td></tr>
     <tr><th>最近更新</th><td>{{ c.updated_at|dt }}</td></tr>
     <tr><th>使用统计</th><td>{{ usage.ke_count if usage else 0 }} 次（最近使用：{{ usage.last_used_at|dt if usage else '—' }}）{% if usage and usage.source %} · 来源：{{ usage.source }}{% endif %}</td></tr>

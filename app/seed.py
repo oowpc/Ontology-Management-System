@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 
 from .config import settings
 from .db import SessionLocal
-from .models import Concept, Operator, UsageStat, User
+from .models import Concept, ConceptParent, Operator, UsageStat, User
 from .security import hash_password
 
 # (name, parent_name, aliases, definition)
@@ -86,13 +86,18 @@ def seed_if_empty():
         if settings.seed_demo and (db.scalar(select(func.count()).select_from(Concept)) or 0) == 0:
             ids: dict[str, int] = {}
             for name, parent, aliases, definition in DEMO_CONCEPTS:
+                parent_id = ids.get(parent)
                 c = Concept(
                     name=name, aliases=aliases, definition=definition,
-                    parent_id=ids.get(parent), status="approved",
+                    parent_id=parent_id, status="approved",
                     created_by="admin", reviewed_by="admin",
                 )
                 db.add(c)
                 db.flush()
+                if parent_id is not None:
+                    db.add(ConceptParent(concept_id=c.id, parent_id=parent_id,
+                                         is_primary=True, position=0))
+                    db.flush()
                 ids[name] = c.id
             for name, subject, params, return_type in DEMO_OPERATORS:
                 db.add(Operator(

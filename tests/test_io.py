@@ -19,10 +19,11 @@ def test_export_import_idempotent(client):
 
     # 直接清库（模拟导入到空环境）
     from app.db import SessionLocal
-    from app.models import Concept, Operator, UsageStat
+    from app.models import Concept, ConceptParent, Operator, UsageStat
     db = SessionLocal()
     db.query(UsageStat).delete()
     db.query(Operator).delete()
+    db.query(ConceptParent).delete()
     db.query(Concept).delete()
     db.commit()
     db.close()

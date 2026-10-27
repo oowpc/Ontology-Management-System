@@ -16,15 +16,15 @@ from ..db import get_db
 from ..healthcheck import KIND_LABELS, run_health
 from ..importer import csv_to_payload, import_payload, parse_field_map
 from ..llm import enabled as llm_enabled
-from ..models import (AuditLog, BackfillRecord, Concept, HealthReport,
-                      KeolEntity, Operator, Question, QuestionConcept,
-                      Submission, TmpMapping)
+from ..models import (AuditLog, BackfillRecord, Concept, ConceptParent,
+                      HealthReport, KeolEntity, Operator, Question,
+                      QuestionConcept, Submission, TmpMapping)
 from ..review import (SUB_STATUS, approve, batch_action, create_submission,
                       get_submission_or_404, merge, reject, submission_dict)
 from ..security import current_user
-from ..services import (create_concept, create_operator, get_concept_or_404,
-                        get_operator_or_404, name_map, query_concepts,
-                        set_concept_status, set_operator_status,
+from ..services import (concept_parents_map, create_concept, create_operator,
+                        get_concept_or_404, get_operator_or_404, name_map,
+                        query_concepts, set_concept_status, set_operator_status,
                         update_concept, update_operator, usage_map)
 from ..similarity import SimilarityBlock
 from ..templating import templates
@@ -53,13 +53,6 @@ def _int_or_none(raw) -> int | None:
     return int(s) if s.isdigit() else None
 
 
-def _parent_options(db: Session, exclude_id: int | None = None):
-    stmt = select(Concept).order_by(Concept.id)
-    if exclude_id is not None:
-        stmt = stmt.where(Concept.id != exclude_id)
-    return db.scalars(stmt).all()
-
-
 # ================= 概念页面 =================
 
 @router.get("/concepts")
@@ -69,12 +62,17 @@ def concepts_page(request: Request, status: str | None = None, parent_id: int | 
     items, total = query_concepts(db, status=status, parent_id=parent_id, q=q,
                                   domain=domain, page=page, size=PAGE_SIZE)
     all_concepts = db.scalars(select(Concept).order_by(Concept.id)).all()
+    parent_details = concept_parents_map(db, [c.id for c in items])
     domains = sorted({(c.domain or "通用") for c in all_concepts})
+    selected_parent = next(({"id": c.id, "name": c.name} for c in all_concepts
+                            if c.id == parent_id), None) if parent_id is not None else None
     return templates.TemplateResponse(request=request, name="concepts/list.html", context={
         "request": request, "user": user, "items": items, "total": total,
         "page": page, "pages": max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE),
         "q": q, "status": status, "parent_id": parent_id, "domain": domain, "domains": domains,
         "parents": all_concepts, "parent_names": {c.id: c.name for c in all_concepts},
+        "selected_parent": selected_parent,
+        "parent_details": parent_details,
         "stats": usage_map(db, [c.id for c in items]),
     })
 
@@ -85,20 +83,42 @@ def concept_new_page(request: Request, db: Session = Depends(get_db),
     _forbid(user)
     return templates.TemplateResponse(request=request, name="concepts/form.html", context={
         "request": request, "user": user, "c": None,
-        "parents": _parent_options(db), "error": None,
+        "all_parents": [], "selected_primary": None, "selected_extras": [], "error": None,
     })
 
 
 async def _concept_form(request: Request) -> dict:
     form = await request.form()
+    primary = _int_or_none(form.get("parent_id"))
+    extras = [int(x) for x in form.getlist("extra_parent_ids") if str(x).isdigit()]
+    parents = []
+    for pid in ([primary] if primary is not None else []) + extras:
+        if pid not in parents:
+            parents.append(pid)
     return {
         "name": str(form.get("name", "")),
         "domain": str(form.get("domain", "")).strip() or "通用",
         "aliases": _split_multi(str(form.get("aliases", ""))),
         "definition": str(form.get("definition", "")),
-        "parent_id": _int_or_none(form.get("parent_id")),
+        "parent_id": primary,
+        "parents": parents,
         "status": str(form.get("status", "approved")),
     }
+
+
+def _concept_refs(db: Session, ids) -> list[dict]:
+    ids = [i for i in dict.fromkeys(ids or []) if i]
+    if not ids:
+        return []
+    by_id = {c.id: c for c in db.scalars(select(Concept).where(Concept.id.in_(ids))).all()}
+    return [{"id": i, "name": by_id[i].name} for i in ids if i in by_id]
+
+
+def _selected_parents(db: Session, parent_ids, primary_id):
+    refs = _concept_refs(db, parent_ids)
+    primary = next((p for p in refs if p["id"] == primary_id), None)
+    extras = [p for p in refs if p["id"] != primary_id]
+    return primary, extras
 
 
 @router.post("/concepts/new")
@@ -114,9 +134,12 @@ async def concept_new(request: Request, db: Session = Depends(get_db),
     except HTTPException as e:
         error, c = e.detail, None
     if c is None:
+        primary, extras = _selected_parents(db, data.get("parents"), data.get("parent_id"))
         return templates.TemplateResponse(request=request, name="concepts/form.html", context={
             "request": request, "user": user, "c": data,
-            "parents": _parent_options(db), "error": error,
+            "all_parents": [],
+            "selected_primary": primary, "selected_extras": extras,
+            "error": error,
         }, status_code=400)
     return RedirectResponse(f"/concepts/{c.id}?ok=概念已创建", status_code=303)
 
@@ -125,9 +148,11 @@ async def concept_new(request: Request, db: Session = Depends(get_db),
 def concept_detail_page(cid: int, request: Request, db: Session = Depends(get_db),
                         user: dict = Depends(current_user)):
     c = get_concept_or_404(db, cid)
-    children = db.scalars(select(Concept).where(Concept.parent_id == cid).order_by(Concept.id)).all()
+    child_ids = select(ConceptParent.concept_id).where(ConceptParent.parent_id == cid)
+    children = db.scalars(select(Concept).where(Concept.id.in_(child_ids)).order_by(Concept.id)).all()
     ops = db.scalars(select(Operator).where(Operator.subject_concept_id == cid).order_by(Operator.id)).all()
     names = name_map(db, ([c.parent_id] if c.parent_id else []) + [o.owner_concept_id for o in ops])
+    all_parents = concept_parents_map(db, [cid]).get(cid, [])
     subs = db.scalars(
         select(Submission).where(Submission.concept_id == cid).order_by(Submission.id.desc())
     ).all()
@@ -144,6 +169,7 @@ def concept_detail_page(cid: int, request: Request, db: Session = Depends(get_db
     return templates.TemplateResponse(request=request, name="concepts/detail.html", context={
         "request": request, "user": user, "c": c, "children": children, "operators": ops,
         "parent_name": names.get(c.parent_id) if c.parent_id else None,
+        "all_parents": all_parents,
         "owner_names": names, "usage": usage_map(db, [cid]).get(cid),
         "keol_entity_count": keol_entity_count,
         "submissions": [submission_dict(db, s) for s in subs],
@@ -161,9 +187,13 @@ def concept_edit_page(cid: int, request: Request, db: Session = Depends(get_db),
                       user: dict = Depends(current_user)):
     _forbid(user)
     c = get_concept_or_404(db, cid)
+    all_parents = concept_parents_map(db, [cid]).get(cid, [])
+    primary = next((p for p in all_parents if p["id"] == c.parent_id), None)
+    extras = [p for p in all_parents if p["id"] != c.parent_id]
     return templates.TemplateResponse(request=request, name="concepts/form.html", context={
         "request": request, "user": user, "c": c,
-        "parents": _parent_options(db, exclude_id=cid), "error": None,
+        "all_parents": all_parents,
+        "selected_primary": primary, "selected_extras": extras, "error": None,
     })
 
 
@@ -178,9 +208,12 @@ async def concept_edit(cid: int, request: Request, db: Session = Depends(get_db)
         update_concept(db, c, changes, user["username"])
     except HTTPException as e:
         shown = {"id": c.id, **changes}
+        all_parents = concept_parents_map(db, [cid]).get(cid, [])
+        primary, extras = _selected_parents(db, changes.get("parents"), changes.get("parent_id"))
         return templates.TemplateResponse(request=request, name="concepts/form.html", context={
             "request": request, "user": user, "c": shown,
-            "parents": _parent_options(db, exclude_id=cid), "error": e.detail,
+            "all_parents": all_parents,
+            "selected_primary": primary, "selected_extras": extras, "error": e.detail,
         }, status_code=400)
     return RedirectResponse(f"/concepts/{cid}?ok=已保存", status_code=303)
 
@@ -220,17 +253,27 @@ def concept_rollback(cid: int, audit_id: int, db: Session = Depends(get_db),
 
 @router.get("/operators")
 def operators_page(request: Request, subject_concept_id: int | None = None, q: str | None = None,
-                   db: Session = Depends(get_db), user: dict = Depends(current_user)):
-    stmt = select(Operator).order_by(Operator.id)
+                   page: int = 1, db: Session = Depends(get_db),
+                   user: dict = Depends(current_user)):
+    size = 50
+    stmt = select(Operator)
     if subject_concept_id is not None:
         stmt = stmt.where(Operator.subject_concept_id == subject_concept_id)
     if q and q.strip():
         stmt = stmt.where(Operator.name.like(f"%{q.strip()}%"))
-    ops = db.scalars(stmt).all()
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    ops = db.scalars(stmt.order_by(Operator.id).offset((page - 1) * size).limit(size)).all()
     names = name_map(db, [o.subject_concept_id for o in ops] + [o.owner_concept_id for o in ops])
+    selected_subject = None
+    if subject_concept_id is not None:
+        sc = db.get(Concept, subject_concept_id)
+        if sc:
+            selected_subject = {"id": sc.id, "name": sc.name}
     return templates.TemplateResponse(request=request, name="operators/list.html", context={
         "request": request, "user": user, "operators": ops, "names": names,
-        "concepts": _parent_options(db), "subject_concept_id": subject_concept_id, "q": q,
+        "selected_subject": selected_subject, "total": total,
+        "page": page, "pages": max(1, (total + size - 1) // size),
+        "subject_concept_id": subject_concept_id, "q": q,
     })
 
 
@@ -253,7 +296,8 @@ def operator_new_page(request: Request, db: Session = Depends(get_db),
                       user: dict = Depends(current_user)):
     _forbid(user)
     return templates.TemplateResponse(request=request, name="operators/form.html", context={
-        "request": request, "user": user, "o": None, "concepts": _parent_options(db), "error": None,
+        "request": request, "user": user, "o": None,
+        "selected_subject": None, "selected_owner": None, "error": None,
     })
 
 
@@ -261,13 +305,18 @@ def operator_new_page(request: Request, db: Session = Depends(get_db),
 async def operator_new(request: Request, db: Session = Depends(get_db),
                        user: dict = Depends(current_user)):
     _forbid(user)
+    data = None
     try:
         data = await _operator_form(request)
         o = create_operator(db, actor=user["username"], **data)
     except HTTPException as e:
+        subject, _ = _selected_parents(db, [data.get("subject_concept_id")] if data else [],
+                                       data.get("subject_concept_id") if data else None)
+        owner, _ = _selected_parents(db, [data.get("owner_concept_id")] if data else [],
+                                     data.get("owner_concept_id") if data else None)
         return templates.TemplateResponse(request=request, name="operators/form.html", context={
-            "request": request, "user": user, "o": None,
-            "concepts": _parent_options(db), "error": e.detail,
+            "request": request, "user": user, "o": data,
+            "selected_subject": subject, "selected_owner": owner, "error": e.detail,
         }, status_code=400)
     return RedirectResponse(f"/operators?ok=算子已创建", status_code=303)
 
@@ -292,8 +341,11 @@ def operator_edit_page(oid: int, request: Request, db: Session = Depends(get_db)
                        user: dict = Depends(current_user)):
     _forbid(user)
     o = get_operator_or_404(db, oid)
+    subject, _ = _selected_parents(db, [o.subject_concept_id], o.subject_concept_id)
+    owner, _ = _selected_parents(db, [o.owner_concept_id], o.owner_concept_id)
     return templates.TemplateResponse(request=request, name="operators/form.html", context={
-        "request": request, "user": user, "o": o, "concepts": _parent_options(db), "error": None,
+        "request": request, "user": user, "o": o,
+        "selected_subject": subject, "selected_owner": owner, "error": None,
     })
 
 
@@ -302,13 +354,19 @@ async def operator_edit(oid: int, request: Request, db: Session = Depends(get_db
                         user: dict = Depends(current_user)):
     _forbid(user)
     o = get_operator_or_404(db, oid)
+    data = None
     try:
         data = await _operator_form(request)
         update_operator(db, o, data, user["username"])
     except HTTPException as e:
+        subject, _ = _selected_parents(db, [data.get("subject_concept_id")] if data else [],
+                                       data.get("subject_concept_id") if data else None)
+        owner, _ = _selected_parents(db, [data.get("owner_concept_id")] if data else [],
+                                     data.get("owner_concept_id") if data else None)
+        shown = {"id": oid, **data} if data else o
         return templates.TemplateResponse(request=request, name="operators/form.html", context={
-            "request": request, "user": user, "o": o,
-            "concepts": _parent_options(db), "error": e.detail,
+            "request": request, "user": user, "o": shown,
+            "selected_subject": subject, "selected_owner": owner, "error": e.detail,
         }, status_code=400)
     return RedirectResponse(f"/operators?ok=已保存", status_code=303)
 
@@ -328,14 +386,11 @@ def _forbid_review(user: dict):
         raise HTTPException(403, "权限不足")
 
 
-def _approved_options(db: Session):
-    return db.scalars(select(Concept).where(Concept.status == "approved").order_by(Concept.id)).all()
-
-
 @router.get("/submit")
 def submit_page(request: Request, db: Session = Depends(get_db), user: dict = Depends(current_user)):
     return templates.TemplateResponse(request=request, name="submit.html", context={
-        "request": request, "user": user, "approved": _approved_options(db),
+        "request": request, "user": user,
+        "selected_primary": None, "selected_extras": [],
         "values": None, "error": None, "llm_enabled": llm_enabled(),
     })
 
@@ -344,20 +399,30 @@ def submit_page(request: Request, db: Session = Depends(get_db), user: dict = De
 async def submit_create(request: Request, db: Session = Depends(get_db),
                         user: dict = Depends(current_user)):
     form = await request.form()
+    primary = _int_or_none(form.get("suggested_parent_id"))
+    extras = [int(x) for x in form.getlist("extra_parent_ids") if str(x).isdigit()]
+    parent_ids = []
+    for pid in ([primary] if primary is not None else []) + extras:
+        if pid is not None and pid not in parent_ids:
+            parent_ids.append(pid)
     values = {
         "name": str(form.get("name", "")),
         "domain": str(form.get("domain", "")).strip() or "通用",
         "aliases": _split_multi(str(form.get("aliases", ""))),
         "definition": str(form.get("definition", "")),
-        "suggested_parent_id": _int_or_none(form.get("suggested_parent_id")),
+        "suggested_parent_id": primary,
+        "suggested_parent_ids": parent_ids,
         "reason": str(form.get("reason", "")),
         "sample_question": str(form.get("sample_question", "")),
     }
     try:
         sub = create_submission(db, actor=user["username"], **values)
     except HTTPException as e:
+        primary, extras = _selected_parents(
+            db, values.get("suggested_parent_ids"), values.get("suggested_parent_id"))
         return templates.TemplateResponse(request=request, name="submit.html", context={
-            "request": request, "user": user, "approved": _approved_options(db),
+            "request": request, "user": user,
+            "selected_primary": primary, "selected_extras": extras,
             "values": values, "error": e.detail, "llm_enabled": llm_enabled(),
         }, status_code=400)
     tmp = db.scalar(select(TmpMapping).where(TmpMapping.submission_id == sub.id))
@@ -377,7 +442,7 @@ def review_page(request: Request, status: str = "pending",
     return templates.TemplateResponse(request=request, name="review.html", context={
         "request": request, "user": user,
         "items": [submission_dict(db, s) for s in subs],
-        "status": status, "approved_concepts": _approved_options(db),
+        "status": status,
         "llm_enabled": llm_enabled(),
     })
 

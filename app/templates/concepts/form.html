@@ -16,14 +16,23 @@
   <label>定义
     <textarea name="definition" rows="4">{{ c.definition if c else '' }}</textarea>
   </label>
-  <label>父类
-    <select name="parent_id">
-      <option value="">（无父类 · 根概念）</option>
-      {% for p in parents %}
-      <option value="{{ p.id }}" {{ 'selected' if c and c.parent_id == p.id }}>{{ p.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
+  <noscript><p class="flash err">父类选择器需要 JavaScript；请启用 JS，或通过 API 编辑多父类。</p></noscript>
+  <div class="field">
+    <span>主父类</span>
+    <div id="picker-primary" class="picker" data-picker="single" data-name="parent_id"
+         data-exclude-id="{{ c.id if c and c.id else '' }}"
+         data-selected='{{ selected_primary|tojson }}'
+         data-old-primary-target="#picker-extras"
+         data-placeholder="搜索主父类…"></div>
+  </div>
+  <div class="field">
+    <span>其他父类（可多选）</span>
+    <div id="picker-extras" class="picker" data-picker="multi" data-name="extra_parent_ids"
+         data-exclude-id="{{ c.id if c and c.id else '' }}"
+         data-selected='{{ selected_extras|tojson }}'
+         data-placeholder="搜索并添加其他父类…"></div>
+    <span class="muted">改主父类时，旧主父类会自动进入其他父类。</span>
+  </div>
   {% if not c or not c.id %}
   <label>初始状态
     <select name="status">
@@ -38,3 +47,4 @@
   </div>
 </form>
 {% endblock %}
+{% block scripts %}<script src="/static/picker.js?v=20261027a"></script>{% endblock %}

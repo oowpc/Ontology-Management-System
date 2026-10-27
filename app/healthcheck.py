@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
-from .models import Concept, GoldItem, HealthReport, Operator, UsageStat
+from .models import Concept, ConceptParent, GoldItem, HealthReport, Operator, UsageStat
 from .similarity import score_against
 
 KIND_LABELS = {
@@ -24,7 +24,7 @@ def check_unused(db: Session) -> list[dict]:
     concepts = db.scalars(select(Concept).where(Concept.status == "approved").order_by(Concept.id)).all()
     stats = {s.concept_id: s for s in db.scalars(select(UsageStat))}
     children = dict(db.execute(
-        select(Concept.parent_id, func.count()).group_by(Concept.parent_id)).all())
+        select(ConceptParent.parent_id, func.count()).group_by(ConceptParent.parent_id)).all())
     ops = dict(db.execute(
         select(Operator.subject_concept_id, func.count()).group_by(Operator.subject_concept_id)).all())
     out = []

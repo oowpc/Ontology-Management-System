@@ -28,6 +28,10 @@
     <option value="{{ s }}" {{ 'selected' if status == s }}>{{ label }}</option>
     {% endfor %}
   </select>
+  <select name="layout">
+    <option value="tree" {{ 'selected' if layout != 'dag' }}>树形布局</option>
+    <option value="dag" {{ 'selected' if layout == 'dag' }}>DAG 布局</option>
+  </select>
   <button class="btn" type="submit">过滤</button>
 </form>
 {% if g.truncated %}
@@ -38,9 +42,9 @@
 {% else %}
 <div class="panel graph-wrap" id="graph-wrap">
   <svg id="concept-graph" width="100%" height="620" viewBox="0 0 {{ g.width }} {{ g.height }}"
-       data-width="{{ g.width }}" data-height="{{ g.height}}" role="img" aria-label="概念继承图">
+       data-width="{{ g.width }}" data-height="{{ g.height}}" data-layout="{{ g.layout }}" role="img" aria-label="概念继承图">
     {% for e in g.edges %}
-    <path class="edge" d="{{ e.d }}"/>
+    <path class="edge{% if e.extra %} extra{% endif %}" d="{{ e.d }}"/>
     {% endfor %}
     {% for n in g.nodes %}
     <g class="node st-{{ n.status }}" onclick="location.href='/concepts/{{ n.id }}'" style="cursor:pointer">
@@ -52,6 +56,7 @@
     {% endfor %}
   </svg>
 </div>
+<p class="graph-legend"><span class="line"></span>主父类 <span class="line extra"></span>次父类（虚线）</p>
 <p class="muted">点击节点进入概念详情；滚轮缩放、拖拽平移。颜色：<span class="badge approved">已入库</span> <span class="badge pending">待审</span> <span class="badge draft">草稿</span> <span class="badge disabled">停用</span></p>
 {% endif %}
 {% endblock %}
@@ -74,6 +79,8 @@
   svg.addEventListener("wheel", function (e) { e.preventDefault(); graphZoom(e.deltaY > 0 ? 1.2 : 0.83); }, { passive: false });
   var drag = null;
   svg.addEventListener("pointerdown", function (e) {
+    // 点击节点是导航，不要被拖拽指针捕获吞掉
+    if (e.target.closest("g.node")) return;
     drag = { x: e.clientX, y: e.clientY, vx: vb.x, vy: vb.y };
     svg.setPointerCapture(e.pointerId);
   });

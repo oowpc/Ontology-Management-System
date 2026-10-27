@@ -5,12 +5,14 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import AuditLog, Concept, GoldItem, Operator
+from .models import AuditLog, Concept, ConceptParent, GoldItem, Operator
 
 ENTITY_MODELS = {"concept": Concept, "operator": Operator, "gold_item": GoldItem}
 RESTORABLE = {
-    "concept": {"name", "aliases", "definition", "parent_id", "status", "merged_into_id"},
-    "operator": {"name", "subject_concept_id", "owner_concept_id", "param_types", "return_type", "status"},
+    "concept": {"name", "aliases", "definition", "parent_id", "parents",
+                "source_uri", "ontology_module", "status", "merged_into_id"},
+    "operator": {"name", "subject_concept_id", "owner_concept_id", "param_types",
+                 "return_type", "source_uri", "ontology_module", "status"},
     "gold_item": {"article_code", "ke_id", "group_name", "ke_text", "concepts", "status", "version"},
 }
 
@@ -29,6 +31,19 @@ def snapshot(entity) -> dict:
         if hasattr(v, "isoformat"):
             v = v.isoformat()
         snap[col.name] = v
+    return snap
+
+
+def concept_snapshot(db: Session, c: Concept) -> dict:
+    """概念快照：列字段 + 多父类名（按主父类优先、声明序）。"""
+    snap = snapshot(c)
+    names = db.scalars(
+        select(Concept.name)
+        .join(ConceptParent, Concept.id == ConceptParent.parent_id)
+        .where(ConceptParent.concept_id == c.id)
+        .order_by(ConceptParent.is_primary.desc(), ConceptParent.position, Concept.name)
+    ).all()
+    snap["parents"] = list(names)
     return snap
 
 
@@ -77,7 +92,7 @@ def rollback(db: Session, audit_id: int, actor: str):
     entity = db.get(model, entry.entity_id)
     if not entity:
         raise HTTPException(404, "实体已不存在，无法回滚")
-    current = snapshot(entity)
+    current = concept_snapshot(db, entity) if entry.entity_type == "concept" else snapshot(entity)
     if entry.entity_type == "concept":
         new_name = entry.before.get("name")
         if new_name and new_name != entity.name:
@@ -90,10 +105,19 @@ def rollback(db: Session, audit_id: int, actor: str):
             if would_create_cycle(db, entity.id, pid):
                 raise HTTPException(400, "回滚会形成循环继承")
     for field in RESTORABLE[entry.entity_type]:
-        if field in entry.before:
+        if field in entry.before and field != "parents":
             setattr(entity, field, entry.before[field])
+    if entry.entity_type == "concept" and "parents" in (entry.before or {}):
+        from .services import set_concept_parents  # 调用时导入，避免循环依赖
+        ids = []
+        for name in entry.before.get("parents") or []:
+            p = db.scalar(select(Concept).where(Concept.name == name))
+            if p:
+                ids.append(p.id)
+        set_concept_parents(db, entity, ids)
     db.flush()
-    log_change(db, entry.entity_type, entry.entity_id, "rollback", current, snapshot(entity), actor)
+    after = concept_snapshot(db, entity) if entry.entity_type == "concept" else snapshot(entity)
+    log_change(db, entry.entity_type, entry.entity_id, "rollback", current, after, actor)
     db.commit()
     db.refresh(entity)
     return entity

@@ -40,7 +40,8 @@ def create(data: OperatorCreate, db: Session = Depends(get_db),
            user: dict = Depends(require_role("reviewer", "admin"))):
     o = create_operator(db, name=data.name, subject_concept_id=data.subject_concept_id,
                         owner_concept_id=data.owner_concept_id, param_types=data.param_types,
-                        return_type=data.return_type, actor=user["username"])
+                        return_type=data.return_type, source_uri=data.source_uri,
+                        ontology_module=data.ontology_module, actor=user["username"])
     return _out(db, o)
 
 

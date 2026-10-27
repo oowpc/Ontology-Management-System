@@ -9,7 +9,10 @@ class ConceptCreate(BaseModel):
     domain: str = "通用"
     aliases: list[str] = []
     definition: str = ""
+    source_uri: str | None = None
+    ontology_module: str | None = None
     parent_id: int | None = None
+    parents: list[int] | None = None
     status: str = "approved"  # draft | approved
 
 
@@ -18,7 +21,10 @@ class ConceptUpdate(BaseModel):
     domain: str | None = None
     aliases: list[str] | None = None
     definition: str | None = None
+    source_uri: str | None = None
+    ontology_module: str | None = None
     parent_id: int | None = None
+    parents: list[int] | None = None
 
 
 class OperatorCreate(BaseModel):
@@ -27,6 +33,8 @@ class OperatorCreate(BaseModel):
     owner_concept_id: int | None = None  # 缺省 = 主体概念
     param_types: list[str] = []
     return_type: str = Field(min_length=1, max_length=256)
+    source_uri: str | None = None
+    ontology_module: str | None = None
 
 
 class OperatorUpdate(BaseModel):
@@ -35,6 +43,8 @@ class OperatorUpdate(BaseModel):
     owner_concept_id: int | None = None
     param_types: list[str] | None = None
     return_type: str | None = None
+    source_uri: str | None = None
+    ontology_module: str | None = None
 
 
 class SubmissionCreate(BaseModel):
@@ -43,6 +53,7 @@ class SubmissionCreate(BaseModel):
     aliases: list[str] = []
     definition: str = ""
     suggested_parent_id: int
+    suggested_parent_ids: list[int] = []
     reason: str = Field(min_length=1)           # 为什么现有概念不够
     sample_question: str = Field(min_length=1)  # 附题目
 

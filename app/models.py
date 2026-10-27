@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import (JSON, CheckConstraint, DateTime, ForeignKey, Index,
+from sqlalchemy import (JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Index,
                         Integer, String, Text, UniqueConstraint, func)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -44,6 +44,8 @@ class Concept(Base):
     aliases: Mapped[list] = mapped_column(JSON, default=list)
     definition: Mapped[str] = mapped_column(Text, default="")
     parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("concepts.id"), index=True)
+    source_uri: Mapped[Optional[str]] = mapped_column(String(512), index=True)  # 外部本体 IRI
+    ontology_module: Mapped[Optional[str]] = mapped_column(String(128), index=True)  # 来源模块（CMNS-DatesAndTimes / Equities）
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
     merged_into_id: Mapped[Optional[int]] = mapped_column(ForeignKey("concepts.id"))
     created_by: Mapped[str] = mapped_column(String(64))
@@ -53,6 +55,23 @@ class Concept(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     parent = relationship("Concept", remote_side=[id], foreign_keys=[parent_id])
+
+
+class ConceptParent(Base):
+    """概念的多父类关联（KE 允许多父类；concepts.parent_id 保留为主父类）。"""
+
+    __tablename__ = "concept_parents"
+    __table_args__ = (
+        UniqueConstraint("concept_id", "parent_id", name="uq_concept_parent"),
+        CheckConstraint("concept_id != parent_id", name="ck_concept_parent_self"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    concept_id: Mapped[int] = mapped_column(ForeignKey("concepts.id", ondelete="CASCADE"), index=True)
+    parent_id: Mapped[int] = mapped_column(ForeignKey("concepts.id", ondelete="CASCADE"), index=True)
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=False)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class Operator(Base):
@@ -68,10 +87,32 @@ class Operator(Base):
     owner_concept_id: Mapped[Optional[int]] = mapped_column(ForeignKey("concepts.id"))  # 所属概念，NULL=同主体
     param_types: Mapped[list] = mapped_column(JSON, default=list)
     return_type: Mapped[str] = mapped_column(String(256))  # 概念名或 String/Number/Set[..]
+    source_uri: Mapped[Optional[str]] = mapped_column(String(512), index=True)  # 属性 IRI
+    ontology_module: Mapped[Optional[str]] = mapped_column(String(128), index=True)
     status: Mapped[str] = mapped_column(String(16), default="approved")
     created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class ImportBatch(Base):
+    """一次 KEOL 词表导入的批次记录（统计 + 来源 + 创建/更新 ID，供回滚）。"""
+
+    __tablename__ = "import_batches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    source: Mapped[str] = mapped_column(String(512), default="")
+    actor: Mapped[str] = mapped_column(String(128), default="keol-sync")
+    status: Mapped[str] = mapped_column(String(16), default="completed", index=True)
+    stats: Mapped[dict] = mapped_column(JSON, default=dict)
+    files: Mapped[list] = mapped_column(JSON, default=list)
+    created_concept_ids: Mapped[list] = mapped_column(JSON, default=list)
+    updated_concept_ids: Mapped[list] = mapped_column(JSON, default=list)
+    created_operator_ids: Mapped[list] = mapped_column(JSON, default=list)
+    updated_operator_ids: Mapped[list] = mapped_column(JSON, default=list)
+    started_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class Submission(Base):
@@ -83,6 +124,7 @@ class Submission(Base):
     reason: Mapped[str] = mapped_column(Text)  # 为什么现有概念不够
     sample_question: Mapped[str] = mapped_column(Text)  # 附题目
     suggested_parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("concepts.id"))
+    suggested_parent_ids: Mapped[list] = mapped_column(JSON, default=list)  # 多父类建议（含主）
     similar_snapshot: Mapped[list] = mapped_column(JSON, default=list)  # 提交瞬间查重快照
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     submitted_by: Mapped[str] = mapped_column(String(64))

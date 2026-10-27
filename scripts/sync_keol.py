@@ -15,7 +15,7 @@
   python scripts/sync_keol.py                          # 直连本库写入词表（默认源：--src > KEOL_SRC > 内置默认）
   python scripts/sync_keol.py --with-instances         # 词表 + 实例/事实镜像（keol_entities/keol_facts 全量重建）
   python scripts/sync_keol.py --instances-only         # 只重建实例/事实镜像
-  python scripts/sync_keol.py --dry-run                # 只解析与比对，不写库
+  python scripts/sync_keol.py --dry-run                # 只解析与比对，不写库、不迁移（需先 upgrade head）
   python scripts/sync_keol.py --src D:/path/政府本体    # 指定 KEOL 源目录
   python scripts/sync_keol.py --api http://127.0.0.1:8000 --token ke_...   # 词表改走 API（服务在线时；镜像仅支持直连模式）
 """
@@ -23,10 +23,13 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import sys
 import urllib.request
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -70,6 +73,25 @@ def iter_keol_block_text(path: str) -> str:
     return "\n".join(lines)
 
 
+def load_meta(path: str) -> tuple[dict, dict]:
+    """读取 <md>.meta.json（转换器产出的定义/别名/来源）。缺省返回空表。"""
+    p = Path(path)
+    meta_path = p.with_name(p.stem + ".meta.json")
+    if not meta_path.exists():
+        return {}, {}
+    try:
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        print(f"[WARN] 元数据解析失败 {meta_path}: {e}")
+        return {}, {}
+    concepts = data.get("concepts") or {}
+    if isinstance(concepts, list):
+        concepts = {c.get("name"): c for c in concepts if c.get("name")}
+    ops = {(o.get("name"), o.get("subject")): o for o in (data.get("operators") or [])
+           if o.get("name") and o.get("subject")}
+    return concepts, ops
+
+
 def build_payload(src: str, include_review_pool: bool = False) -> tuple[dict, dict]:
     """解析全部源文件 → (import_payload 载荷, 统计)。概念按名去重（先见先得，冲突记告警）。
 
@@ -98,23 +120,65 @@ def build_payload(src: str, include_review_pool: bool = False) -> tuple[dict, di
         stats["consts_skipped"] += len(parsed["consts"])
         stats["facts_skipped"] += len(parsed["facts"])
         stats["parse_errors"] += len(parsed["errors"])
+        meta_c, meta_o = load_meta(path)
         for c in parsed["concepts"]:
             name = c["name"]
-            row = {"name": name, "domain": dom, "parent": c.get("parent") or "",
-                   "status": status}
-            if name in concepts and concepts[name] != row:
-                stats["warnings"].append(
-                    f"概念「{name}」多处声明且不一致，保留先见：{concepts[name]} ；忽略：{row}")
+            parents = list(c.get("parents") or ([] if not c.get("parent") else [c["parent"]]))
+            cm = meta_c.get(name) or {}
+            row = {
+                "name": name, "domain": dom,
+                "parent": parents[0] if parents else "", "parents": parents,
+                "definition": cm.get("definition") or "",
+                "aliases": list(cm.get("aliases") or []),
+                "source_uri": cm.get("uri") or "",
+                "ontology_module": cm.get("module") or dom,
+                "status": status,
+            }
+            prev = concepts.get(name)
+            if prev is None:
+                concepts[name] = row
                 continue
-            concepts.setdefault(name, row)
+            # 多文件同名概念：域/状态/定义保留先见，父类与别名取并集
+            for p in row["parents"]:
+                if p not in prev["parents"]:
+                    prev["parents"].append(p)
+            prev["parent"] = prev["parents"][0] if prev["parents"] else ""
+            for a in row["aliases"]:
+                if a not in prev["aliases"]:
+                    prev["aliases"].append(a)
+            if not prev.get("definition"):
+                prev["definition"] = row["definition"]
+            if not prev.get("source_uri"):
+                prev["source_uri"] = row["source_uri"]
+            if not prev.get("ontology_module"):
+                prev["ontology_module"] = row["ontology_module"]
+            if prev["domain"] != row["domain"] or prev["status"] != row["status"]:
+                stats["warnings"].append(
+                    f"概念「{name}」多处声明且域/状态不一致，保留先见："
+                    f"domain={prev['domain']},status={prev['status']}；忽略："
+                    f"domain={row['domain']},status={row['status']}")
         for o in parsed["operators"]:
             if not o.get("subject"):
                 stats["warnings"].append(f"算子「{o.get('name')}」缺主体概念，跳过（{path}:{o.get('line')}）")
                 continue
-            operators.setdefault((o["name"], o["subject"]), {
+            key = (o["name"], o["subject"])
+            om = meta_o.get(key) or {}
+            row = {
                 "name": o["name"], "subject": o["subject"],
                 "param_types": o.get("param_types") or [],
-                "return_type": o.get("return_type") or "", "status": status})
+                "return_type": o.get("return_type") or "",
+                "source_uri": om.get("uri") or "",
+                "ontology_module": om.get("module") or dom,
+                "status": status,
+            }
+            prev = operators.get(key)
+            if prev is None:
+                operators[key] = row
+            else:
+                if not prev.get("source_uri"):
+                    prev["source_uri"] = row["source_uri"]
+                if not prev.get("ontology_module"):
+                    prev["ontology_module"] = row["ontology_module"]
     payload = {"concepts": list(concepts.values()), "operators": list(operators.values())}
     return payload, stats
 
@@ -139,6 +203,7 @@ def main() -> int:
     ap.add_argument("--token", default=os.environ.get("ONTOLOGY_TOKEN", ""), help="API Token（或环境变量 ONTOLOGY_TOKEN）")
     ap.add_argument("--include-review-pool", action="store_true",
                     help="同时导入 _ 开头的评审候选池文件（条目以 draft 状态入库）")
+    ap.add_argument("--batch-id", help="导入批次 ID（缺省自动生成）；用于批量回滚")
     args = ap.parse_args()
 
     from app.config import settings
@@ -172,9 +237,10 @@ def main() -> int:
     if args.dry_run:
         from sqlalchemy import select
 
-        from app.db import SessionLocal, init_db
+        from app.db import SessionLocal
         from app.models import Concept, Operator
-        init_db()
+        # dry-run 只读：不执行 init_db()/Alembic 迁移，避免顺带改库。
+        # 若库结构落后，请先手动 `alembic upgrade head`。
         db = SessionLocal()
         try:
             if want_vocab:
@@ -211,7 +277,16 @@ def main() -> int:
     try:
         if want_vocab:
             from app.importer import import_payload
-            result = import_payload(db, payload, ACTOR)
+            batch_id = args.batch_id or f"{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:8]}"
+            files = []
+            for p in sources(args.src):
+                meta = Path(p).with_name(Path(p).stem + ".meta.json")
+                for f in ([Path(p)] + ([meta] if meta.exists() else [])):
+                    files.append({"path": str(f), "size": f.stat().st_size,
+                                  "sha256": hashlib.sha256(f.read_bytes()).hexdigest()})
+            result = import_payload(db, payload, f"{ACTOR}:{batch_id}",
+                                    batch_id=batch_id, source=args.src, files=files)
+            print("导入批次:", batch_id)
             print("导入结果:", json.dumps(result, ensure_ascii=False))
         if want_instances:
             from app.keolsync import mirror_status, sync_instances

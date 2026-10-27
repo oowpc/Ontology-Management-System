@@ -48,9 +48,9 @@ table.data th{background:#f8fafc;font-weight:600;white-space:nowrap}
 table.kv{border-collapse:collapse}
 table.kv th{text-align:left;color:var(--muted);font-weight:normal;padding:3px 18px 3px 0;white-space:nowrap;vertical-align:top}
 table.kv td{padding:3px 0}
-.chip{display:inline-block;padding:2px 10px;margin:2px 4px 2px 0;border:1px solid var(--line);border-radius:999px;background:#f8fafc}
+.chip{display:inline-block;padding:2px 10px;margin:2px 4px 2px 0;border:1px solid var(--line);border-radius:999px;background:#f8fafc;white-space:nowrap}
 .form{display:flex;flex-direction:column;gap:12px;max-width:560px;margin-top:12px}
-.form label{display:flex;flex-direction:column;gap:4px;font-weight:500}
+.form label,.form .field{display:flex;flex-direction:column;gap:4px;font-weight:500}
 .form .actions{display:flex;gap:8px}
 .pager{display:flex;gap:12px;align-items:center;margin-top:12px}
 .login-card{max-width:360px;margin:80px auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:28px}
@@ -117,6 +117,7 @@ td.cell-empty{background:#fafafa}
 .graph-wrap{overflow:hidden;padding:0;background:#fff}
 #concept-graph{display:block;touch-action:none}
 #concept-graph .edge{fill:none;stroke:#cbd5e1;stroke-width:1.5}
+#concept-graph .edge.extra{stroke:#f59e0b;stroke-dasharray:4 3}
 #concept-graph .node rect{fill:#f8fafc;stroke:#94a3b8;stroke-width:1}
 #concept-graph .node:hover rect{fill:#eff6ff;stroke:var(--brand)}
 #concept-graph .node text{font-size:13px;fill:var(--text);user-select:none}
@@ -148,3 +149,51 @@ tr.diff-ctx{color:var(--muted)}
 .form-row{display:flex;gap:12px;flex-wrap:wrap}
 .form-row>label{flex:1;min-width:180px}
 pre.ke-block{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:10px;font:13px/1.7 ui-monospace,Consolas,monospace;white-space:pre-wrap;margin:4px 0}
+
+/* 概念选择器（异步搜索，替代大 select） */
+.picker{position:relative;display:flex;flex-direction:column;gap:5px;min-width:220px}
+.picker-selected{display:flex;flex-wrap:wrap;gap:4px}
+.picker-chip{display:inline-flex;align-items:center;gap:4px;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;border-radius:999px;padding:2px 7px;font-size:12px;max-width:100%}
+.picker-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
+.picker-chip button{border:0;background:none;color:#4338ca;cursor:pointer;font-size:14px;line-height:1;padding:0}
+.picker-input{width:100%;box-sizing:border-box}
+.picker-results{display:none;position:absolute;z-index:40;top:calc(100% + 2px);left:0;min-width:260px;max-width:440px;max-height:260px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 24px rgba(15,23,42,.12)}
+.picker-results.open{display:block}
+.picker-result{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 10px;cursor:pointer;outline:none}
+.picker-result:hover,.picker-result:focus{background:#f1f5f9}
+.picker-result-name{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.picker-result-meta{font-size:11px;color:var(--muted);white-space:nowrap}
+.picker-empty{padding:9px 10px;color:var(--muted);font-size:12px}
+
+/* 列表 +N 父类弹层 */
+.parent-more{display:inline-block;position:relative;margin-left:5px}
+.parent-more summary{cursor:pointer;color:var(--muted);font-size:11px;list-style:none;padding:1px 6px;border:1px solid var(--line);border-radius:999px;background:#f8fafc}
+.parent-more summary:hover{background:#f1f5f9;color:var(--text)}
+.parent-more summary::-webkit-details-marker{display:none}
+.parent-more summary::after{content:" ▾";font-size:10px}
+.parent-pop{position:absolute;z-index:30;top:100%;left:0;margin-top:4px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 10px;white-space:nowrap;box-shadow:0 8px 20px rgba(15,23,42,.12)}
+.parent-pop a{display:inline-block;margin:2px 0}
+
+/* 长来源 IRI 不撑破详情表 */
+.source-uri{word-break:break-all;overflow-wrap:anywhere}
+
+/* 图谱图例 */
+.graph-legend{margin-top:8px;font-size:12px;color:var(--muted)}
+.graph-legend .line{display:inline-block;width:26px;height:0;border-top:2px solid #cbd5e1;vertical-align:middle;margin:0 5px}
+.graph-legend .line.extra{border-top:2px dashed #f59e0b}
+
+/* 移动端：导航换行、内容区可横向滚动，避免整页横向溢出 */
+@media (max-width: 760px){
+  .topbar{height:auto;flex-wrap:wrap;padding:8px 12px;gap:8px 14px}
+  .topbar nav{flex:1 0 100%;flex-wrap:nowrap;overflow-x:auto;gap:8px 14px;padding-bottom:2px}
+  .topbar nav a{font-size:13px;white-space:nowrap}
+  .who{font-size:12px}
+  .wrap{padding:0 10px;overflow-x:auto}
+  .filters{flex-wrap:wrap}
+  .filters>*{max-width:100%}
+  .page-head{flex-wrap:wrap}
+  .form{max-width:100%}
+  .picker-results{min-width:0;width:100%;max-width:100%}
+  #concept-graph{min-width:1000px}
+  .graph-wrap{overflow-x:auto}
+}

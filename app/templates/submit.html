@@ -22,14 +22,22 @@
   <label>定义
     <textarea name="definition" rows="3">{{ values.definition if values else '' }}</textarea>
   </label>
-  <label>建议父类 *
-    <select id="f-parent" name="suggested_parent_id" required>
-      <option value="">（选择已入库概念）</option>
-      {% for p in approved %}
-      <option value="{{ p.id }}" {{ 'selected' if values and values.suggested_parent_id == p.id }}>{{ p.name }}</option>
-      {% endfor %}
-    </select>
-  </label>
+  <noscript><p class="flash err">父类选择器需要 JavaScript；请启用 JS 后再提交。</p></noscript>
+  <div class="field">
+    <span>建议父类（主）*</span>
+    <div id="picker-suggested-primary" class="picker" data-picker="single"
+         data-name="suggested_parent_id" data-status="approved"
+         data-selected='{{ selected_primary|tojson }}'
+         data-old-primary-target="#picker-extra-parents"
+         data-placeholder="搜索已入库父类…"></div>
+  </div>
+  <div class="field">
+    <span>其他建议父类（次，可多选）</span>
+    <div id="picker-extra-parents" class="picker" data-picker="multi"
+         data-name="extra_parent_ids" data-status="approved"
+         data-selected='{{ selected_extras|tojson }}'
+         data-placeholder="搜索并添加其他父类…"></div>
+  </div>
   <label>为什么现有概念不够 *
     <textarea name="reason" rows="3" required placeholder="说明现有概念无法表达的场景">{{ values.reason if values else '' }}</textarea>
   </label>
@@ -50,4 +58,4 @@
   </div>
 </form>
 {% endblock %}
-{% block scripts %}<script src="/static/app.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/picker.js?v=20261027a"></script><script src="/static/app.js?v=20261027a"></script>{% endblock %}

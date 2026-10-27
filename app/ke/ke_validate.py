@@ -266,12 +266,24 @@ def parse_ke(text: str) -> ParsedKE:
     if not (text or "").strip():
         out.errors.append(_issue(0, "empty", "KE 内容为空"))
         return out
+    concepts_by_name: dict[str, dict] = {}
     for ln, stmt in _logical_lines(text, out.errors, out.warnings):
         kw = RE_DECL.match(stmt).group(1)
         if kw == "concept":
             m = RE_CONCEPT.match(stmt)
             if m:
-                out.concepts.append({"name": m.group(1), "parent": m.group(2), "line": ln})
+                name, parent = m.group(1), m.group(2)
+                row = concepts_by_name.get(name)
+                if row is None:
+                    concepts_by_name[name] = {
+                        "name": name, "parent": parent,
+                        "parents": [parent] if parent else [], "line": ln,
+                    }
+                else:
+                    if parent and parent not in row["parents"]:
+                        row["parents"].append(parent)
+                    if row["parent"] is None:
+                        row["parent"] = parent
             else:
                 out.errors.append(_issue(ln, "bad_concept", f"concept 声明形态错：{stmt[:60]}"))
         elif kw == "const":
@@ -296,6 +308,7 @@ def parse_ke(text: str) -> ParsedKE:
             parsed = _parse_output(stmt, ln, out.errors)
             if parsed:
                 out.outputs.append(parsed)
+    out.concepts = list(concepts_by_name.values())
     if not out.outputs:
         out.errors.append(_issue(0, "no_output", "缺少 output 语句"))
     elif len(out.outputs) > 1:
@@ -340,18 +353,17 @@ def validate_ke(db: Session, text: str, concepts_field: list | None = None) -> d
     known_all = set(known_concepts) | local_concepts
 
     # ---- 声明级检查 ----
-    seen_concept, seen_op = set(), set()
+    seen_op = set()
     for c in parsed.concepts:
-        if c["name"] in seen_concept:
-            warnings.append(_issue(c["line"], "dup_decl", f"概念「{c['name']}」重复声明"))
-        seen_concept.add(c["name"])
         st = known_concepts.get(c["name"])
         if st is None:
             warnings.append(_issue(c["line"], "unknown_concept", f"概念「{c['name']}」不在本体库（待入库或待提交）"))
         elif st == "disabled":
             warnings.append(_issue(c["line"], "disabled_concept", f"概念「{c['name']}」在库中已停用"))
-        if c["parent"] and c["parent"] not in known_all:
-            warnings.append(_issue(c["line"], "unknown_parent", f"父类「{c['parent']}」未声明也未入库"))
+        for parent in c.get("parents") or ([] if not c.get("parent") else [c["parent"]]):
+            if parent not in known_all:
+                warnings.append(_issue(c["line"], "unknown_parent",
+                                       f"父类「{parent}」未声明也未入库"))
     for o in parsed.ops:
         if o["name"] in seen_op:
             warnings.append(_issue(o["line"], "dup_decl", f"算子「{o['name']}」重复声明"))

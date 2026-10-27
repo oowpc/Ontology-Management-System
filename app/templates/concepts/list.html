@@ -19,12 +19,10 @@
     <option value="{{ s }}" {{ 'selected' if status == s }}>{{ label }}</option>
     {% endfor %}
   </select>
-  <select name="parent_id">
-    <option value="">全部父类</option>
-    {% for p in parents %}
-    <option value="{{ p.id }}" {{ 'selected' if parent_id == p.id }}>{{ p.name }}</option>
-    {% endfor %}
-  </select>
+  <div class="picker" id="filter-parent" data-picker="single" data-name="parent_id"
+       data-omit-empty="1"
+       data-selected='{{ selected_parent|tojson }}'
+       data-placeholder="按父类筛选…"></div>
   <button class="btn" type="submit">过滤</button>
 </form>
 <p class="muted">共 {{ total }} 条</p>
@@ -41,7 +39,16 @@
     <td><span class="chip">{{ c.domain or '通用' }}</span></td>
     <td class="muted">{{ (c.aliases or [])|join('、') }}</td>
     <td>
-      {% if c.parent_id %}<a href="/concepts/{{ c.parent_id }}">{{ parent_names.get(c.parent_id, c.parent_id) }}</a>
+      {% set ps = parent_details.get(c.id, []) %}
+      {% if ps %}
+        <a href="/concepts/{{ ps[0].id }}">{{ ps[0].name }}</a>
+        {% if ps|length > 1 %}
+        <details class="parent-more">
+          <summary>+{{ ps|length - 1 }}</summary>
+          <div class="parent-pop">{% for p in ps[1:] %}<a href="/concepts/{{ p.id }}">{{ p.name }}</a>{% if not loop.last %}、{% endif %}{% endfor %}</div>
+        </details>
+        {% endif %}
+      {% elif c.parent_id %}<a href="/concepts/{{ c.parent_id }}">{{ parent_names.get(c.parent_id, c.parent_id) }}</a>
       {% else %}<span class="muted">—</span>{% endif %}
     </td>
     <td><span class="badge {{ c.status }}">{{ STATUS_LABELS.get(c.status, c.status) }}</span></td>
@@ -64,9 +71,10 @@
 </table>
 {% if pages > 1 %}
 <div class="pager">
-  {% if page > 1 %}<a class="btn" href="?q={{ q or '' }}&status={{ status or '' }}&parent_id={{ parent_id or '' }}&page={{ page - 1 }}">上一页</a>{% endif %}
+  {% if page > 1 %}<a class="btn" href="?page={{ page - 1 }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if parent_id %}&parent_id={{ parent_id }}{% endif %}{% if domain %}&domain={{ domain|urlencode }}{% endif %}">上一页</a>{% endif %}
   <span>第 {{ page }} / {{ pages }} 页</span>
-  {% if page < pages %}<a class="btn" href="?q={{ q or '' }}&status={{ status or '' }}&parent_id={{ parent_id or '' }}&page={{ page + 1 }}">下一页</a>{% endif %}
+  {% if page < pages %}<a class="btn" href="?page={{ page + 1 }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if parent_id %}&parent_id={{ parent_id }}{% endif %}{% if domain %}&domain={{ domain|urlencode }}{% endif %}">下一页</a>{% endif %}
 </div>
 {% endif %}
 {% endblock %}
+{% block scripts %}<script src="/static/picker.js?v=20261027a"></script>{% endblock %}

@@ -38,6 +38,7 @@ def create(data: SubmissionCreate, db: Session = Depends(get_db),
     sub = create_submission(
         db, name=data.name, domain=data.domain, aliases=data.aliases,
         definition=data.definition, suggested_parent_id=data.suggested_parent_id,
+        suggested_parent_ids=data.suggested_parent_ids,
         reason=data.reason, sample_question=data.sample_question, actor=user["username"],
     )
     return submission_dict(db, sub)

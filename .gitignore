@@ -6,3 +6,5 @@ data/
 
 .claude/settings.local.json
 .coverage
+
+.venv/
