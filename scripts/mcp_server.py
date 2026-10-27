@@ -1,4 +1,4 @@
-"""MCP stdio server：把本体管理系统 API 暴露为 MCP 工具，agent 直连操控。
+"""MCP stdio server：把本体管理系统 API 暴露为 MCP 工具，agent 直连操控（47 个工具）。
 
 启动（两种认证）：
   ONTOLOGY_TOKEN=ke_... python scripts/mcp_server.py
@@ -398,6 +398,32 @@ def gold_sample_close(sample_id: int) -> dict:
 def llm_usage() -> dict:
     """M23：LLM 调用台账汇总（分场景次数/tokens/均耗时/失败数；reviewer/admin）。"""
     return api("GET", "/api/llm/usage")
+
+
+# ---------------- M25 · KEOL 实例库（只读镜像） ----------------
+
+@mcp.tool()
+def keol_status() -> dict:
+    """KEOL 镜像概况：实体/事实/类型/谓词数 + 最近同步时间（sync_keol.py --with-instances 灌入）。"""
+    return api("GET", "/api/keol/status")
+
+
+@mcp.tool()
+def keol_list_entities(q: str = "", type: str = "", limit: int = 50, offset: int = 0) -> dict:
+    """KEOL 实体检索：名称模糊 q / 类型精确 type（如 地级行政区）。"""
+    return api("GET", "/api/keol/entities", params={"q": q, "type": type, "limit": limit, "offset": offset})
+
+
+@mcp.tool()
+def keol_get_entity(name: str) -> dict:
+    """KEOL 实体详情：字面量属性 / 出向事实 / 入向事实。name 形如 __广东省。"""
+    return api("GET", f"/api/keol/entities/{name}")
+
+
+@mcp.tool()
+def keol_list_facts(pred: str = "", subj: str = "", value: str = "", limit: int = 200) -> dict:
+    """KEOL 事实检索：谓词/主体/值精确过滤（可组合），如 pred=上级行政区划 value=__广州市。"""
+    return api("GET", "/api/keol/facts", params={"pred": pred, "subj": subj, "value": value, "limit": limit})
 
 
 if __name__ == "__main__":

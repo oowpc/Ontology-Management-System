@@ -32,7 +32,7 @@ python -m uvicorn app.main:app --reload
 | M10 | KE 逐条复核：待复核队列 · 逐条/批量打标 · 写回任务（一致→完成 / 不一致→退回+标签）· 系统结论上传重放 · 留痕可查 | ✅ 本次交付 |
 | M11 | 通用化：CSV 列名映射（KE_COLUMN_MAP）· 状态词表映射（KE_STATUS_MAP）· GOLD 阶段/泳道词表配置 · 用户与组管理页（/admin/users） | ✅ 本次交付 |
 | 接入 | Agent 全开放：Bearer Token（`/api/tokens` 自助签发）· 页面动作均有对应 API（32/32 审计通过）· 幂等键统一 · `AGENTS.md` 手册 | ✅ |
-| M12 | Agent 可发现性：`GET /api/agent/manifest`（活路由表+工况词表+工作流配方，永不缺漏）· MCP server（`scripts/mcp_server.py`，43 个工具） | ✅ 本次交付 |
+| M12 | Agent 可发现性：`GET /api/agent/manifest`（活路由表+工况词表+工作流配方，永不缺漏）· MCP server（`scripts/mcp_server.py`，47 个工具） | ✅ 本次交付 |
 | M13 | 概念继承图：服务端 tidy-tree 布局 + 原生 SVG（零依赖、内网可用）· 缩放/拖拽/点击进详情 · 按根/状态过滤 · `/api/graph` 结构+布局数据 | ✅ |
 | M14 | 领域分组：Concept.domain（默认通用，存量自动迁移）· 列表/图/导入导出/提交审核带领域 · 体检新增「跨领域近义对」（验收自洽口径） | ✅ 本次交付 |
 | M15 | 粘贴识别：粘贴 KEOL 文本 → 自动识别 concept/op/const/KE 事实 → 报告（新/已存在/相似/无效+行级原因）→ 勾选导入（概念算子进本体库·可选领域，事实入成品库） | ✅ 本次交付 |
@@ -44,11 +44,14 @@ python -m uvicorn app.main:app --reload
 | M22 | 导出指纹 manifest：`export.manifest.json` 逐条 sha256 + 链式 digest（对接下游数据版本守卫） | ✅ 本次交付 |
 | M23 | LLM 加固：429/5xx/网络错误指数退避重试（LLM_MAX_RETRIES）· usage/耗时/成败落 llm_calls 台账 · `GET /api/llm/usage` 分场景汇总 | ✅ 本次交付 |
 | M21 | 抽检闭环：分层等距抽样（seed 落库可复现）→ 双人盲评（他人结论盲化/重复 409）→ 分歧仲裁 → 关闭回填通过率 · Wilson 95% CI + 双评一致率 · 手工登记兼容 | ✅ 本次交付 |
+| M24 | KEOL 词表桥接：`scripts/sync_keol.py` 把政府本体库 .md（```keol 块）的 concept/op 池幂等同步进本体库（名称自然键 upsert + 审计留痕）· 评审候选池（_ 开头文件）默认跳过、可选 draft 并入 | ✅ 本次交付 |
+| M25 | KEOL 实例库镜像：`keol_entities`/`keol_facts` 两表（复用 KEOL 侧 load_db 解析口径，4.5 万实体/13.4 万事实秒级全量重建，`sync_keol.py --with-instances`）· 只读 API `/api/keol/status · entities · entities/{name} · facts` + `/keol` 查询页 · 概念详情页实例数 · M20 校验实体联查（`__引用`/常量右值命中镜像即放行，未收录记 unknown_entity；ENGINE v2）· MCP +4 | ✅ 本次交付 |
+| M26 | GOLD→KEOL 回流：`scripts/gold_to_keol.py` 把定稿成品（默认 gold）的 concept/op/const 声明与坐实绑定翻成标准 KEOL，整文件重生成写入 KEOL 源树 `ke/回流/管理系统-GOLD.md`（其 load_db/keol_check 自然接管）· 已收录名字不重复声明、类型/父类未收录自动注释化（keol_check 保持全绿）· 变量坐实代入 `-- 问：` 注释 | ✅ 本次交付 |
 
 ## M12 · Agent 可操控性补全
 
 - **活清单**：`GET /api/agent/manifest`（Bearer 认证）——运行时内省全部 API 路由（新版 Starlette 懒加载路由已展开）、当前工况词表（GOLD 阶段/泳道/组别/目标、KE 状态与列名映射、查重阈值、LLM 是否可用）、4 条常用工作流配方、幂等键与错误约定。agent 首次接入调它即可自举，无需人工文档
-- **MCP server**：`scripts/mcp_server.py`（官方 `mcp` SDK，stdio）。43 个工具覆盖：概念/算子/查重/提交审核/TMP 回填/GOLDKE 篇级与泳道/issue/KE 上传/成品校验与指纹/抽检闭环/体检/迁移/变更日志/LLM 台账
+- **MCP server**：`scripts/mcp_server.py`（官方 `mcp` SDK，stdio）。47 个工具覆盖：概念/算子/查重/提交审核/TMP 回填/GOLDKE 篇级与泳道/issue/KE 上传/成品校验与指纹/抽检闭环/体检/迁移/变更日志/LLM 台账
 
 ```jsonc
 // .mcp.json 接入示例

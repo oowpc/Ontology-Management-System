@@ -6,7 +6,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..audit import diff_entries, entity_history
@@ -17,8 +17,8 @@ from ..healthcheck import KIND_LABELS, run_health
 from ..importer import csv_to_payload, import_payload, parse_field_map
 from ..llm import enabled as llm_enabled
 from ..models import (AuditLog, BackfillRecord, Concept, HealthReport,
-                      Operator, Question, QuestionConcept, Submission,
-                      TmpMapping)
+                      KeolEntity, Operator, Question, QuestionConcept,
+                      Submission, TmpMapping)
 from ..review import (SUB_STATUS, approve, batch_action, create_submission,
                       get_submission_or_404, merge, reject, submission_dict)
 from ..security import current_user
@@ -139,10 +139,13 @@ def concept_detail_page(cid: int, request: Request, db: Session = Depends(get_db
         .order_by(Question.updated_at.desc()).limit(20)
     ).all()
     from ..issues.service import related_issues
+    keol_entity_count = db.scalar(
+        select(func.count(KeolEntity.id)).where(KeolEntity.type == c.name)) or 0
     return templates.TemplateResponse(request=request, name="concepts/detail.html", context={
         "request": request, "user": user, "c": c, "children": children, "operators": ops,
         "parent_name": names.get(c.parent_id) if c.parent_id else None,
         "owner_names": names, "usage": usage_map(db, [cid]).get(cid),
+        "keol_entity_count": keol_entity_count,
         "submissions": [submission_dict(db, s) for s in subs],
         "history": [{"entry": h, "diff": diff_entries(h.before, h.after) if h.action != "create" else []}
                     for h in hist],

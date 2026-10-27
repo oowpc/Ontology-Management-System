@@ -87,6 +87,9 @@ class Settings:
     # M20：定稿（→gold）强校验 KE 内容（结构错误阻断；词表 warning 不阻断）。0=关闭门槛
     gold_finalize_validate: bool = os.environ.get("GOLD_FINALIZE_VALIDATE", "1") == "1"
 
+    # M25 · KEOL 桥接：政府本体库源目录（.md 权威源；sync_keol.py 默认取此）
+    keol_src: str = os.environ.get("KEOL_SRC", "")
+
     # LLM（OpenAI 兼容端点；留空则相关功能优雅降级）
     llm_base_url: str = os.environ.get("LLM_BASE_URL", "")
     llm_api_key: str = os.environ.get("LLM_API_KEY", "")

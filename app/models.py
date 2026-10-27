@@ -10,8 +10,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import (JSON, CheckConstraint, DateTime, ForeignKey, Integer,
-                        String, Text, UniqueConstraint, func)
+from sqlalchemy import (JSON, CheckConstraint, DateTime, ForeignKey, Index,
+                        Integer, String, Text, UniqueConstraint, func)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .config import settings
@@ -383,8 +383,37 @@ class KeReview(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-# ================= M23 · LLM 调用台账 =================
+# ================= M25 · KEOL 实例库镜像 =================
 
+class KeolEntity(Base):
+    """KEOL 实例（const __名 : 类型）。镜像只读数据：权威源在 KEOL .md，
+    由 scripts/sync_keol.py --with-instances 全量重建（不留审计逐条痕，synced_at 记批次）。"""
+    __tablename__ = "keol_entities"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(256), unique=True, index=True)  # __广东省
+    type: Mapped[str] = mapped_column(String(128), index=True)               # 概念名 / 内置类型
+    src: Mapped[str] = mapped_column(String(256), default="")                # 来源 文件:行
+    synced_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class KeolFact(Base):
+    """KEOL 事实：谓词(参数) = 值。key=规范化参数表；subj=首参（便于反查）；kind=ref|string|number|set|term。"""
+    __tablename__ = "keol_facts"
+    __table_args__ = (Index("ix_keol_facts_pred_key", "pred", "key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pred: Mapped[str] = mapped_column(String(128), index=True)
+    key: Mapped[str] = mapped_column(String(512), default="", index=True)
+    subj: Mapped[str] = mapped_column(String(256), default="", index=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    kind: Mapped[str] = mapped_column(String(16), default="term")
+    src: Mapped[str] = mapped_column(String(256), default="")
+    line: Mapped[int] = mapped_column(Integer, default=0)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ================= M23 · LLM 调用台账 =================
 class LlmCall(Base):
     """LLM 调用台账：场景 / 模型 / token 用量 / 耗时 / 重试次数 / 成败（成本与稳定性可见）。"""
     __tablename__ = "llm_calls"

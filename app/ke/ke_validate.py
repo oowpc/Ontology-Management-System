@@ -13,7 +13,8 @@
           → 阻断定稿（reviewed→gold 强校验，可用 GOLD_FINALIZE_VALIDATE=0 关闭）
 - warning 闭词表外引用（概念/算子/常量未入库）→ 不阻断：标注先行、本体后补是正常流程，
           但这些名字是「大本体整理」阶段的待办信号
-本系统不存实例，const 只查本文声明；校验结果随条目缓存（gold_items.validation）。
+M25 起实例联查：const 只查本文声明 + keol_entities 镜像表（__引用 / 常量右值裸名，命中即放行；
+__ 引用未收录记 unknown_entity warning）。校验结果随条目缓存（gold_items.validation）。
 """
 from __future__ import annotations
 
@@ -24,9 +25,9 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Concept, Operator
+from ..models import Concept, KeolEntity, Operator
 
-ENGINE_VERSION = 1          # 校验口径变更时 +1（缓存结果带版本，可据此判旧）
+ENGINE_VERSION = 2          # 校验口径变更时 +1（缓存结果带版本，可据此判旧）
 MAX_ISSUES = 30             # 每级最多入列条数（防爆 JSON），超出只计数
 
 BUILTIN_TYPES = {"string", "number", "bool", "date", "timeinterval", "real", "name", "concept"}
@@ -246,13 +247,13 @@ def _parse_output(text: str, line: int, errors: list[dict]) -> dict | None:
         masked = _mask_strings(piece)
         eq = RE_BINOP.search(masked)
         if eq:
-            bindings.append({"kind": "assert",
+            bindings.append({"kind": "assert", "op": eq.group(0),
                              "left": piece[:eq.start()].strip(),
                              "right": piece[eq.end():].strip()})
             continue
         if RE_CALL.search(piece):
             # 裸调用谓词约束（如 是否符合条件(a)，省略 =true 的写法）
-            bindings.append({"kind": "assert", "left": piece.strip(), "right": ""})
+            bindings.append({"kind": "assert", "op": "", "left": piece.strip(), "right": ""})
             continue
         errors.append(_issue(line, "bad_binding",
                              f"绑定/约束形态无法识别：{piece[:50]}（应为 var x: 类型、x: 类型、表达式 比较符 值 或 谓词调用）"))
@@ -406,7 +407,14 @@ def validate_ke(db: Session, text: str, concepts_field: list | None = None) -> d
                 elif argc >= 0 and argc != sig:
                     errors.append(_issue(ln, "arity_mismatch",
                                          f"算子「{name}」实参 {argc} 个，签名要求 {sig} 个"))
-        # 常量赋值右值：裸名字须在本文 const 声明里（本系统不存实例，不查库）
+        # M25 实体联查：__ 引用、常量右值裸名 → 对 keol_entities 镜像（一次 in_ 查询）
+        dunder_refs: set[str] = set()
+        for expr in exprs:
+            masked = _mask_strings(expr)
+            for tok in RE_NAME_TOK.finditer(masked):
+                if tok.group(0).startswith("__"):
+                    dunder_refs.add(tok.group(0))
+        bare_rights: set[str] = set()
         for b in out["bindings"]:
             if b["kind"] != "assert":
                 continue
@@ -416,10 +424,33 @@ def validate_ke(db: Session, text: str, concepts_field: list | None = None) -> d
                 if RE_NAME_TOK.fullmatch(rv) and not rv.replace("_", "").isdigit() \
                         and rv.lower() not in BOOL_LITERALS and rv not in local_consts \
                         and rv not in bound:
+                    bare_rights.add(rv)
+        candidates = dunder_refs | bare_rights | {f"__{n}" for n in bare_rights}
+        known_entities: set[str] = set()
+        if candidates:
+            known_entities = set(db.scalars(
+                select(KeolEntity.name).where(KeolEntity.name.in_(candidates))).all())
+        for name in sorted(dunder_refs):
+            if name not in known_entities and name not in local_consts:
+                warnings.append(_issue(ln, "unknown_entity",
+                                       f"KEOL 实例「{name}」未收录（镜像库无此 const；可先入库或重跑实例同步）"))
+        # 常量赋值右值：裸名字须在本文 const 声明里，或命中 KEOL 实例镜像（M25）
+        for b in out["bindings"]:
+            if b["kind"] != "assert":
+                continue
+            lm = RE_NAME_TOK.fullmatch(b["left"])
+            if lm and not RE_CALL.search(b["left"]):
+                rv = b["right"].strip()
+                if RE_NAME_TOK.fullmatch(rv) and not rv.replace("_", "").isdigit() \
+                        and rv.lower() not in BOOL_LITERALS and rv not in local_consts \
+                        and rv not in bound and rv not in known_entities \
+                        and f"__{rv}" not in known_entities:
                     warnings.append(_issue(ln, "unknown_const",
-                                           f"常量「{rv}」未经本文 const 声明"))
+                                           f"常量「{rv}」未经本文 const 声明，也不在 KEOL 实例库"))
         # 裸名字绑定检查：head 与 assert 中非调用、非字面量的名字须 ∈ 绑定 ∪ const ∪ 算子 ∪ 概念
-        allowed = bound | const_assigned | local_consts | set(sigs) | known_all | BUILTIN_CALLS
+        known_bare = {n[2:] for n in known_entities if n.startswith("__")}  # __测试省 → 裸名 测试省 亦放行
+        allowed = bound | const_assigned | local_consts | set(sigs) | known_all | BUILTIN_CALLS \
+            | known_entities | known_bare | dunder_refs
         for expr in exprs:
             masked = _mask_strings(expr)
             call_spans = [m.span(1) for m in RE_CALL.finditer(masked)]

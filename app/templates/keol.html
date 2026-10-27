@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}KEOL 库 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>KEOL 库</h1>
+</div>
+
+{% if entity %}
+{# ================= 实体详情 ================= #}
+<div class="panel">
+  <table class="kv">
+    <tr><th>名称</th><td><code>{{ entity.name }}</code></td></tr>
+    <tr><th>类型</th><td><span class="chip">{{ entity.type }}</span></td></tr>
+    <tr><th>来源</th><td class="muted">{{ entity.src }}</td></tr>
+  </table>
+</div>
+{% if entity.literals %}
+<h2>字面量属性（{{ entity.literals|length }}）</h2>
+<table class="data">
+  <thead><tr><th>谓词</th><th>值</th></tr></thead>
+  <tbody>
+  {% for f in entity.literals %}
+  <tr><td>{{ f.pred }}</td><td>{{ f.value.strip('"') }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<h2>出向事实（{{ entity.outgoing|length }}）</h2>
+<table class="data">
+  <thead><tr><th>谓词</th><th>参数</th><th>值</th><th>来源</th></tr></thead>
+  <tbody>
+  {% for f in entity.outgoing %}
+  <tr>
+    <td>{{ f.pred }}</td><td class="muted">{{ f.key }}</td>
+    <td>{% if f.kind == 'ref' %}<a href="/keol?name={{ f.value }}">{{ f.value }}</a>{% else %}{{ f.value }}{% endif %}</td>
+    <td class="muted">{{ f.src }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="empty">无出向事实</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<h2>入向事实（{{ entity.incoming|length }}）</h2>
+<table class="data">
+  <thead><tr><th>谓词</th><th>参数</th><th>值</th><th>来源</th></tr></thead>
+  <tbody>
+  {% for f in entity.incoming %}
+  <tr>
+    <td>{{ f.pred }}</td><td class="muted">{{ f.key }}</td>
+    <td>{% if f.kind == 'ref' %}<a href="/keol?name={{ f.value }}">{{ f.value }}</a>{% else %}{{ f.value }}{% endif %}</td>
+    <td class="muted">{{ f.src }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="empty">无入向事实</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% else %}
+{# ================= 检索页 ================= #}
+<div class="panel">
+  <p class="muted" style="margin:0">
+    镜像 KEOL 源（.md）：实体 <strong>{{ status.entities }}</strong> · 事实 <strong>{{ status.facts }}</strong>
+    · 类型 {{ status.types }} 种 · 谓词 {{ status.preds }} 种
+    {% if status.synced_at %}· 最近同步 {{ status.synced_at }}{% else %}· <strong>尚未同步</strong>（运行 <code>python scripts/sync_keol.py --instances-only</code>）{% endif %}
+  </p>
+</div>
+<form class="filters" method="get" action="/keol">
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="实体名（模糊，如 广东）">
+  <select name="type">
+    <option value="">全部类型</option>
+    {% for t, n in types %}
+    <option value="{{ t }}" {{ 'selected' if type == t }}>{{ t }}（{{ n }}）</option>
+    {% endfor %}
+  </select>
+  <button class="btn" type="submit">查实体</button>
+</form>
+<form class="filters" method="get" action="/keol">
+  <input type="search" name="pred" value="{{ pred or '' }}" placeholder="谓词（精确，如 上级行政区划）">
+  <input type="search" name="value" value="{{ value or '' }}" placeholder="值（精确，如 __广州市）">
+  <button class="btn" type="submit">查事实</button>
+</form>
+
+{% if entities %}
+<p class="muted">实体共 {{ entities.total }} 条</p>
+<table class="data">
+  <thead><tr><th>名称</th><th>类型</th><th>来源</th></tr></thead>
+  <tbody>
+  {% for e in entities['items'] %}
+  <tr>
+    <td><a href="/keol?name={{ e.name }}"><code>{{ e.name }}</code></a></td>
+    <td><span class="chip">{{ e.type }}</span></td>
+    <td class="muted">{{ e.src }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3" class="empty">没有匹配的实体</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if entities.pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="btn" href="?q={{ q or '' }}&type={{ type or '' }}&page={{ page - 1 }}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ entities.pages }} 页</span>
+  {% if page < entities.pages %}<a class="btn" href="?q={{ q or '' }}&type={{ type or '' }}&page={{ page + 1 }}">下一页</a>{% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+{% if facts %}
+<p class="muted">事实共 {{ facts.total }} 条</p>
+<table class="data">
+  <thead><tr><th>谓词</th><th>参数</th><th>值</th><th>来源</th></tr></thead>
+  <tbody>
+  {% for f in facts['items'] %}
+  <tr>
+    <td>{{ f.pred }}</td>
+    <td class="muted">{{ f.key }}</td>
+    <td>{% if f.kind == 'ref' %}<a href="/keol?name={{ f.value }}">{{ f.value }}</a>{% else %}{{ f.value }}{% endif %}</td>
+    <td class="muted">{{ f.src }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="empty">没有匹配的事实</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if facts.pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="btn" href="?pred={{ pred or '' }}&value={{ value or '' }}&page={{ page - 1 }}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ facts.pages }} 页</span>
+  {% if page < facts.pages %}<a class="btn" href="?pred={{ pred or '' }}&value={{ value or '' }}&page={{ page + 1 }}">下一页</a>{% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

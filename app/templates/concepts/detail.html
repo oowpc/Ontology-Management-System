@@ -25,6 +25,7 @@
     <tr><th>创建</th><td>{{ c.created_by }} · {{ c.created_at|dt }}</td></tr>
     <tr><th>最近更新</th><td>{{ c.updated_at|dt }}</td></tr>
     <tr><th>使用统计</th><td>{{ usage.ke_count if usage else 0 }} 次（最近使用：{{ usage.last_used_at|dt if usage else '—' }}）{% if usage and usage.source %} · 来源：{{ usage.source }}{% endif %}</td></tr>
+    <tr><th>KEOL 实例</th><td>{% if keol_entity_count %}<a href="/keol?type={{ c.name }}">{{ keol_entity_count }} 个实例</a>（KEOL 库镜像）{% else %}<span class="muted">0（未同步或该概念无实例）</span>{% endif %}</td></tr>
   </table>
 </div>
 

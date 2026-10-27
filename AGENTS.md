@@ -10,7 +10,7 @@
 curl -H "Authorization: Bearer ke_..." http://127.0.0.1:8000/api/agent/manifest
 ```
 
-返回：按域分组的全部 API 路由、当前工况词表（GOLD 阶段/泳道时段/组别/目标、KE 状态词表与列名映射、查重阈值、LLM 是否可用）、常用工作流、幂等键与错误约定。另有 MCP server（`scripts/mcp_server.py`，43 个工具，见 §5）。
+返回：按域分组的全部 API 路由、当前工况词表（GOLD 阶段/泳道时段/组别/目标、KE 状态词表与列名映射、查重阈值、LLM 是否可用）、常用工作流、幂等键与错误约定。另有 MCP server（`scripts/mcp_server.py`，47 个工具，见 §5）。
 
 ## 1. 认证
 
@@ -40,6 +40,7 @@ curl -b ck.txt -X POST http://127.0.0.1:8000/api/tokens -H "Content-Type: applic
 | KE 复核 | `GET /api/ke/review/queue` · `POST /api/ke/review` · `POST /api/ke/review/batch` · `GET /api/ke/review/history` | 待复核队列 / 逐条打标（写回任务并留痕）/ 批量 / 留痕查询（仅 reviewer/admin） |
 | 用户与组 | `GET/POST /api/admin/users` · `PATCH /api/admin/users/{uid}` · `POST /api/admin/users/{uid}/password` | 建号 / 改角色与组 / 重置密码（仅 admin） |
 | 本体 | `/api/concepts` · `/api/operators` · `/api/submissions`（含 approve/reject/merge/batch）· `/api/tmp` · `/api/health` · `/api/io` | 查重 / 审核 / 回填 / 体检 / 导入导出 |
+| KEOL 库 | `GET /api/keol/status` · `/api/keol/entities` · `/api/keol/entities/{name}` · `/api/keol/facts` | M25：KEOL 实例/事实镜像只读检索（`scripts/sync_keol.py --with-instances` 灌入；页面 `/keol`） |
 | 变更 | `/api/history`（历史）· `/api/concepts/{id}/rollback/{audit_id}`（回滚，admin） | 全部写操作留痕可回滚 |
 | Token | `POST/GET/DELETE /api/tokens` | 签发（代签需 admin）/ 列表 / 吊销 |
 
@@ -56,6 +57,7 @@ curl -b ck.txt -X POST http://127.0.0.1:8000/api/tokens -H "Content-Type: applic
 
 - **账号与组**：组名取自账号体系（admin 在 `/admin/users` 或 `/api/admin/users` 建号分组），不写死
 - **词表全部可配**：GOLD 阶段流水线（`GOLD_STAGES`）、泳道时段（`GOLD_SLOTS`）、KE 状态写法（`KE_STATUS_MAP`）、KE 表头（`KE_COLUMN_MAP`）、目标口径（`GOLD_BASELINE` / `GOLD_TARGET_TOTAL` / `GOLD_TARGET_NEW`）、查重阈值、体检阈值与 cron——均为环境变量，见 `.env.example`
+- **KEOL 桥接**：`KEOL_SRC` 指定政府本体库源目录（`scripts/sync_keol.py` 词表+实例镜像 / `scripts/gold_to_keol.py` 成品回流的默认 `--src`）
 - **种子数据可关**：`SEED_DEMO=0`（演示概念/算子/GOLD 预置）、`SEED_KE=0`（KE 演示数据）；别的团队干净起步 → 建号 → `/api/import/json` 导自己本体
 - **数据库**：默认 SQLite（`data/ontology.db`）；切 PostgreSQL 只换 `DB_URL`
 
@@ -67,4 +69,4 @@ curl -b ck.txt -X POST http://127.0.0.1:8000/api/tokens -H "Content-Type: applic
   "env": {"ONTOLOGY_BASE_URL": "http://127.0.0.1:8000", "ONTOLOGY_TOKEN": "ke_..."}}}}
 ```
 
-43 个工具覆盖：whoami / get_manifest / 概念与算子 CRUD / 查重 / 提交审核 / TMP 回填 / GOLDKE 篇级与泳道 / issue 话题评论与正式 Issue 闭环 / KE 上传与组别状态 / 成品校验与指纹 manifest / 抽检闭环（抽样-盲评-仲裁-关闭）/ 体检 / 导出与变更日志 / LLM 台账。工具即 §2 端点的薄封装，错误同样返回 `{error, detail}`。
+47 个工具覆盖：whoami / get_manifest / 概念与算子 CRUD / 查重 / 提交审核 / TMP 回填 / GOLDKE 篇级与泳道 / issue 话题评论与正式 Issue 闭环 / KE 上传与组别状态 / 成品校验与指纹 manifest / 抽检闭环（抽样-盲评-仲裁-关闭）/ 体检 / 导出与变更日志 / LLM 台账。工具即 §2 端点的薄封装，错误同样返回 `{error, detail}`。
