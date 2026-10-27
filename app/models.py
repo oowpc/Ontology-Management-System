@@ -354,13 +354,15 @@ class GoldItem(Base):
 
 
 class ApiToken(Base):
-    """API Token（agent 接入）：库中只存 sha256，明文仅签发时返回一次。"""
+    """API Token（agent 接入）：库中只存 sha256，明文仅签发时返回一次。
+    M28：scopes 最小权限（["read"] 只读 / ["read","write"] 读写；NULL=全权限，兼容旧 token）。"""
     __tablename__ = "api_tokens"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(64), default="default")
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    scopes: Mapped[Optional[list]] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)

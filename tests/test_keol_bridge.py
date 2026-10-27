@@ -150,8 +150,9 @@ def keol_src(tmp_path):
 
 
 def _sync(src):
-    from app.db import SessionLocal
+    from app.db import SessionLocal, init_db
     from app.keolsync import sync_instances
+    init_db()   # 不经过 client 的用例也要保证表已建（首次 import 后即绑定测试库，见 conftest）
     db = SessionLocal()
     try:
         return sync_instances(db, src)

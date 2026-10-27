@@ -48,6 +48,8 @@ python -m uvicorn app.main:app --reload
 | M25 | KEOL 实例库镜像：`keol_entities`/`keol_facts` 两表（复用 KEOL 侧 load_db 解析口径，4.5 万实体/13.4 万事实秒级全量重建，`sync_keol.py --with-instances`）· 只读 API `/api/keol/status · entities · entities/{name} · facts` + `/keol` 查询页 · 概念详情页实例数 · M20 校验实体联查（`__引用`/常量右值命中镜像即放行，未收录记 unknown_entity；ENGINE v2）· MCP +4 | ✅ 本次交付 |
 | M26 | GOLD→KEOL 回流：`scripts/gold_to_keol.py` 把定稿成品（默认 gold）的 concept/op/const 声明与坐实绑定翻成标准 KEOL，整文件重生成写入 KEOL 源树 `ke/回流/管理系统-GOLD.md`（其 load_db/keol_check 自然接管）· 已收录名字不重复声明、类型/父类未收录自动注释化（keol_check 保持全绿）· 变量坐实代入 `-- 问：` 注释 | ✅ 本次交付 |
 | M27 | P0 安全加固：登录防爆破（连续失败 5 次锁 10 分钟，`LOGIN_MAX_FAILS`/`LOGIN_LOCK_SECONDS`）· CSRF 同步器 token（纯 ASGI 中间件缓冲体重放，base.html 自动注入隐藏域，Bearer 免校，`CSRF_ENABLED=0` 可关）· SECRET_KEY 兜底拒启动（非 `DEV_MODE` 下默认密钥直接 RuntimeError） | ✅ 本次交付 |
+| M28 | P1 结构性改进：Alembic 迁移（`migrations/`，baseline + 既有库自动 stamp 引导，手工 `_NEW_COLUMNS` 登记下线）· Token 最小权限 scopes（read/write；Bearer 优先于并存 session 防提权）· `last_used_at` 节流（`TOKEN_LAST_USED_THROTTLE`=300s）· 依赖锁 `requirements-lock.txt`（pip-compile，61 项钉死；补登记 mcp/alembic/psycopg/pytest-cov） | ✅ 本次交付 |
+| M29 | P2 工程化补强：CI `.github/workflows/test.yml`（SQLite lane 必过 + PG lane advisory，`TEST_DB_URL` 切换）· SQLite WAL + busy_timeout · 覆盖率接线（`--cov=app` floor 80%，当前 85%）+ 查重阈值边界用例 · 备份 `scripts/backup_db.py`（在线备份+轮换 `BACKUP_KEEP`）· conftest 加固（env 模块级就位，杜绝测试写穿真实库） | ✅ 本次交付 |
 
 ## M12 · Agent 可操控性补全
 
@@ -134,6 +136,17 @@ docker compose up -d --build
 ```
 
 本机未装 Docker 时按「快速开始」用 uvicorn 跑即可，两者行为一致。
+
+## 备份
+
+```bash
+python scripts/backup_db.py            # SQLite 在线备份（运行中可用）→ data/backups/ontology-时间戳.db
+python scripts/backup_db.py --keep 30  # 轮换保留份数（默认 BACKUP_KEEP=14）
+```
+
+备份落在库文件旁的 `backups/`（Docker 下随 named volume 持久化）。建议每日计划任务执行（Windows `schtasks` / Linux cron，见脚本 docstring）。
+PostgreSQL 部署用 `pg_dump "$DB_URL" -Fc -f backups/ontology-$(date +%F-%H%M).dump`。
+结构迁移由 Alembic 负责：升级镜像后启动自动 `upgrade head`（既有库首次自动 stamp 基线）；回滚 `alembic downgrade <rev>`。
 
 ## LLM 配置（可选）
 

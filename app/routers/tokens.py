@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import ApiToken, User
-from ..security import mint_token, require_role
+from ..security import TOKEN_SCOPES, mint_token, require_role
 
 router = APIRouter(prefix="/api/tokens", tags=["tokens"])
 
@@ -18,11 +18,13 @@ router = APIRouter(prefix="/api/tokens", tags=["tokens"])
 class TokenIn(BaseModel):
     name: str = Field(default="default", max_length=64)
     username: str | None = None  # 缺省=自己；代他人签发需 admin
+    scopes: list[str] | None = None  # 缺省=["read","write"]；["read"]=只读（agent 最小权限）
 
 
 def _dict(db: Session, r: ApiToken) -> dict:
     u = db.get(User, r.user_id)
     return {"id": r.id, "name": r.name, "username": u.username if u else "?",
+            "scopes": r.scopes or ["read", "write"],
             "created_at": r.created_at, "last_used_at": r.last_used_at,
             "revoked": r.revoked_at is not None}
 
@@ -35,8 +37,12 @@ def mint(data: TokenIn, db: Session = Depends(get_db), user: dict = Depends(requ
     u = db.scalar(select(User).where(User.username == target))
     if not u:
         raise HTTPException(404, f"用户「{target}」不存在")
-    token = mint_token(db, u, data.name)
-    return {"token": token, "username": target, "name": data.name,
+    scopes = data.scopes if data.scopes is not None else ["read", "write"]
+    bad = [s for s in scopes if s not in TOKEN_SCOPES]
+    if bad or not scopes:
+        raise HTTPException(400, f"scopes 只能是 {list(TOKEN_SCOPES)} 的非空子集，收到：{scopes}")
+    token = mint_token(db, u, data.name, scopes)
+    return {"token": token, "username": target, "name": data.name, "scopes": scopes,
             "note": "Token 仅此一次返回，请妥善保存。用法：请求头 Authorization: Bearer <token>"}
 
 

@@ -19,6 +19,7 @@ curl -H "Authorization: Bearer ke_..." http://127.0.0.1:8000/api/agent/manifest
 curl -c ck.txt -d "username=annotator&password=annotator" http://127.0.0.1:8000/login
 curl -b ck.txt -X POST http://127.0.0.1:8000/api/tokens -H "Content-Type: application/json" -d '{"name":"my-agent"}'
 # → {"token": "ke_..."}   ⚠ 明文仅此一次返回
+# 最小权限（推荐）：签发只读 token 用 -d '{"name":"ro","scopes":["read"]}'（缺省读写全权限）
 
 # 方式二：请管理员代签（admin 可为任意用户签发）
 ```
@@ -49,6 +50,7 @@ curl -b ck.txt -X POST http://127.0.0.1:8000/api/tokens -H "Content-Type: applic
 
 - **页面/API 对等已审计**：全部页面写操作都有对应 API
 - **错误**：统一 `{"detail": "…"}` + 恰当 HTTP 码（400 参数 / 401 未认证 / 403 越权 / 404 不存在 / 409 幂等冲突 / 422 校验）
+- **认证细节**：Bearer 优先于并存的 session cookie（显式凭证为准，防提权）；只读 token（`scopes=["read"]`）调写接口 → 403；`last_used_at` 按 `TOKEN_LAST_USED_THROTTLE`（默认 300s）节流写库
 - **幂等键**：KE 上传 =（组， 题目ID）；成品 =（篇编号， KE编号）；概念/算子 = 名称自然键；复核结论 =（组， 题目ID）取最新一条；重复提交返回 409 而非重复创建
 - **复核权威**：系统复核结论为准；组内 CSV 自报在下次上传时被自动重放覆盖
 - **CSV 列名**：默认中文十列 + 可选「篇编号」「KE内容」；别家表头用环境变量 `KE_COLUMN_MAP='{"id":"题目编号",...}'` 单项覆盖即可，无需改代码

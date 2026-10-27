@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -7,15 +8,19 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# 关键：环境变量必须在 conftest 模块加载时就位（任何用例 import app.* 之前），
+# 否则 app.db 的模块级 engine 会绑定到默认的 data/ontology.db（真实库）。
+# 不请求 client fixture、直接调 SessionLocal 的用例曾因此写穿真实库（实例镜像被覆盖）。
+_TEST_DB = Path(tempfile.mkdtemp(prefix="ontology-test-")) / "test.db"
+os.environ["DB_URL"] = os.environ.get("TEST_DB_URL") or f"sqlite:///{_TEST_DB.as_posix()}"
+os.environ.setdefault("SECRET_KEY", "test-secret")
+os.environ.setdefault("SEED_DEMO", "1")
+os.environ.setdefault("CSRF_ENABLED", "0")  # P0：表单测试不逐个带 token；CSRF 由 test_security_p0.py 专项覆盖
+
 
 @pytest.fixture(scope="session")
-def app(tmp_path_factory):
-    """会话级应用实例；DB_URL 必须在首次 import app 前设置。"""
-    d = tmp_path_factory.mktemp("db")
-    os.environ["DB_URL"] = f"sqlite:///{(d / 'test.db').as_posix()}"
-    os.environ["SECRET_KEY"] = "test-secret"
-    os.environ["SEED_DEMO"] = "1"
-    os.environ["CSRF_ENABLED"] = "0"   # P0：表单测试不逐个带 token；CSRF 本身由 test_security_p0.py 专项覆盖
+def app():
+    """会话级应用实例（env 已在 conftest 模块级设好；CI 可用 TEST_DB_URL 切 PostgreSQL）。"""
     from app.main import app as fastapi_app
     return fastapi_app
 

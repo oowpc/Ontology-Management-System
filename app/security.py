@@ -18,6 +18,10 @@ from .models import ApiToken, User
 
 _ITERATIONS = 120_000
 TOKEN_PREFIX = "ke_"
+# P1：Bearer token 的 last_used_at 写入节流（秒）；scope 词表
+TOKEN_LAST_USED_THROTTLE = int(os.environ.get("TOKEN_LAST_USED_THROTTLE", "300"))
+TOKEN_SCOPES = ("read", "write")
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 
 # 登录防爆破：进程内存计数（单 worker 准确；多 worker 各自计数、重启清零——内网工具的低成本口径）
 LOGIN_MAX_FAILS = int(os.environ.get("LOGIN_MAX_FAILS", "5"))
@@ -65,18 +69,28 @@ class LoginRequired(Exception):
 
 
 def current_user(request: Request, db: Session = Depends(get_db)) -> dict:
-    """双通道：Session Cookie（浏览器）或 Authorization: Bearer <API Token>（agent）。"""
-    user = request.session.get("user") or _bearer_user(db, request)
+    """双通道：Authorization: Bearer <API Token>（agent）或 Session Cookie（浏览器）。
+    Bearer 优先（显式凭证优于环境 Cookie——否则只读 token 会被并存 session 提权）。
+    Bearer 通道带 scope 闸：只读 token 调写接口 → 403（session 用户隐含全权限）。"""
+    user = _bearer_user(db, request)
+    if not user:
+        sess = request.session.get("user")
+        if sess:
+            user = {**sess, "via": "session", "scopes": ["read", "write"]}
     if not user:
         raise LoginRequired()
+    need = "read" if request.method in _SAFE_METHODS else "write"
+    if need not in (user.get("scopes") or []):
+        raise HTTPException(403, f"Token 权限不足：需要 {need} scope（该 token 为 {user.get('scopes')}）")
     return user
 
 
-def mint_token(db: Session, user: User, name: str) -> str:
-    """签发 API Token：明文仅此一次返回；库中只存 sha256。"""
+def mint_token(db: Session, user: User, name: str, scopes: list | None = None) -> str:
+    """签发 API Token：明文仅此一次返回；库中只存 sha256。scopes 缺省=读写全权限。"""
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
     db.add(ApiToken(user_id=user.id, name=(name or "default")[:64],
-                    token_hash=hashlib.sha256(token.encode()).hexdigest()))
+                    token_hash=hashlib.sha256(token.encode()).hexdigest(),
+                    scopes=scopes or ["read", "write"]))
     db.commit()
     return token
 
@@ -96,9 +110,14 @@ def _bearer_user(db: Session, request: Request) -> dict | None:
     u = db.get(User, row.user_id)
     if not u:
         return None
-    row.last_used_at = datetime.now()
-    db.commit()
-    return {"username": u.username, "role": u.role, "group": u.group_name}
+    # P1：last_used_at 节流——距上次更新超过阈值才写库（agent 高频调用时每请求一写会成为瓶颈）
+    now = datetime.now()
+    if row.last_used_at is None \
+            or (now - row.last_used_at).total_seconds() > TOKEN_LAST_USED_THROTTLE:
+        row.last_used_at = now
+        db.commit()
+    return {"username": u.username, "role": u.role, "group": u.group_name,
+            "via": "bearer", "scopes": row.scopes or ["read", "write"]}
 
 
 def require_role(*roles: str):

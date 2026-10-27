@@ -1,0 +1,46 @@
+name: tests
+
+on: [push, pull_request]
+
+jobs:
+  sqlite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 安装依赖（锁文件优先，漂移即失败）
+        run: pip install -r requirements-lock.txt
+      - name: pytest（SQLite）
+        run: python -m pytest
+        env:
+          SECRET_KEY: ci-secret
+
+  postgres:
+    # PG lane：验证「切 PostgreSQL 只换 DB_URL」不是摆设（migrations + 全套测试在 PG 上跑）。
+    # 首批先 advisory（continue-on-error），稳定后可去掉。
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ontology_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 安装依赖
+        run: pip install -r requirements-lock.txt
+      - name: pytest（PostgreSQL；conftest 认 TEST_DB_URL）
+        run: python -m pytest
+        env:
+          TEST_DB_URL: postgresql+psycopg://postgres:postgres@localhost:5432/ontology_test
+          SECRET_KEY: ci-secret
