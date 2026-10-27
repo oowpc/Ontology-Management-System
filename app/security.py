@@ -1,10 +1,12 @@
-"""登录与角色。Session Cookie + Bearer API Token（agent 用）双通道；密码 pbkdf2（hashlib 原生）。"""
+"""登录与角色。Session Cookie + Bearer API Token（agent 用）双通道；密码 pbkdf2（hashlib 原生）。
+P0 加固：登录失败计数锁定（默认 5 次锁 10 分钟，LOGIN_MAX_FAILS/LOGIN_LOCK_SECONDS 可调）。"""
 from __future__ import annotations
 
 import hashlib
 import hmac
 import os
 import secrets
+import time
 from datetime import datetime
 
 from fastapi import Depends, HTTPException, Request
@@ -16,6 +18,31 @@ from .models import ApiToken, User
 
 _ITERATIONS = 120_000
 TOKEN_PREFIX = "ke_"
+
+# 登录防爆破：进程内存计数（单 worker 准确；多 worker 各自计数、重启清零——内网工具的低成本口径）
+LOGIN_MAX_FAILS = int(os.environ.get("LOGIN_MAX_FAILS", "5"))
+LOGIN_LOCK_SECONDS = int(os.environ.get("LOGIN_LOCK_SECONDS", "600"))
+_LOGIN_FAILS: dict[str, list[float]] = {}
+
+
+def login_lock_remaining(username: str) -> int:
+    """该用户名剩余锁定秒数（0=未锁）。顺带清理窗口外的失败记录。"""
+    fails = _LOGIN_FAILS.get(username)
+    if not fails:
+        return 0
+    now = time.time()
+    fails[:] = [t for t in fails if now - t < LOGIN_LOCK_SECONDS]
+    if len(fails) < LOGIN_MAX_FAILS:
+        return 0
+    return max(1, int(LOGIN_LOCK_SECONDS - (now - fails[-LOGIN_MAX_FAILS])) + 1)
+
+
+def record_login_fail(username: str) -> None:
+    _LOGIN_FAILS.setdefault(username, []).append(time.time())
+
+
+def clear_login_fails(username: str) -> None:
+    _LOGIN_FAILS.pop(username, None)
 
 
 def hash_password(password: str) -> str:

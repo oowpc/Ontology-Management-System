@@ -24,6 +24,7 @@ curl -b ck.txt -X POST http://127.0.0.1:8000/api/tokens -H "Content-Type: applic
 ```
 
 之后所有请求：`Authorization: Bearer ke_...`；吊销：`DELETE /api/tokens/{id}`。
+（P0：登录连续失败 5 次锁 10 分钟；Cookie 会话的表单 POST 需带 CSRF token，**Bearer 调用免校**——agent 不受影响。）
 自检：`GET /api/me`。在线文档：`/docs`（OpenAPI）或 `/openapi.json`。
 
 ## 2. 端点速查

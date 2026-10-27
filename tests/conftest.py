@@ -15,6 +15,7 @@ def app(tmp_path_factory):
     os.environ["DB_URL"] = f"sqlite:///{(d / 'test.db').as_posix()}"
     os.environ["SECRET_KEY"] = "test-secret"
     os.environ["SEED_DEMO"] = "1"
+    os.environ["CSRF_ENABLED"] = "0"   # P0：表单测试不逐个带 token；CSRF 本身由 test_security_p0.py 专项覆盖
     from app.main import app as fastapi_app
     return fastapi_app
 

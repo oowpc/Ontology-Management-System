@@ -47,6 +47,7 @@ python -m uvicorn app.main:app --reload
 | M24 | KEOL 词表桥接：`scripts/sync_keol.py` 把政府本体库 .md（```keol 块）的 concept/op 池幂等同步进本体库（名称自然键 upsert + 审计留痕）· 评审候选池（_ 开头文件）默认跳过、可选 draft 并入 | ✅ 本次交付 |
 | M25 | KEOL 实例库镜像：`keol_entities`/`keol_facts` 两表（复用 KEOL 侧 load_db 解析口径，4.5 万实体/13.4 万事实秒级全量重建，`sync_keol.py --with-instances`）· 只读 API `/api/keol/status · entities · entities/{name} · facts` + `/keol` 查询页 · 概念详情页实例数 · M20 校验实体联查（`__引用`/常量右值命中镜像即放行，未收录记 unknown_entity；ENGINE v2）· MCP +4 | ✅ 本次交付 |
 | M26 | GOLD→KEOL 回流：`scripts/gold_to_keol.py` 把定稿成品（默认 gold）的 concept/op/const 声明与坐实绑定翻成标准 KEOL，整文件重生成写入 KEOL 源树 `ke/回流/管理系统-GOLD.md`（其 load_db/keol_check 自然接管）· 已收录名字不重复声明、类型/父类未收录自动注释化（keol_check 保持全绿）· 变量坐实代入 `-- 问：` 注释 | ✅ 本次交付 |
+| M27 | P0 安全加固：登录防爆破（连续失败 5 次锁 10 分钟，`LOGIN_MAX_FAILS`/`LOGIN_LOCK_SECONDS`）· CSRF 同步器 token（纯 ASGI 中间件缓冲体重放，base.html 自动注入隐藏域，Bearer 免校，`CSRF_ENABLED=0` 可关）· SECRET_KEY 兜底拒启动（非 `DEV_MODE` 下默认密钥直接 RuntimeError） | ✅ 本次交付 |
 
 ## M12 · Agent 可操控性补全
 

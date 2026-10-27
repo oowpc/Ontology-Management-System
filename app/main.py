@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from .config import settings
+from .config import ensure_secret_key, settings
+from .csrf import CSRFMiddleware
 from .db import SessionLocal, init_db
 from .gold.items import router as gold_items_router
 from .gold.router import router as gold_router
@@ -39,6 +40,7 @@ def _scheduled_health():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _scheduler
+    ensure_secret_key(settings.secret_key, settings.dev_mode)  # P0：默认密钥非调试拒绝启动
     init_db()
     seed_if_empty()
     try:
@@ -59,6 +61,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="本体管理系统", version="0.1.0", lifespan=lifespan)
+app.add_middleware(CSRFMiddleware)  # 后注册的 SessionMiddleware 成为外层：先解 session 再校 CSRF
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax")
 
 app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parent / "static"), name="static")

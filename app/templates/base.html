@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ request.session.get('csrf', '') if request is defined else '' }}">
 <title>{% block title %}本体管理系统{% endblock %}</title>
 <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -64,5 +65,20 @@
   {% block content %}{% endblock %}
 </main>
 {% block scripts %}{% endblock %}
+<script>
+// P0 · CSRF：给所有 POST 表单自动补隐藏域（含 multipart 上传表单）
+document.addEventListener("DOMContentLoaded", function () {
+  var meta = document.querySelector('meta[name="csrf-token"]');
+  var t = meta ? meta.content : "";
+  if (!t) return;
+  document.querySelectorAll("form").forEach(function (f) {
+    if ((f.method || "").toLowerCase() !== "post") return;
+    if (f.querySelector('input[name="csrf_token"]')) return;
+    var i = document.createElement("input");
+    i.type = "hidden"; i.name = "csrf_token"; i.value = t;
+    f.appendChild(i);
+  });
+});
+</script>
 </body>
 </html>

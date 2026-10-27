@@ -54,9 +54,22 @@ def _json_list(name: str, default: list) -> list:
         return default
 
 
+DEFAULT_SECRET = "dev-secret-change-me"
+
+
+def ensure_secret_key(secret: str, dev_mode: bool) -> None:
+    """P0：非调试模式下 SECRET_KEY 仍为默认兜底值 → 拒绝启动。"""
+    if secret == DEFAULT_SECRET and not dev_mode:
+        raise RuntimeError(
+            "SECRET_KEY 仍是默认兜底值，拒绝启动。"
+            "生产部署请配置 SECRET_KEY 环境变量；本地调试可设 DEV_MODE=1。")
+
+
 class Settings:
     db_url: str = os.environ.get("DB_URL", "sqlite:///data/ontology.db")
-    secret_key: str = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+    secret_key: str = os.environ.get("SECRET_KEY", DEFAULT_SECRET)
+    dev_mode: bool = os.environ.get("DEV_MODE", "0") == "1"   # P0：调试模式才允许默认 SECRET_KEY
+    csrf_enabled: bool = os.environ.get("CSRF_ENABLED", "1") == "1"  # P0：表单 CSRF 校验（测试关闭）
     seed_demo: bool = os.environ.get("SEED_DEMO", "1") == "1"
 
     similarity_block_threshold: float = _float("SIMILARITY_BLOCK_THRESHOLD", 0.95)
