@@ -17,6 +17,9 @@
     <tr><th>领域 / 组</th><td>{{ i.domain }} · {{ i.group_name or '未填写' }}</td></tr>
     <tr><th>负责人</th><td>{{ i.owner or '未填写' }}</td></tr>
     <tr><th>创建</th><td>{{ i.created_by }} · {{ i.created_at|dt }}</td></tr>
+    {% if i.annotation_batch_id or i.annotation_unit_id or i.annotation_stage %}
+    <tr><th>标注上下文</th><td>批次 #{{ i.annotation_batch_id or '—' }} · 单元 #{{ i.annotation_unit_id or '—' }} · 阶段 {{ i.annotation_stage or '—' }}</td></tr>
+    {% endif %}
     {% if i.resolved_at %}<tr><th>结案时间</th><td>{{ i.resolved_at|dt }}</td></tr>{% endif %}
     <tr><th>状态流转</th><td>
       <form class="filters" method="post" action="/issues/{{ i.id }}/status" style="margin:0">

@@ -25,8 +25,11 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     bind = op.get_bind()
     have = set(inspect(bind).get_table_names())
+    # 只修基线时代已存在的表；不要用整个 Base.metadata，否则后续新表会被提前创建
+    repair = {"gold_sample_items", "gold_sample_reviews", "keol_entities",
+              "keol_facts", "llm_calls"}
     for table in Base.metadata.sorted_tables:
-        if table.name not in have:
+        if table.name in repair and table.name not in have:
             table.create(bind, checkfirst=True)
 
 

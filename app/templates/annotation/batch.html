@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}{{ batch.batch_id }} · 标注批次{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ batch.batch_id }} <span class="badge approved">{{ STATE_LABELS.get(batch.state, batch.state) }}</span></h1>
+    <div class="muted">{{ batch.name }} · {{ batch.source_name or '未填来源' }} {{ batch.source_version }}</div>
+  </div>
+  <a class="btn" href="/annotation">← 批次列表</a>
+</div>
+
+<div class="ann-grid">
+  <div class="panel">
+    <h2>批次信息</h2>
+    <table class="kv">
+      <tr><th>来源类型</th><td>{{ batch.source_type }}</td></tr>
+      <tr><th>校验和</th><td class="muted">{{ batch.source_checksum or '—' }}</td></tr>
+      <tr><th>指南版本</th><td>{{ batch.guide_version or '—' }}</td></tr>
+      <tr><th>统计单位</th><td>{{ batch.statistical_unit }}</td></tr>
+      <tr><th>验收门槛</th><td>{{ batch.acceptance_threshold or '—' }}</td></tr>
+      <tr><th>创建</th><td>{{ batch.created_by }} · {{ batch.created_at|dt }}</td></tr>
+      <tr><th>冻结</th><td>{{ batch.frozen_at|dt if batch.frozen_at else '—' }}</td></tr>
+    </table>
+  </div>
+  <div class="panel">
+    <h2>进度</h2>
+    <table class="kv">
+      <tr><th>标注单元</th><td>{{ stats.units }}</td></tr>
+      <tr><th>CO A / B</th><td>{{ stats.co_a }} / {{ stats.co_b }}</td></tr>
+      <tr><th>已对齐</th><td>{{ stats.aligned }}</td></tr>
+      <tr><th>KE A / B</th><td>{{ stats.ke_a }} / {{ stats.ke_b }}</td></tr>
+      <tr><th>GOLD</th><td>{{ stats.gold }}</td></tr>
+    </table>
+  </div>
+</div>
+
+{% if can_manage or can_cross or can_approve %}
+<div class="panel">
+  <h2>状态操作 <span class="muted">（按 SOP 前置条件校验）</span></h2>
+  <form method="post" action="/annotation/batches/{{ batch.id }}/state" class="ann-actions">
+    {% if can_manage %}
+      {% if batch.state == 'draft' %}<button class="btn primary" name="action" value="freeze">冻结数据集</button>{% endif %}
+      {% if batch.state == 'dataset_frozen' %}<button class="btn primary" name="action" value="start_co">开始 CO 双盲</button>{% endif %}
+      {% if batch.state == 'co_blind' %}<button class="btn primary" name="action" value="start_alignment">开始 CO 对齐</button>{% endif %}
+      {% if batch.state == 'co_alignment' %}<button class="btn primary" name="action" value="start_merge">开始本体合并</button>{% endif %}
+      {% if batch.state == 'co_merge' %}<button class="btn primary" name="action" value="start_ke">开始 KE 双盲</button>{% endif %}
+      {% if batch.state == 'ke_blind' %}<button class="btn primary" name="action" value="start_gold">开始 GOLD 合并</button>{% endif %}
+      {% if batch.state == 'gold_merge' %}<button class="btn primary" name="action" value="start_cross">开始交叉检查</button>{% endif %}
+    {% endif %}
+    {% if batch.state == 'cross_review' and (can_manage or can_cross) %}
+      <button class="btn primary" name="action" value="validate">进入待校验</button>
+    {% endif %}
+    {% if batch.state == 'validation' and can_approve %}
+      <button class="btn primary" name="action" value="pass">通过并发布</button>
+    {% endif %}
+    {% if batch.state == 'rework' and can_manage %}
+      <select name="return_state">
+        {% for s in ['dataset_frozen','co_blind','co_alignment','co_merge','ke_blind','gold_merge','cross_review','validation'] %}
+        <option value="{{ s }}">{{ STATE_LABELS.get(s, s) }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn" name="action" value="resume">恢复到此阶段</button>
+    {% endif %}
+    {% if batch.state != 'passed' and can_manage %}
+      <button class="btn" name="action" value="rework" onclick="return confirm('确认进入返工？')">进入返工</button>
+    {% endif %}
+  </form>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>成员</h2>
+  <table class="data">
+    <thead><tr><th>用户</th><th>角色</th><th>侧</th><th>组</th></tr></thead>
+    <tbody>
+    {% for m in members %}
+    <tr><td>{{ m.username }}</td><td>{{ MEMBER_ROLE_LABELS.get(m.role, m.role) }}</td><td>{{ m.side or '—' }}</td><td>{{ m.group_name or '—' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if can_manage %}
+  <form method="post" action="/annotation/batches/{{ batch.id }}/members" class="ann-actions">
+    <input name="username" list="user-list" placeholder="用户名" required>
+    <select name="role">
+      {% for k,v in MEMBER_ROLE_LABELS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+    </select>
+    <select name="side"><option value="">无</option><option value="A">A</option><option value="B">B</option></select>
+    <button class="btn" type="submit">添加成员</button>
+  </form>
+  <datalist id="user-list">{% for u in usernames %}<option value="{{ u }}">{% endfor %}</datalist>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>标注单元（{{ stats.units }}）</h2>
+  {% if not show_unit_data %}
+  <p class="muted">交叉检查开始前，不展示双盲明细；当前仅显示单元清单。</p>
+  {% endif %}
+  {% if can_manage and batch.state == 'draft' %}
+  <details><summary>导入标注单元（JSON）</summary>
+    <form method="post" action="/annotation/batches/{{ batch.id }}/units/import">
+      <textarea name="units_json" rows="10" placeholder='[{"unit_id":"U-0001","source_id":"doc-1","source_type":"policy","raw_text":"原文","translation_text":"译文","language":"zh","source_locator":{"page":1,"paragraph":2},"source_payload":{}}]'></textarea>
+      <div class="actions"><button class="btn primary" type="submit">导入</button></div>
+    </form>
+  </details>
+  {% endif %}
+  <table class="data">
+    <thead><tr><th>单元</th><th>来源</th><th>状态</th>{% if show_unit_data %}<th>CO</th><th>对齐</th><th>KE</th><th>GOLD</th>{% endif %}<th></th></tr></thead>
+    <tbody>
+    {% for r in units %}
+    <tr>
+      <td>{{ r.unit.unit_id }}</td>
+      <td class="muted">{{ r.unit.source_id or '—' }}<div>{{ r.unit.source_type }}</div></td>
+      <td>{{ UNIT_STATUS_LABELS.get(r.unit.status, r.unit.status) }}</td>
+      {% if show_unit_data %}
+      <td>{{ 'A✓' if r.co_a else 'A·' }} {{ 'B✓' if r.co_b else 'B·' }}</td>
+      <td>{{ '✓' if r.aligned else '·' }}</td>
+      <td>{{ 'A✓' if r.ke_a else 'A·' }} {{ 'B✓' if r.ke_b else 'B·' }}</td>
+      <td>{{ '✓' if r.gold else '·' }}</td>
+      {% endif %}
+      <td>{% if show_unit_data %}<a class="btn" href="/annotation/units/{{ r.unit.id }}">标注</a>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="8" class="empty">尚未导入标注单元</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>本体版本</h2>
+  <table class="data">
+    <thead><tr><th>版本</th><th>状态</th><th>概念/算子</th><th>校验</th><th>创建</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for v in versions %}
+    <tr>
+      <td>{{ v.label }}<div class="muted">{{ v.note }}</div></td>
+      <td>{{ v.status }}</td>
+      <td>{{ v.counts.get('concepts', 0) }} / {{ v.counts.get('operators', 0) }}</td>
+      <td>{% if v.validation %}{{ '通过' if v.validation.get('ok') else '未通过' }}{% else %}—{% endif %}</td>
+      <td class="muted">{{ v.created_by }} · {{ v.created_at|dt }}</td>
+      <td>
+        {% if can_manage and v.status == 'draft' %}
+        <form class="inline" method="post" action="/annotation/versions/{{ v.id }}/freeze"><button class="link" type="submit">冻结</button></form>
+        {% endif %}
+        {% if can_approve and v.status == 'frozen' %}
+        <form class="inline" method="post" action="/annotation/versions/{{ v.id }}/release"><button class="link" type="submit">发布</button></form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="empty">暂无版本</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if can_manage %}
+  <details><summary>创建本体版本</summary>
+    <form class="form" method="post" action="/annotation/batches/{{ batch.id }}/versions">
+      <div class="form-row">
+        <label>版本号 *<input name="label" required placeholder="如 CO_M-v1"></label>
+        <label>关联导入批次 ID<input name="import_batch_id" placeholder="import_batches.id"></label>
+        <label>父版本 ID<input name="parent_version_id"></label>
+      </div>
+      <label>备注<textarea name="note" rows="2"></textarea></label>
+      <div class="actions"><button class="btn primary" type="submit">创建草稿版本</button></div>
+    </form>
+  </details>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>合并 / 拆分日志</h2>
+  <table class="data">
+    <thead><tr><th>动作</th><th>来源单元</th><th>目标</th><th>理由</th><th>操作人</th></tr></thead>
+    <tbody>
+    {% for l in merge_logs %}
+    <tr><td>{{ l.action }}</td><td>{{ (l.source_units or [])|join('、') }}</td><td>{{ l.target or '—' }}</td><td>{{ l.reason }}</td><td class="muted">{{ l.created_by }}</td></tr>
+    {% else %}<tr><td colspan="5" class="empty">暂无日志</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if can_manage %}
+  <form class="form" method="post" action="/annotation/batches/{{ batch.id }}/merge-log">
+    <div class="form-row">
+      <label>动作<select name="action"><option>merge</option><option>split</option><option>rename</option><option>reparent</option><option>other</option></select></label>
+      <label>版本 ID<input name="version_id"></label>
+      <label>目标<input name="target" placeholder="概念名 / 单元"></label>
+    </div>
+    <label>来源单元（一行一个）<textarea name="source_units" rows="2"></textarea></label>
+    <label>理由<textarea name="reason" rows="2"></textarea></label>
+    <div class="actions"><button class="btn" type="submit">记录日志</button></div>
+  </form>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>交叉检查</h2>
+  <table class="data">
+    <thead><tr><th>检查人</th><th>范围</th><th>结论</th><th>问题</th><th>时间</th></tr></thead>
+    <tbody>
+    {% for r in reviews %}
+    <tr><td>{{ r.reviewer }}</td><td>{{ r.scope or '—' }}</td><td>{{ {'pass':'通过','changes':'需修改','block':'阻断'}.get(r.conclusion, r.conclusion) }}</td><td>{{ (r.findings or [])|join('；') }}</td><td class="muted">{{ r.created_at|dt }}</td></tr>
+    {% else %}<tr><td colspan="5" class="empty">暂无交叉检查记录</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if can_cross and batch.state in ['cross_review','validation','rework'] %}
+  <form class="form" method="post" action="/annotation/batches/{{ batch.id }}/cross-review">
+    <div class="form-row">
+      <label>结论<select name="conclusion"><option value="pass">通过</option><option value="changes">需修改</option><option value="block">阻断</option></select></label>
+      <label>范围<input name="scope" placeholder="CO_M / 对齐记录 / GOLD KE"></label>
+    </div>
+    <label>问题（一行一条）<textarea name="findings" rows="3"></textarea></label>
+    <div class="actions"><button class="btn primary" type="submit">提交复核结论</button></div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

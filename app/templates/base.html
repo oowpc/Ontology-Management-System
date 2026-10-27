@@ -14,6 +14,7 @@
   {% if user is defined and user %}
   <nav>
     <a href="/concepts" class="{{ 'active' if request.url.path.startswith('/concepts') }}">概念</a>
+    <a href="/annotation" class="{{ 'active' if request.url.path.startswith('/annotation') }}">标注</a>
     <a href="/graph" class="{{ 'active' if request.url.path == '/graph' }}">图</a>
     <a href="/paste" class="{{ 'active' if request.url.path.startswith('/paste') }}">粘贴识别</a>
     <a href="/operators" class="{{ 'active' if request.url.path.startswith('/operators') }}">算子</a>
@@ -43,6 +44,7 @@
     <span class="nav-disabled" title="审核员 / 管理员可用">体检</span>
     {% endif %}
     <a href="/history" class="{{ 'active' if request.url.path.startswith('/history') }}">变更日志</a>
+    <a href="/static/docs/co-ke-annotation-sop.html" target="_blank" rel="noopener">标注 SOP</a>
     {% if user.role == 'admin' %}
     <a href="/io" class="{{ 'active' if request.url.path.startswith('/io') }}">导入导出</a>
     {% else %}

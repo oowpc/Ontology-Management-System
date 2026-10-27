@@ -9,6 +9,12 @@
   <input type="hidden" name="entity_id" value="{{ prefill.entity_id }}">
   <p class="muted">将自动关联：{{ prefill.entity_type }} #{{ prefill.entity_id }}</p>
   {% endif %}
+  {% if prefill and prefill.annotation_unit_id %}
+  <input type="hidden" name="annotation_batch_id" value="{{ prefill.annotation_batch_id }}">
+  <input type="hidden" name="annotation_unit_id" value="{{ prefill.annotation_unit_id }}">
+  <input type="hidden" name="annotation_stage" value="{{ prefill.annotation_stage }}">
+  <p class="muted">标注上下文：批次 #{{ prefill.annotation_batch_id }} · 单元 #{{ prefill.annotation_unit_id }} · 阶段 {{ prefill.annotation_stage }}</p>
+  {% endif %}
   <label>标题（需要决定的问题，勿用「关于/讨论/记录」开头）*
     <input name="title" value="{{ i.title if i else '' }}" required placeholder="例：「跨省居住地与户籍地不一致」应如何建模？">
   </label>

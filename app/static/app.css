@@ -197,3 +197,11 @@ pre.ke-block{background:#f8fafc;border:1px solid var(--line);border-radius:6px;p
   #concept-graph{min-width:1000px}
   .graph-wrap{overflow-x:auto}
 }
+
+/* 标注工作流 */
+.ann-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.ann-side h3{margin-top:0}
+.ann-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ann-actions select,.ann-actions input{padding:5px 8px}
+.ann-grid .panel{margin:0}
+@media (max-width: 900px){.ann-grid{grid-template-columns:1fr}}

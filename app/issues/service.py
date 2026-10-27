@@ -60,7 +60,8 @@ def validate_cases(cases: list[dict], *, required: bool = True):
 
 def create_issue(db: Session, *, title, type_tag, description, domain="通用", group_name="",
                  importance=None, urgency=None, owner="", cases=(), entity_link=None,
-                 actor) -> Issue:
+                 annotation_batch_id=None, annotation_unit_id=None, annotation_stage="",
+                 annotation_versions=None, annotation_evidence=None, actor) -> Issue:
     title = validate_title(title)
     type_tag = (type_tag or "").strip()
     if not type_tag:
@@ -76,7 +77,12 @@ def create_issue(db: Session, *, title, type_tag, description, domain="通用", 
                   description=description.strip(), domain=(domain or "通用").strip() or "通用",
                   group_name=(group_name or "").strip(),
                   importance=importance or None, urgency=urgency or None,
-                  owner=(owner or "").strip() or actor, created_by=actor)
+                  owner=(owner or "").strip() or actor, created_by=actor,
+                  annotation_batch_id=annotation_batch_id,
+                  annotation_unit_id=annotation_unit_id,
+                  annotation_stage=(annotation_stage or "").strip() or None,
+                  annotation_versions=annotation_versions or None,
+                  annotation_evidence=annotation_evidence or None)
     db.add(issue)
     db.flush()
     for seq, c in enumerate(cases, 1):

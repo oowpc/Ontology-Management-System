@@ -179,6 +179,10 @@ def main() -> int:
         shot("review.png")
         flush_console("review")
 
+        goto("/annotation")
+        shot("annotation-list.png")
+        flush_console("annotation")
+
         browser.close()
 
     report = {"base_url": args.base_url, "checks": checks,

@@ -56,6 +56,11 @@ class IssueCreateIn(BaseModel):
     owner: str = ""
     cases: list[CaseIn] = Field(min_length=1)
     entity_link: dict | None = None  # {entity_type, entity_id, note?}
+    annotation_batch_id: int | None = None
+    annotation_unit_id: int | None = None
+    annotation_stage: str = ""
+    annotation_versions: list | None = None
+    annotation_evidence: dict | None = None
 
 
 class IssuePatchIn(BaseModel):
@@ -88,6 +93,11 @@ def api_create(data: IssueCreateIn, db: Session = Depends(get_db),
         domain=data.domain, group_name=data.group_name, importance=data.importance,
         urgency=data.urgency, owner=data.owner,
         cases=[c.model_dump() for c in data.cases], entity_link=data.entity_link,
+        annotation_batch_id=data.annotation_batch_id,
+        annotation_unit_id=data.annotation_unit_id,
+        annotation_stage=data.annotation_stage,
+        annotation_versions=data.annotation_versions,
+        annotation_evidence=data.annotation_evidence,
         actor=user["username"])
     return {"id": i.id, "code": i.code, "status": i.status}
 
@@ -142,10 +152,16 @@ def _form_ctx(db: Session, request: Request, user: dict, **kw) -> dict:
 
 @router.get("/issues/new")
 def issue_new_page(request: Request, entity_type: str | None = None, entity_id: int | None = None,
+                   annotation_batch_id: int | None = None,
+                   annotation_unit_id: int | None = None,
+                   annotation_stage: str | None = None,
                    db: Session = Depends(get_db), user: dict = Depends(current_user)):
     return templates.TemplateResponse(request=request, name="issues/form.html", context=_form_ctx(
         db, request, user, i=None, error=None,
-        prefill={"entity_type": entity_type or "", "entity_id": entity_id or ""},
+        prefill={"entity_type": entity_type or "", "entity_id": entity_id or "",
+                 "annotation_batch_id": annotation_batch_id or "",
+                 "annotation_unit_id": annotation_unit_id or "",
+                 "annotation_stage": annotation_stage or ""},
     ))
 
 
@@ -179,7 +195,11 @@ async def issue_new(request: Request, db: Session = Depends(get_db),
             importance=str(form.get("importance", "")) or None,
             urgency=str(form.get("urgency", "")) or None,
             owner=str(form.get("owner", "")),
-            cases=_parse_cases(form), entity_link=entity_link, actor=user["username"])
+            cases=_parse_cases(form), entity_link=entity_link,
+            annotation_batch_id=int(form["annotation_batch_id"]) if str(form.get("annotation_batch_id", "")).isdigit() else None,
+            annotation_unit_id=int(form["annotation_unit_id"]) if str(form.get("annotation_unit_id", "")).isdigit() else None,
+            annotation_stage=str(form.get("annotation_stage", "")),
+            actor=user["username"])
     except HTTPException as e:
         return templates.TemplateResponse(request=request, name="issues/form.html", context=_form_ctx(
             db, request, user, i=None, error=e.detail, prefill=None, values=form,

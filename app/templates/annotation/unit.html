@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block title %}{{ unit.unit_id }} · 标注单元{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ unit.unit_id }} <span class="badge approved">{{ UNIT_STATUS_LABELS.get(unit.status, unit.status) }}</span></h1>
+    <div class="muted">{{ batch.batch_id }} · {{ batch.name }} · {{ STATE_LABELS.get(batch.state, batch.state) }}</div>
+  </div>
+  <div>
+    <a class="btn" href="/annotation/batches/{{ batch.id }}">← 返回批次</a>
+    <a class="btn" href="/issues/new?annotation_batch_id={{ batch.id }}&annotation_unit_id={{ unit.id }}&annotation_stage={{ state }}">提 issue</a>
+  </div>
+</div>
+
+{% if not can_view_data %}
+<div class="panel empty">当前阶段不展示该单元的双盲明细；交叉检查开始后再查看。</div>
+{% else %}
+
+<div class="ann-grid">
+  <div class="panel">
+    <h2>来源</h2>
+    <table class="kv">
+      <tr><th>来源 ID</th><td>{{ unit.source_id or '—' }}</td></tr>
+      <tr><th>类型</th><td>{{ unit.source_type }}</td></tr>
+      <tr><th>语言</th><td>{{ unit.language }}</td></tr>
+      <tr><th>定位</th><td><pre>{{ unit.source_locator|tojson(indent=2) if unit.source_locator else '—' }}</pre></td></tr>
+    </table>
+  </div>
+  <div class="panel">
+    <h2>原文 / 译文</h2>
+    <p><strong>原文</strong></p><pre>{{ unit.raw_text or '—' }}</pre>
+    <p><strong>译文</strong></p><pre>{{ unit.translation_text or '—' }}</pre>
+    {% if unit.source_payload %}<p><strong>Schema / 环境快照</strong></p><pre>{{ unit.source_payload|tojson(indent=2) }}</pre>{% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Evidence（{{ evidence|length }}）</h2>
+  <table class="data">
+    <thead><tr><th>#</th><th>来源</th><th>类型</th><th>原文片段</th><th>定位</th></tr></thead>
+    <tbody>
+    {% for e in evidence %}
+    <tr><td>{{ e.id }}</td><td>{{ e.source_id or '—' }}</td><td>{{ e.kind }}</td><td>{{ e.quote }}</td><td class="muted">{{ e.locator|tojson if e.locator else '—' }}</td></tr>
+    {% else %}<tr><td colspan="5" class="empty">暂无 evidence</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  {% if can_add_evidence %}
+  <details><summary>+ 添加 evidence</summary>
+    <form class="form" method="post" action="/annotation/units/{{ unit.id }}/evidence">
+      <div class="form-row">
+        <label>来源 ID<input name="source_id" value="{{ unit.source_id }}"></label>
+        <label>类型<select name="kind"><option>text</option><option>schema</option><option>graph</option><option>execution</option></select></label>
+        <label>语言<input name="language" value="{{ unit.language }}"></label>
+      </div>
+      <label>原文片段<textarea name="quote" rows="2"></textarea></label>
+      <label>定位 JSON<textarea name="locator" rows="2" placeholder='{"page":1,"paragraph":2}'></textarea></label>
+      <div class="actions"><button class="btn" type="submit">添加</button></div>
+    </form>
+  </details>
+  {% endif %}
+</div>
+
+<h2>CO 标注</h2>
+<div class="ann-grid">
+  {% if co_a %}
+  <div class="panel ann-side">
+    <h3>A 侧 <span class="badge">{{ {'include':'收录','exclude':'不收录','abstain':'待定'}.get(co_a.decision, co_a.decision) }}</span></h3>
+    <p><strong>概念：</strong>{{ (co_a.concepts or [])|join('、') or '—' }}</p>
+    <p><strong>常量：</strong>{{ (co_a.constants or [])|join('、') or '—' }}</p>
+    <p><strong>算子：</strong>{{ (co_a.operators or [])|join('、') or '—' }}</p>
+    <p><strong>理由：</strong>{{ co_a.reason or '—' }}</p>
+    <p class="muted">标注者 {{ co_a.annotator }} · v{{ co_a.version }}</p>
+  </div>
+  {% endif %}
+  {% if co_b %}
+  <div class="panel ann-side">
+    <h3>B 侧 <span class="badge">{{ {'include':'收录','exclude':'不收录','abstain':'待定'}.get(co_b.decision, co_b.decision) }}</span></h3>
+    <p><strong>概念：</strong>{{ (co_b.concepts or [])|join('、') or '—' }}</p>
+    <p><strong>常量：</strong>{{ (co_b.constants or [])|join('、') or '—' }}</p>
+    <p><strong>算子：</strong>{{ (co_b.operators or [])|join('、') or '—' }}</p>
+    <p><strong>理由：</strong>{{ co_b.reason or '—' }}</p>
+    <p class="muted">标注者 {{ co_b.annotator }} · v{{ co_b.version }}</p>
+  </div>
+  {% endif %}
+</div>
+{% if can_submit_co %}
+{% set myco = co_a if my_side == 'A' else co_b %}
+<div class="panel">
+  <h3>提交我的 {{ my_side }} 侧 CO</h3>
+  <form class="form" method="post" action="/annotation/units/{{ unit.id }}/co">
+    <input type="hidden" name="side" value="{{ my_side }}">
+    <div class="form-row">
+      <label>结论<select name="decision">
+        <option value="include" {{ 'selected' if myco and myco.decision == 'include' }}>收录</option>
+        <option value="exclude" {{ 'selected' if myco and myco.decision == 'exclude' }}>不收录</option>
+        <option value="abstain" {{ 'selected' if myco and myco.decision == 'abstain' }}>待定</option>
+      </select></label>
+    </div>
+    <label>概念（一行一个）<textarea name="concepts" rows="3">{{ (myco.concepts or [])|join('\n') if myco else '' }}</textarea></label>
+    <label>常量（一行一个）<textarea name="constants" rows="3">{{ (myco.constants or [])|join('\n') if myco else '' }}</textarea></label>
+    <label>算子（一行一个）<textarea name="operators" rows="3">{{ (myco.operators or [])|join('\n') if myco else '' }}</textarea></label>
+    <label>理由<textarea name="reason" rows="2">{{ myco.reason if myco else '' }}</textarea></label>
+    {% if evidence %}
+    <details><summary>关联 evidence</summary>
+      {% for e in evidence %}<label class="inline"><input type="checkbox" name="evidence_ids" value="{{ e.id }}" {{ 'checked' if myco and e.id in (myco.evidence_ids or []) }}> #{{ e.id }} {{ e.quote[:40] }}</label><br>{% endfor %}
+    </details>
+    {% endif %}
+    <div class="actions"><button class="btn primary" type="submit">提交 CO</button></div>
+  </form>
+</div>
+{% endif %}
+
+{% if alignment or can_align %}
+<h2>CO 对齐</h2>
+{% if alignment %}
+<div class="panel">
+  <p><strong>结论：</strong>{{ {'aligned':'一致','merged':'合并','split':'拆分','relabel':'重标','pending':'待裁决'}.get(alignment.conclusion, alignment.conclusion) }}</p>
+  <p><strong>对齐概念：</strong>{{ ((alignment.aligned or {}).get('concepts') or [])|join('、') or '—' }}</p>
+  <p><strong>对齐算子：</strong>{{ ((alignment.aligned or {}).get('operators') or [])|join('、') or '—' }}</p>
+  <p><strong>差异：</strong>{{ (alignment.differences or [])|join('；') or '—' }}</p>
+  <p><strong>理由：</strong>{{ alignment.reason or '—' }}</p>
+  <p class="muted">{{ alignment.decided_by }} · v{{ alignment.version }}</p>
+</div>
+{% endif %}
+{% if can_align %}
+<div class="panel">
+  <h3>提交对齐结论</h3>
+  <form class="form" method="post" action="/annotation/units/{{ unit.id }}/align">
+    <div class="form-row">
+      <label>结论<select name="conclusion">
+        {% for k,v in [('aligned','一致'),('merged','合并'),('split','拆分'),('relabel','重标'),('pending','待裁决')] %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+      </select></label>
+      <label>判定<select name="decision"><option value="include">收录</option><option value="exclude">不收录</option></select></label>
+    </div>
+    <label>对齐概念（一行一个）<textarea name="concepts" rows="3">{{ (((alignment.aligned or {}).get('concepts') or [])|join('\n')) if alignment else '' }}</textarea></label>
+    <label>对齐常量（一行一个）<textarea name="constants" rows="2">{{ (((alignment.aligned or {}).get('constants') or [])|join('\n')) if alignment else '' }}</textarea></label>
+    <label>对齐算子（一行一个）<textarea name="operators" rows="3">{{ (((alignment.aligned or {}).get('operators') or [])|join('\n')) if alignment else '' }}</textarea></label>
+    <label>差异 / 分歧点（一行一条）<textarea name="differences" rows="2">{{ (alignment.differences or [])|join('\n') if alignment else '' }}</textarea></label>
+    <label>理由<textarea name="reason" rows="2">{{ alignment.reason if alignment else '' }}</textarea></label>
+    {% if evidence %}
+    <details><summary>关联 evidence</summary>
+      {% for e in evidence %}<label class="inline"><input type="checkbox" name="evidence_ids" value="{{ e.id }}" {{ 'checked' if alignment and e.id in (alignment.evidence_ids or []) }}> #{{ e.id }} {{ e.quote[:40] }}</label><br>{% endfor %}
+    </details>
+    {% endif %}
+    <div class="actions"><button class="btn primary" type="submit">提交对齐</button></div>
+  </form>
+</div>
+{% endif %}
+{% endif %}
+
+<h2>KE 标注</h2>
+<div class="ann-grid">
+  {% if ke_a %}
+  <div class="panel ann-side">
+    <h3>A 侧 KE</h3>
+    <pre>{{ ke_a.content }}</pre>
+    {% if ke_a.execution %}<p><strong>执行结果</strong></p><pre>{{ ke_a.execution|tojson(indent=2) }}</pre>{% endif %}
+    <p class="muted">{{ ke_a.annotator }} · v{{ ke_a.version }}</p>
+  </div>
+  {% endif %}
+  {% if ke_b %}
+  <div class="panel ann-side">
+    <h3>B 侧 KE</h3>
+    <pre>{{ ke_b.content }}</pre>
+    {% if ke_b.execution %}<p><strong>执行结果</strong></p><pre>{{ ke_b.execution|tojson(indent=2) }}</pre>{% endif %}
+    <p class="muted">{{ ke_b.annotator }} · v{{ ke_b.version }}</p>
+  </div>
+  {% endif %}
+</div>
+{% if can_submit_ke %}
+{% set myke = ke_a if my_side == 'A' else ke_b %}
+<div class="panel">
+  <h3>提交我的 {{ my_side }} 侧 KE</h3>
+  <form class="form" method="post" action="/annotation/units/{{ unit.id }}/ke">
+    <input type="hidden" name="side" value="{{ my_side }}">
+    <label>KE 内容<textarea name="content" rows="6" required>{{ myke.content if myke else '' }}</textarea></label>
+    <div class="form-row">
+      <label>执行/编译结果 JSON<textarea name="execution" rows="3">{{ (myke.execution|tojson(indent=2)) if myke and myke.execution is mapping else (myke.execution if myke and myke.execution else '') }}</textarea></label>
+      <label>自检 JSON<textarea name="self_check" rows="3">{{ (myke.self_check|tojson(indent=2)) if myke and myke.self_check is mapping else (myke.self_check if myke and myke.self_check else '') }}</textarea></label>
+    </div>
+    {% if evidence %}
+    <details><summary>关联 evidence</summary>
+      {% for e in evidence %}<label class="inline"><input type="checkbox" name="evidence_ids" value="{{ e.id }}" {{ 'checked' if myke and e.id in (myke.evidence_ids or []) }}> #{{ e.id }} {{ e.quote[:40] }}</label><br>{% endfor %}
+    </details>
+    {% endif %}
+    <div class="actions"><button class="btn primary" type="submit">提交 KE</button></div>
+  </form>
+</div>
+{% endif %}
+{% if not can_submit_ke and state == 'ke_blind' %}
+<p class="muted">当前不可提交 KE：需要 CO 已对齐且不是待裁决状态。</p>
+{% endif %}
+
+{% if gold or can_submit_gold %}
+<h2>GOLD</h2>
+{% if gold %}
+<div class="panel">
+  <p><strong>来源：</strong>{{ gold.source }}</p>
+  <pre>{{ gold.content }}</pre>
+  <p><strong>差异：</strong>{{ (gold.differences or [])|join('；') or '—' }}</p>
+  <p><strong>理由：</strong>{{ gold.reason or '—' }}</p>
+  <p class="muted">{{ gold.decided_by }} · v{{ gold.version }}</p>
+</div>
+{% endif %}
+{% if can_submit_gold %}
+<div class="panel">
+  <h3>提交 GOLD KE</h3>
+  <form class="form" method="post" action="/annotation/units/{{ unit.id }}/gold">
+    <div class="form-row">
+      <label>来源<select name="source">
+        <option value="A" {{ 'selected' if gold and gold.source == 'A' }}>取 A</option>
+        <option value="B" {{ 'selected' if gold and gold.source == 'B' }}>取 B</option>
+        <option value="merged" {{ 'selected' if gold and gold.source == 'merged' }}>合并修改</option>
+        <option value="relabel" {{ 'selected' if gold and gold.source == 'relabel' }}>重标</option>
+      </select></label>
+    </div>
+    <label>GOLD KE<textarea name="content" rows="6" required>{{ gold.content if gold else '' }}</textarea></label>
+    <label>差异 / 修改点（一行一条）<textarea name="differences" rows="2">{{ (gold.differences or [])|join('\n') if gold else '' }}</textarea></label>
+    <label>理由<textarea name="reason" rows="2">{{ gold.reason if gold else '' }}</textarea></label>
+    <div class="actions"><button class="btn primary" type="submit">提交 GOLD</button></div>
+  </form>
+</div>
+{% endif %}
+{% endif %}
+
+{% endif %}
+{% endblock %}

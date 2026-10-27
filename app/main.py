@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
+from .annotation.router import router as annotation_router
 from .config import ensure_secret_key, settings
 from .csrf import CSRFMiddleware
 from .db import SessionLocal, init_db
@@ -95,6 +96,7 @@ app.include_router(gold_items_router)
 app.include_router(questions_router)
 app.include_router(issues_router)
 app.include_router(keol.router)
+app.include_router(annotation_router)
 app.include_router(pages.router)
 
 
