@@ -50,6 +50,7 @@ python -m uvicorn app.main:app --reload
 | M27 | P0 安全加固：登录防爆破（连续失败 5 次锁 10 分钟，`LOGIN_MAX_FAILS`/`LOGIN_LOCK_SECONDS`）· CSRF 同步器 token（纯 ASGI 中间件缓冲体重放，base.html 自动注入隐藏域，Bearer 免校，`CSRF_ENABLED=0` 可关）· SECRET_KEY 兜底拒启动（非 `DEV_MODE` 下默认密钥直接 RuntimeError） | ✅ 本次交付 |
 | M28 | P1 结构性改进：Alembic 迁移（`migrations/`，baseline + 既有库自动 stamp 引导，手工 `_NEW_COLUMNS` 登记下线）· Token 最小权限 scopes（read/write；Bearer 优先于并存 session 防提权）· `last_used_at` 节流（`TOKEN_LAST_USED_THROTTLE`=300s）· 依赖锁 `requirements-lock.txt`（pip-compile，61 项钉死；补登记 mcp/alembic/psycopg/pytest-cov） | ✅ 本次交付 |
 | M29 | P2 工程化补强：CI `.github/workflows/test.yml`（SQLite lane 必过 + PG lane advisory，`TEST_DB_URL` 切换）· SQLite WAL + busy_timeout · 覆盖率接线（`--cov=app` floor 80%，当前 85%）+ 查重阈值边界用例 · 备份 `scripts/backup_db.py`（在线备份+轮换 `BACKUP_KEEP`）· conftest 加固（env 模块级就位，杜绝测试写穿真实库） | ✅ 本次交付 |
+| M30 | 前端任务化：角色工作台落地页（`/`：我的组今日上传/我的题目/待办队列/系统概况按角色分屏）· 导航按任务分组+按角色隐藏无权限项（修 GOLD 重复链接）· session 一次性 flash（19 处主流程迁出 `?ok=` URL 拼接，刷新不重现；旧写法兼容）· 页面 403/404/500 友好错误页（`/api/` 保持 JSON 契约）· KE 复核键盘流（J/K 移动、1 一致、2 不一致、X 勾选）· 窄屏表格横滚 | ✅ 本次交付 |
 
 ## M12 · Agent 可操控性补全
 

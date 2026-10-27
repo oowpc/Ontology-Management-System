@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from html import escape
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -13,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..security import require_role
-from ..templating import templates
+from ..templating import flash, templates
 from . import service
 
 router = APIRouter(tags=["ke"])
@@ -78,14 +77,16 @@ async def ke_upload_submit(request: Request, db: Session = Depends(get_db),
     form = await request.form()
     up, err, _, ingest = await _do_upload(db, form, user)
     if err:
-        return RedirectResponse(f"/ke/upload?err={quote(err)}", status_code=303)
+        flash(request, err, "err")
+        return RedirectResponse("/ke/upload", status_code=303)
     ok = f"已上传 {up.row_count} 行（已完成 {up.done_count}），校验提示 {len(up.warnings)} 条"
     if ingest["created"] or ingest["updated"] or ingest["protected"]:
         ok += (f"；成品库：新增草稿 {ingest['created']}，更新 {ingest['updated']}，"
                f"定稿保护 {ingest['protected']}")
     if ingest.get("ke_invalid"):
         ok += f"；⚠ {ingest['ke_invalid']} 条 KE 有结构错误（成品库可见明细，定稿前须修正）"
-    return RedirectResponse(f"/ke/upload?ok={quote(ok)}", status_code=303)
+    flash(request, ok)
+    return RedirectResponse("/ke/upload", status_code=303)
 
 
 # ================= API =================

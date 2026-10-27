@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · 本体管理系统{% endblock %}
+{% block content %}
+<div class="panel error-page">
+  <div class="code">{{ code }}</div>
+  <div class="msg">{{ message or '页面出了点问题' }}</div>
+  <div class="wactions" style="justify-content:center">
+    <a class="btn primary" href="/">回到工作台</a>
+    <a class="btn" href="javascript:history.back()">返回上一页</a>
+  </div>
+</div>
+{% endblock %}

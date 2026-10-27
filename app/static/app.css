@@ -3,12 +3,13 @@
 body{margin:0;font:14px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
 a{color:var(--brand);text-decoration:none}
 a:hover{text-decoration:underline}
-.topbar{display:flex;align-items:center;gap:24px;background:#0f172a;color:#e2e8f0;padding:0 20px;height:52px}
-.brand{color:#fff;font-weight:600;font-size:16px}
+.topbar{display:flex;align-items:center;gap:24px;background:#0f172a;color:#e2e8f0;padding:0 20px;min-height:52px;height:auto;flex-wrap:wrap}
+.brand{color:#fff;font-weight:600;font-size:16px;padding:8px 0}
 .brand:hover{text-decoration:none}
-.topbar nav{display:flex;gap:16px;flex:1}
-.topbar nav a{color:#cbd5e1}
+.topbar nav{display:flex;gap:14px;flex:1;flex-wrap:wrap;align-items:center;padding:8px 0}
+.topbar nav a{color:#cbd5e1;white-space:nowrap}
 .topbar nav a.active,.topbar nav a:hover{color:#fff;text-decoration:none}
+.nav-sep{width:1px;height:16px;background:#334155;flex:none}
 .nav-disabled{color:#475569;cursor:not-allowed}
 .who{display:flex;gap:12px;align-items:center;font-size:13px}
 .who a{color:#cbd5e1}
@@ -148,3 +149,27 @@ tr.diff-ctx{color:var(--muted)}
 .form-row{display:flex;gap:12px;flex-wrap:wrap}
 .form-row>label{flex:1;min-width:180px}
 pre.ke-block{background:#f8fafc;border:1px solid var(--line);border-radius:6px;padding:10px;font:13px/1.7 ui-monospace,Consolas,monospace;white-space:pre-wrap;margin:4px 0}
+
+/* M30 · 工作台 / 复核快捷键 / 错误页 */
+.wgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;margin-bottom:14px}
+.wcard{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.wcard h2{margin:0 0 8px;font-size:15px}
+.wstats{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:4px}
+.wstat{min-width:86px}
+.wstat .n{font-size:26px;font-weight:700;line-height:1.2}
+.wstat .l{font-size:12px;color:var(--muted)}
+.wstat .n a{color:var(--text)}
+.wstat .n a:hover{color:var(--brand)}
+.wactions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+tr.row-focus td{background:#eff6ff;outline:2px solid var(--brand);outline-offset:-2px}
+kbd.key{display:inline-block;min-width:20px;text-align:center;padding:0 5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;background:#fff;font:12px/1.6 ui-monospace,Consolas,monospace}
+.error-page{max-width:480px;margin:64px auto;text-align:center}
+.error-page .code{font-size:44px;font-weight:700;margin-bottom:4px}
+.error-page .msg{color:var(--muted);margin-bottom:18px}
+/* 窄屏最低限度：表格可横向滚动，表单输入不顶破 */
+@media (max-width:760px){
+  .wrap{margin:12px auto;padding:0 10px}
+  .filters input[type=search]{width:100%}
+  .table-wrap{overflow-x:auto}
+  table.data{min-width:640px}
+}

@@ -166,7 +166,8 @@ def test_submit_and_review_pages(client):
         "name": "页面提交概念", "suggested_parent_id": str(jid),
         "reason": "页面流程", "sample_question": "页面题目",
     }, follow_redirects=False)
-    assert r.status_code == 303 and "tmp=" in r.headers["location"]
+    assert r.status_code == 303 and r.headers["location"] == "/submit"
+    assert "TMP-" in client.get("/submit").text        # flash 带临时 ID（原 ?tmp= 迁来）
 
     login(client, "reviewer")
     body = client.get("/review").text
