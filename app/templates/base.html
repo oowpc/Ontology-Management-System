@@ -45,6 +45,7 @@
     {% endif %}
     <a href="/history" class="{{ 'active' if request.url.path.startswith('/history') }}">变更日志</a>
     <a href="/static/docs/co-ke-annotation-sop.html" target="_blank" rel="noopener">标注 SOP</a>
+    <a href="{{ KEOL_CONSOLE_URL }}" target="_blank" rel="noopener">KEOL 加工台</a>
     {% if user.role == 'admin' %}
     <a href="/io" class="{{ 'active' if request.url.path.startswith('/io') }}">导入导出</a>
     {% else %}

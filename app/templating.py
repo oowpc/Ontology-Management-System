@@ -6,6 +6,8 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
+from .config import settings
+
 APP_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=APP_DIR / "templates")
 
@@ -37,6 +39,7 @@ templates.env.globals["ROLE_LABELS"] = ROLE_LABELS
 templates.env.globals["TMP_STATUS_LABELS"] = TMP_STATUS_LABELS
 templates.env.globals["SUB_STATUS_LABELS"] = SUB_STATUS_LABELS
 templates.env.globals["ACTION_LABELS"] = ACTION_LABELS
+templates.env.globals["KEOL_CONSOLE_URL"] = settings.keol_console_url
 templates.env.filters["dt"] = fmt_dt
 
 

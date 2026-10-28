@@ -102,6 +102,8 @@ class Settings:
 
     # M25 · KEOL 桥接：政府本体库源目录（.md 权威源；sync_keol.py 默认取此）
     keol_src: str = os.environ.get("KEOL_SRC", "")
+    # KEOL 操控台地址（OMS 导航互链）
+    keol_console_url: str = os.environ.get("KEOL_CONSOLE_URL", "http://192.168.120.3:8321")
 
     # LLM（OpenAI 兼容端点；留空则相关功能优雅降级）
     llm_base_url: str = os.environ.get("LLM_BASE_URL", "")
