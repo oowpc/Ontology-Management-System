@@ -10,51 +10,41 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/concepts">本体管理系统</a>
+  <a class="brand" href="/">本体管理系统</a>
   {% if user is defined and user %}
   <nav>
+    <a href="/" class="{{ 'active' if request.url.path == '/' }}">工作台</a>
+    <span class="nav-sep"></span>
+    <a href="/questions" class="{{ 'active' if request.url.path.startswith('/questions') }}">题目</a>
+    <a href="/ke/upload" class="{{ 'active' if request.url.path.startswith('/ke/upload') }}">KE 上传</a>
+    <a href="/ke/dashboard" class="{{ 'active' if request.url.path.startswith('/ke/dashboard') }}">KE 看板</a>
+    <a href="/paste" class="{{ 'active' if request.url.path.startswith('/paste') }}">粘贴识别</a>
+    <a href="/issues" class="{{ 'active' if request.url.path.startswith('/issues') }}">Issue</a>
+    <span class="nav-sep"></span>
     <a href="/concepts" class="{{ 'active' if request.url.path.startswith('/concepts') }}">概念</a>
     <a href="/annotation" class="{{ 'active' if request.url.path.startswith('/annotation') }}">标注</a>
-    <a href="/graph" class="{{ 'active' if request.url.path == '/graph' }}">图</a>
-    <a href="/paste" class="{{ 'active' if request.url.path.startswith('/paste') }}">粘贴识别</a>
     <a href="/operators" class="{{ 'active' if request.url.path.startswith('/operators') }}">算子</a>
+    <a href="/graph" class="{{ 'active' if request.url.path == '/graph' }}">图</a>
     <a href="/keol" class="{{ 'active' if request.url.path.startswith('/keol') }}">KEOL 库</a>
-    <a href="/submit" class="{{ 'active' if request.url.path.startswith('/submit') }}">提交</a>
+    <a href="/tmp" class="{{ 'active' if request.url.path.startswith('/tmp') }}">TMP 回填</a>
+    <span class="nav-sep"></span>
     {% if user.role in ['reviewer','admin'] %}
     <a href="/review" class="{{ 'active' if request.url.path.startswith('/review') }}">审核</a>
-    {% else %}
-    <span class="nav-disabled" title="审核员 / 管理员可用">审核</span>
-    {% endif %}
-    <a href="/tmp" class="{{ 'active' if request.url.path.startswith('/tmp') }}">TMP 回填</a>
-    <a href="/ke/dashboard" class="{{ 'active' if request.url.path.startswith('/ke/dashboard') }}">KE 看板</a>
-    <a href="/ke/upload" class="{{ 'active' if request.url.path.startswith('/ke/upload') }}">KE 上传</a>
-    <a href="/questions" class="{{ 'active' if request.url.path.startswith('/questions') }}">题目</a>
-    <a href="/issues" class="{{ 'active' if request.url.path.startswith('/issues') }}">Issue</a>
-    <a href="/gold" class="{{ 'active' if request.url.path.startswith('/gold') }}">GOLD</a>
-    <a href="/gold/items" class="{{ 'active' if request.url.path == '/gold/items' }}">成品库</a>
-    {% if user.role in ['reviewer','admin'] %}
     <a href="/ke/review" class="{{ 'active' if request.url.path.startswith('/ke/review') }}">KE 复核</a>
-    {% else %}
-    <span class="nav-disabled" title="审核员 / 管理员可用">KE 复核</span>
     {% endif %}
-    <a href="/gold" class="{{ 'active' if request.url.path.startswith('/gold') }}">GOLDKE</a>
-    {% if user.role in ['reviewer','admin'] %}
-    <a href="/health" class="{{ 'active' if request.url.path.startswith('/health') }}">体检</a>
-    {% else %}
-    <span class="nav-disabled" title="审核员 / 管理员可用">体检</span>
-    {% endif %}
+    <a href="/submit" class="{{ 'active' if request.url.path.startswith('/submit') }}">提交</a>
+    <a href="/gold/items" class="{{ 'active' if request.url.path.startswith('/gold/items') }}">成品库</a>
+    <a href="/gold" class="{{ 'active' if request.url.path.startswith('/gold') and not request.url.path.startswith('/gold/items') }}">GOLD</a>
     <a href="/history" class="{{ 'active' if request.url.path.startswith('/history') }}">变更日志</a>
     <a href="/static/docs/co-ke-annotation-sop.html" target="_blank" rel="noopener">标注 SOP</a>
     <a href="{{ KEOL_CONSOLE_URL }}" target="_blank" rel="noopener">KEOL 加工台</a>
-    {% if user.role == 'admin' %}
-    <a href="/io" class="{{ 'active' if request.url.path.startswith('/io') }}">导入导出</a>
-    {% else %}
-    <span class="nav-disabled" title="管理员可用">导入导出</span>
+    {% if user.role in ['reviewer','admin'] %}
+    <span class="nav-sep"></span>
+    <a href="/health" class="{{ 'active' if request.url.path.startswith('/health') }}">体检</a>
     {% endif %}
     {% if user.role == 'admin' %}
+    <a href="/io" class="{{ 'active' if request.url.path.startswith('/io') }}">导入导出</a>
     <a href="/admin/users" class="{{ 'active' if request.url.path.startswith('/admin/users') }}">用户</a>
-    {% else %}
-    <span class="nav-disabled" title="管理员可用">用户</span>
     {% endif %}
   </nav>
   <div class="who">
@@ -64,6 +54,12 @@
   {% endif %}
 </header>
 <main class="wrap">
+  {# 一次性消息：session flash（消费即清，刷新不重现）+ 兼容旧的 ?ok=/?err= query 传法 #}
+  {% if request is defined %}
+    {% for f in request.session.pop('_flash', []) %}
+    <div class="flash {{ f.kind }}">{{ f.msg }}</div>
+    {% endfor %}
+  {% endif %}
   {% if request.query_params.get('ok') %}<div class="flash ok">{{ request.query_params.get('ok') }}</div>{% endif %}
   {% if request.query_params.get('err') %}<div class="flash err">{{ request.query_params.get('err') }}</div>{% endif %}
   {% block content %}{% endblock %}

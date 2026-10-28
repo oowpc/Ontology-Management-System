@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}工作台 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>工作台</h1>
+  <span class="muted">{{ today }} · {{ user.username }}（{{ ROLE_LABELS.get(user.role, user.role) }}）</span>
+</div>
+
+{# ---- 今日上传（标注员最关心） ---- #}
+{% if banner %}
+{% set miss = banner | selectattr('uploaded_today', 'equalto', false) | list %}
+<div class="flash {{ 'err' if my_group_status and not my_group_status.uploaded_today else 'ok' }}" style="margin-bottom:14px">
+  {% if my_group_status %}
+    我的组「{{ my_group_status.name }}」今日{{ '已上传 ✓' if my_group_status.uploaded_today else '尚未上传' }}
+    {% if not my_group_status.uploaded_today %}· <a href="/ke/upload">现在去传</a>{% endif %}
+    · 全部组 {{ banner|length - miss|length }}/{{ banner|length }} 已传
+  {% else %}
+    今日已上传 {{ banner|length - miss|length }}/{{ banner|length }} 组{% if miss %}；未上传：{{ miss | map(attribute='name') | join('、') }}{% endif %}
+  {% endif %}
+  · <a href="/ke/dashboard">看板</a>
+</div>
+{% endif %}
+
+<div class="wgrid">
+  {# ---- 我的题目（全员；标注员主战场） ---- #}
+  <div class="wcard">
+    <h2>我的题目</h2>
+    <div class="wstats">
+      <div class="wstat"><div class="n"><a href="/questions">{{ my_questions_total }}</a></div><div class="l">未完成</div></div>
+    </div>
+    {% if my_questions %}
+    <table class="data" style="margin-top:6px">
+      <tbody>
+      {% for q in my_questions %}
+      <tr>
+        <td><a href="/questions/{{ q.id }}">{{ q.ext_id }}</a></td>
+        <td class="muted">{{ (q.text or '')[:34] }}{{ '…' if (q.text or '')|length > 34 }}</td>
+        <td><span class="badge q-{{ q.status }}">{{ q.status }}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted" style="margin:6px 0 0">没有分配给你的未完成题目。</p>
+    {% endif %}
+    <div class="wactions">
+      <a class="btn" href="/questions">题目列表</a>
+      <a class="btn" href="/ke/upload">KE 上传</a>
+      <a class="btn" href="/paste">粘贴识别</a>
+    </div>
+  </div>
+
+  {# ---- 待办队列（审核员/管理员） ---- #}
+  {% if todo %}
+  <div class="wcard">
+    <h2>待办队列</h2>
+    <div class="wstats">
+      <div class="wstat"><div class="n"><a href="/review">{{ todo.pending_subs }}</a></div><div class="l">待审提交</div></div>
+      <div class="wstat"><div class="n"><a href="/ke/review">{{ todo.ke_pending }}</a></div><div class="l">KE 待复核</div></div>
+      <div class="wstat"><div class="n"><a href="/gold/items?status=reviewed">{{ todo.gold_reviewed }}</a></div><div class="l">待转 gold</div></div>
+      <div class="wstat"><div class="n"><a href="/gold/items?status=draft">{{ todo.gold_draft }}</a></div><div class="l">成品草稿</div></div>
+      <div class="wstat"><div class="n"><a href="/gold/samples">{{ todo.samples_open }}</a></div><div class="l">抽检进行中</div></div>
+    </div>
+    <div class="wactions">
+      <a class="btn" href="/review">去审核</a>
+      <a class="btn" href="/ke/review">去复核</a>
+      <a class="btn" href="/gold/items">成品库</a>
+    </div>
+  </div>
+  {% endif %}
+
+  {# ---- 待处理事项（全员） ---- #}
+  <div class="wcard">
+    <h2>待处理</h2>
+    <div class="wstats">
+      <div class="wstat"><div class="n"><a href="/issues">{{ open_issues }}</a></div><div class="l">开放 Issue</div></div>
+      <div class="wstat"><div class="n"><a href="/tmp">{{ tmp_open }}</a></div><div class="l">TMP 待回填</div></div>
+    </div>
+    <div class="wactions">
+      <a class="btn" href="/issues/new">提 Issue</a>
+      <a class="btn" href="/concepts">概念库</a>
+      <a class="btn" href="/keol">KEOL 库</a>
+    </div>
+  </div>
+
+  {# ---- 系统概况（管理员） ---- #}
+  {% if sys %}
+  <div class="wcard">
+    <h2>系统概况</h2>
+    <div class="wstats">
+      <div class="wstat"><div class="n"><a href="/admin/users">{{ sys.users }}</a></div><div class="l">用户</div></div>
+      <div class="wstat"><div class="n"><a href="/concepts">{{ sys.concepts }}</a></div><div class="l">概念</div></div>
+      <div class="wstat"><div class="n"><a href="/operators">{{ sys.operators }}</a></div><div class="l">算子</div></div>
+      <div class="wstat"><div class="n"><a href="/gold/items">{{ sys.gold_items }}</a></div><div class="l">成品</div></div>
+    </div>
+    <div class="wactions">
+      <a class="btn" href="/health">体检</a>
+      <a class="btn" href="/io">导入导出</a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<h2>最近上传</h2>
+<table class="data">
+  <thead><tr><th>组</th><th>文件</th><th class="num">行数</th><th class="num">已完成</th><th>上传人</th><th>时间</th></tr></thead>
+  <tbody>
+  {% for u in recent_uploads %}
+  <tr>
+    <td>{{ u.group_name }}</td>
+    <td class="muted">{{ u.filename }}</td>
+    <td class="num">{{ u.row_count }}</td>
+    <td class="num">{{ u.done_count }}</td>
+    <td>{{ u.uploaded_by }}</td>
+    <td class="muted">{{ u.uploaded_at|dt }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="empty">还没有上传记录</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

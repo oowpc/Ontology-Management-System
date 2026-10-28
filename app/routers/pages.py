@@ -17,8 +17,9 @@ from ..healthcheck import KIND_LABELS, run_health
 from ..importer import csv_to_payload, import_payload, parse_field_map
 from ..llm import enabled as llm_enabled
 from ..models import (AuditLog, BackfillRecord, Concept, ConceptParent,
-                      HealthReport, KeolEntity, Operator, Question,
-                      QuestionConcept, Submission, TmpMapping)
+                      GoldItem, GoldSample, HealthReport, Issue, KeolEntity,
+                      KeTask, KeUpload, Operator, Question, QuestionConcept,
+                      Submission, TmpMapping, User)
 from ..review import (SUB_STATUS, approve, batch_action, create_submission,
                       get_submission_or_404, merge, reject, submission_dict)
 from ..security import current_user
@@ -27,7 +28,7 @@ from ..services import (concept_parents_map, create_concept, create_operator,
                         query_concepts, set_concept_status, set_operator_status,
                         update_concept, update_operator, usage_map)
 from ..similarity import SimilarityBlock
-from ..templating import templates
+from ..templating import flash, templates
 
 router = APIRouter(tags=["pages"])
 
@@ -51,6 +52,66 @@ def _split_multi(raw: str) -> list[str]:
 def _int_or_none(raw) -> int | None:
     s = str(raw or "").strip()
     return int(s) if s.isdigit() else None
+
+
+def _parent_options(db: Session, exclude_id: int | None = None):
+    stmt = select(Concept).order_by(Concept.id)
+    if exclude_id is not None:
+        stmt = stmt.where(Concept.id != exclude_id)
+    return db.scalars(stmt).all()
+
+
+# ================= 工作台（落地页） =================
+
+@router.get("/")
+def workbench(request: Request, db: Session = Depends(get_db), user: dict = Depends(current_user)):
+    """角色落地页：今天该干什么一屏看清。
+    标注员=我的组今日上传 + 我的题目；审核员=待办队列（提交/复核/定稿/抽检）；admin=系统概况。"""
+    from datetime import date
+
+    from ..ke import service as ke_service
+    today = date.today()
+    role = user["role"]
+    banner = ke_service.group_status(db, today)
+    my_questions = db.scalars(
+        select(Question).where(Question.assignee == user["username"],
+                               Question.status.notin_(["approved"]))
+        .order_by(Question.updated_at.desc()).limit(8)).all()
+    ctx = {
+        "request": request, "user": user, "today": today,
+        "banner": banner,
+        "my_group_status": next((g for g in banner if g["name"] == user.get("group")), None),
+        "recent_uploads": ke_service.upload_history(db, limit=5),
+        "my_questions": my_questions,
+        "my_questions_total": db.scalar(
+            select(func.count(Question.id)).where(Question.assignee == user["username"],
+                                                  Question.status.notin_(["approved"]))) or 0,
+        "open_issues": db.scalar(select(func.count(Issue.id))
+                                 .where(Issue.status.in_(["open", "discussing"]))) or 0,
+        "tmp_open": db.scalar(select(func.count(TmpMapping.id))
+                              .where(TmpMapping.status == "open")) or 0,
+    }
+    if role in EDIT_ROLES:
+        ctx["todo"] = {
+            "pending_subs": db.scalar(select(func.count(Submission.id))
+                                      .where(Submission.status == "pending")) or 0,
+            "ke_pending": db.scalar(select(func.count(KeTask.id))
+                                    .where(KeTask.status == "待复核")) or 0,
+            "gold_draft": db.scalar(select(func.count(GoldItem.id))
+                                    .where(GoldItem.status == "draft")) or 0,
+            "gold_reviewed": db.scalar(select(func.count(GoldItem.id))
+                                       .where(GoldItem.status == "reviewed")) or 0,
+            "samples_open": db.scalar(select(func.count(GoldSample.id))
+                                      .where(GoldSample.status == "open")) or 0,
+        }
+    if role == "admin":
+        ctx["sys"] = {
+            "users": db.scalar(select(func.count(User.id))) or 0,
+            "concepts": db.scalar(select(func.count(Concept.id))) or 0,
+            "operators": db.scalar(select(func.count(Operator.id))) or 0,
+            "gold_items": db.scalar(select(func.count(GoldItem.id))) or 0,
+        }
+    return templates.TemplateResponse(request=request, name="workbench.html", context=ctx)
 
 
 # ================= 概念页面 =================
@@ -141,7 +202,8 @@ async def concept_new(request: Request, db: Session = Depends(get_db),
             "selected_primary": primary, "selected_extras": extras,
             "error": error,
         }, status_code=400)
-    return RedirectResponse(f"/concepts/{c.id}?ok=概念已创建", status_code=303)
+    flash(request, "概念已创建")
+    return RedirectResponse(f"/concepts/{c.id}", status_code=303)
 
 
 @router.get("/concepts/{cid}")
@@ -215,27 +277,30 @@ async def concept_edit(cid: int, request: Request, db: Session = Depends(get_db)
             "all_parents": all_parents,
             "selected_primary": primary, "selected_extras": extras, "error": e.detail,
         }, status_code=400)
-    return RedirectResponse(f"/concepts/{cid}?ok=已保存", status_code=303)
+    flash(request, "已保存")
+    return RedirectResponse(f"/concepts/{cid}", status_code=303)
 
 
 @router.post("/concepts/{cid}/disable")
-def concept_disable(cid: int, db: Session = Depends(get_db), user: dict = Depends(current_user)):
+def concept_disable(cid: int, request: Request, db: Session = Depends(get_db), user: dict = Depends(current_user)):
     _forbid(user)
     c = get_concept_or_404(db, cid)
     set_concept_status(db, c, "disabled", user["username"])
-    return RedirectResponse(f"/concepts/{cid}?ok=已停用", status_code=303)
+    flash(request, "已停用")
+    return RedirectResponse(f"/concepts/{cid}", status_code=303)
 
 
 @router.post("/concepts/{cid}/restore")
-def concept_restore(cid: int, db: Session = Depends(get_db), user: dict = Depends(current_user)):
+def concept_restore(cid: int, request: Request, db: Session = Depends(get_db), user: dict = Depends(current_user)):
     _forbid(user)
     c = get_concept_or_404(db, cid)
     set_concept_status(db, c, "approved", user["username"])
-    return RedirectResponse(f"/concepts/{cid}?ok=已恢复", status_code=303)
+    flash(request, "已恢复")
+    return RedirectResponse(f"/concepts/{cid}", status_code=303)
 
 
 @router.post("/concepts/{cid}/rollback/{audit_id}")
-def concept_rollback(cid: int, audit_id: int, db: Session = Depends(get_db),
+def concept_rollback(cid: int, audit_id: int, request: Request, db: Session = Depends(get_db),
                      user: dict = Depends(current_user)):
     if user["role"] != "admin":
         raise HTTPException(403, "仅管理员可回滚")
@@ -245,8 +310,10 @@ def concept_rollback(cid: int, audit_id: int, db: Session = Depends(get_db),
     try:
         audit_rollback(db, audit_id, user["username"])
     except HTTPException as e:
-        return RedirectResponse(f"/concepts/{cid}?err={e.detail}", status_code=303)
-    return RedirectResponse(f"/concepts/{cid}?ok=已回滚", status_code=303)
+        flash(request, e.detail, "err")
+        return RedirectResponse(f"/concepts/{cid}", status_code=303)
+    flash(request, "已回滚")
+    return RedirectResponse(f"/concepts/{cid}", status_code=303)
 
 
 # ================= 算子页面 =================
@@ -318,7 +385,8 @@ async def operator_new(request: Request, db: Session = Depends(get_db),
             "request": request, "user": user, "o": data,
             "selected_subject": subject, "selected_owner": owner, "error": e.detail,
         }, status_code=400)
-    return RedirectResponse(f"/operators?ok=算子已创建", status_code=303)
+    flash(request, "算子已创建")
+    return RedirectResponse("/operators", status_code=303)
 
 
 @router.get("/operators/{oid}")
@@ -368,15 +436,17 @@ async def operator_edit(oid: int, request: Request, db: Session = Depends(get_db
             "request": request, "user": user, "o": shown,
             "selected_subject": subject, "selected_owner": owner, "error": e.detail,
         }, status_code=400)
-    return RedirectResponse(f"/operators?ok=已保存", status_code=303)
+    flash(request, "已保存")
+    return RedirectResponse("/operators", status_code=303)
 
 
 @router.post("/operators/{oid}/disable")
-def operator_disable(oid: int, db: Session = Depends(get_db), user: dict = Depends(current_user)):
+def operator_disable(oid: int, request: Request, db: Session = Depends(get_db), user: dict = Depends(current_user)):
     _forbid(user)
     o = get_operator_or_404(db, oid)
     set_operator_status(db, o, "disabled", user["username"])
-    return RedirectResponse("/operators?ok=已停用", status_code=303)
+    flash(request, "已停用")
+    return RedirectResponse("/operators", status_code=303)
 
 
 # ================= 提交与审核页面（M2） =================
@@ -426,7 +496,8 @@ async def submit_create(request: Request, db: Session = Depends(get_db),
             "values": values, "error": e.detail, "llm_enabled": llm_enabled(),
         }, status_code=400)
     tmp = db.scalar(select(TmpMapping).where(TmpMapping.submission_id == sub.id))
-    return RedirectResponse(f"/submit?ok=已提交审核&tmp={tmp.tmp_id if tmp else ''}", status_code=303)
+    flash(request, f"已提交审核{('，临时 ID：' + tmp.tmp_id) if tmp else ''}")
+    return RedirectResponse("/submit", status_code=303)
 
 
 @router.get("/review")
@@ -457,12 +528,15 @@ async def review_batch(request: Request, db: Session = Depends(get_db),
     action = str(form.get("action", ""))
     comment = str(form.get("comment", ""))
     if not ids:
-        return RedirectResponse("/review?err=未选择任何提交单", status_code=303)
+        flash(request, "未选择任何提交单", "err")
+        return RedirectResponse("/review", status_code=303)
     try:
         processed, skipped = batch_action(db, ids, action, comment, user["username"])
     except HTTPException as e:
-        return RedirectResponse(f"/review?err={e.detail}", status_code=303)
-    return RedirectResponse(f"/review?ok=已处理 {len(processed)} 条（跳过 {len(skipped)} 条）", status_code=303)
+        flash(request, e.detail, "err")
+        return RedirectResponse("/review", status_code=303)
+    flash(request, f"已处理 {len(processed)} 条（跳过 {len(skipped)} 条）")
+    return RedirectResponse("/review", status_code=303)
 
 
 @router.post("/review/{sid}")
@@ -486,8 +560,10 @@ async def review_action(sid: int, request: Request, db: Session = Depends(get_db
         else:
             raise HTTPException(400, "未知操作")
     except HTTPException as e:
-        return RedirectResponse(f"/review?err={e.detail}", status_code=303)
-    return RedirectResponse("/review?ok=已处理", status_code=303)
+        flash(request, e.detail, "err")
+        return RedirectResponse("/review", status_code=303)
+    flash(request, "已处理")
+    return RedirectResponse("/review", status_code=303)
 
 
 # ================= TMP 回填页面（M3） =================
@@ -564,10 +640,11 @@ def health_page(request: Request, kind: str = "unused",
 
 
 @router.post("/health/run")
-def health_run_page(db: Session = Depends(get_db), user: dict = Depends(current_user)):
+def health_run_page(request: Request, db: Session = Depends(get_db), user: dict = Depends(current_user)):
     _forbid_review(user)
     run_health(db, "manual")
-    return RedirectResponse("/health?ok=已生成本体体检报告", status_code=303)
+    flash(request, "已生成本体体检报告")
+    return RedirectResponse("/health", status_code=303)
 
 
 def _forbid_admin(user: dict):

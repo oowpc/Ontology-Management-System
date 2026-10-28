@@ -4,12 +4,19 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from fastapi import Request
 from fastapi.templating import Jinja2Templates
 
 from .config import settings
 
 APP_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=APP_DIR / "templates")
+
+
+def flash(request: Request, message: str, kind: str = "ok") -> None:
+    """一次性消息：存 session，下次页面渲染消费即清（替代 ?ok=/?err= 拼 URL——
+    刷新不重现、链接不带假消息。base.html 同时兼容旧的 query 传法）。"""
+    request.session.setdefault("_flash", []).append({"kind": kind, "msg": message})
 
 STATUS_LABELS = {
     "draft": "草稿",

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import GoldItem, KeReview, KeTask
 from ..security import current_user, require_role
-from ..templating import templates
+from ..templating import flash, templates
 from .service import list_groups
 
 router = APIRouter(tags=["ke-review"])
@@ -206,8 +206,10 @@ async def review_one_form(request: Request, db: Session = Depends(get_db),
                    conclusion=str(form.get("conclusion", "")),
                    comment=str(form.get("comment", "")), reviewer=user["username"])
     except HTTPException as e:
-        return RedirectResponse(f"/ke/review?err={e.detail}", status_code=303)
-    return RedirectResponse("/ke/review?ok=已复核", status_code=303)
+        flash(request, e.detail, "err")
+        return RedirectResponse("/ke/review", status_code=303)
+    flash(request, "已复核")
+    return RedirectResponse("/ke/review", status_code=303)
 
 
 @router.post("/ke/review/batch")
@@ -220,7 +222,8 @@ async def review_batch_form(request: Request, db: Session = Depends(get_db),
     comment = str(form.get("comment", ""))
     keys = [x for x in form.getlist("ids") if "|" in x]
     if not keys:
-        return RedirectResponse("/ke/review?err=未选择任何题目", status_code=303)
+        flash(request, "未选择任何题目", "err")
+        return RedirectResponse("/ke/review", status_code=303)
     n = 0
     for x in keys:
         group, ke_id = x.split("|", 1)
@@ -230,4 +233,5 @@ async def review_batch_form(request: Request, db: Session = Depends(get_db),
             n += 1
         except HTTPException:
             continue
-    return RedirectResponse(f"/ke/review?ok=已批量复核 {n} 条", status_code=303)
+    flash(request, f"已批量复核 {n} 条")
+    return RedirectResponse("/ke/review", status_code=303)

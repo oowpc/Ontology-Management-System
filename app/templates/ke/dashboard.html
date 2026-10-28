@@ -91,7 +91,7 @@ footer ul{padding-left:18px}
   <h1>KE 标注项目 · 进度看板</h1>
   <span class="meta" id="metaLine"></span>
   {# 注入点①（原 __HEADER_EXTRA__）：应用导航 + 组别选择器 #}
-  <a class="backlink" href="/concepts">← 本体系统</a>
+  <a class="backlink" href="/">← 工作台</a>
   <select class="gselect" id="groupPick" title="切换查看组别">
     <option value="">全部组</option>
     {% for g in groups %}<option value="{{ g }}" {{ 'selected' if g == selected }}>{{ g }}</option>{% endfor %}

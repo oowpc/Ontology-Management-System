@@ -24,7 +24,7 @@ from ..db import get_db
 from ..ke import ke_validate
 from ..models import GoldItem
 from ..security import current_user, require_role
-from ..templating import templates
+from ..templating import flash, templates
 from .service import list_groups
 
 router = APIRouter(tags=["gold-items"])
@@ -365,13 +365,12 @@ def items_page(request: Request, article_code: str | None = None, status: str | 
 
 
 @router.post("/gold/items/validate-all")
-def items_validate_all_page(db: Session = Depends(get_db), user: dict = Depends(current_user)):
+def items_validate_all_page(request: Request, db: Session = Depends(get_db), user: dict = Depends(current_user)):
     if user["role"] not in EDIT_ROLES:
         raise HTTPException(403, "批量校验仅审核员/管理员")
     s = ke_validate.validate_all(db)
-    return RedirectResponse(
-        f"/gold/items?ok=校验完成：{s['checked']} 条重算（✓{s['ok']} ⚠{s['warn']} ✗{s['error']}，跳过已最新 {s['skipped']}）",
-        status_code=303)
+    flash(request, f"校验完成：{s['checked']} 条重算（✓{s['ok']} ⚠{s['warn']} ✗{s['error']}，跳过已最新 {s['skipped']}）")
+    return RedirectResponse("/gold/items", status_code=303)
 
 
 @router.get("/gold/items/new")
@@ -410,7 +409,8 @@ async def item_new(request: Request, db: Session = Depends(get_db),
             "request": request, "user": user, "it": data, "groups": list_groups(db),
             "status_list": ITEM_STATUS, "status_labels": ITEM_STATUS_LABELS, "error": e.detail,
         }, status_code=400)
-    return RedirectResponse("/gold/items?ok=条目已创建", status_code=303)
+    flash(request, "条目已创建")
+    return RedirectResponse("/gold/items", status_code=303)
 
 
 @router.get("/gold/items/{iid}/edit")
@@ -443,12 +443,14 @@ async def item_edit(iid: int, request: Request, db: Session = Depends(get_db),
             "request": request, "user": user, "it": it, "groups": list_groups(db),
             "status_list": ITEM_STATUS, "status_labels": ITEM_STATUS_LABELS, "error": e.detail,
         }, status_code=400)
-    return RedirectResponse("/gold/items?ok=已保存", status_code=303)
+    flash(request, "已保存")
+    return RedirectResponse("/gold/items", status_code=303)
 
 
 @router.post("/gold/items/{iid}/delete")
-def item_delete(iid: int, db: Session = Depends(get_db), user: dict = Depends(current_user)):
+def item_delete(iid: int, request: Request, db: Session = Depends(get_db), user: dict = Depends(current_user)):
     if user["role"] not in EDIT_ROLES:
         raise HTTPException(403, "删除仅审核员/管理员")
     delete_item(db, get_item_or_404(db, iid), user["username"])
-    return RedirectResponse("/gold/items?ok=已删除", status_code=303)
+    flash(request, "已删除")
+    return RedirectResponse("/gold/items", status_code=303)

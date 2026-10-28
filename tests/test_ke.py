@@ -28,7 +28,8 @@ def test_upload_and_dashboard(client):
     r = client.post("/ke/upload", files={"file": ("t.csv", CSV_OK, "text/csv")},
                     follow_redirects=False)
     assert r.status_code == 303
-    assert "ok=" in r.headers["location"]
+    assert r.headers["location"] == "/ke/upload"
+    assert "已上传" in client.get("/ke/upload").text   # session flash 呈现一次
 
     r = client.get("/ke/dashboard", params={"group": "一组"})
     assert r.status_code == 200

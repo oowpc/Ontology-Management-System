@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
 from .annotation.router import router as annotation_router
@@ -24,6 +25,7 @@ from .routers import (agent, auth, concepts, graph, health, io, keol, llm,
                       tokens, users)
 from .security import LoginRequired
 from .seed import seed_if_empty
+from .templating import templates
 
 _scheduler = None
 
@@ -75,6 +77,32 @@ async def login_required_handler(request: Request, exc: LoginRequired):
     return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
 
 
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """M30：页面路径的错误渲染成人看的页面；/api/ 保持 JSON 契约不变。"""
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code,
+                            headers=getattr(exc, "headers", None))
+    return templates.TemplateResponse(
+        request=request, name="error.html",
+        context={"request": request, "user": request.session.get("user"),
+                 "code": exc.status_code, "message": exc.detail},
+        status_code=exc.status_code)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    import logging
+    logging.getLogger("app").exception("未处理异常: %s %s", request.method, request.url.path)
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": "服务器内部错误"}, status_code=500)
+    return templates.TemplateResponse(
+        request=request, name="error.html",
+        context={"request": request, "user": request.session.get("user"),
+                 "code": 500, "message": "服务器内部错误，请稍后重试"},
+        status_code=500)
+
+
 app.include_router(auth.router)
 app.include_router(concepts.router)
 app.include_router(operators.router)
@@ -99,7 +127,3 @@ app.include_router(keol.router)
 app.include_router(annotation_router)
 app.include_router(pages.router)
 
-
-@app.get("/", include_in_schema=False)
-def index():
-    return RedirectResponse("/concepts")

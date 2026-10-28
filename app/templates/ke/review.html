@@ -3,6 +3,7 @@
 {% block content %}
 <h1>KE 逐条复核（待复核 {{ items|length }}）</h1>
 <p class="muted">结论写回任务并留痕：<strong>一致 → 已完成</strong>；<strong>不一致 → 已退回</strong> 并自动加「复核退回」标签（进入看板问题面板）。系统结论为准——下次全量上传自动重放，表内自报不覆盖。</p>
+<p class="muted">键盘：<kbd class="key">J</kbd>/<kbd class="key">K</kbd> 移动 · <kbd class="key">1</kbd> 一致 · <kbd class="key">2</kbd> 不一致 · <kbd class="key">X</kbd> 勾选批量</p>
 <form class="filters" method="get" action="/ke/review">
   <select name="group">
     <option value="">全部组</option>
@@ -43,4 +44,33 @@
     <button class="btn" name="conclusion" value="不一致" type="submit">批量不一致</button>
   </div>
 </form>
+{% endblock %}
+{% block scripts %}
+<script>
+// M30 · 复核键盘流：J/K 移动焦点行，1=一致 2=不一致（触发行内按钮），X=勾选批量
+(function () {
+  var rows = Array.prototype.slice.call(document.querySelectorAll('table.data tbody tr'))
+    .filter(function (r) { return r.querySelector('form'); });
+  if (!rows.length) return;
+  var cur = 0;
+  function focus(i) {
+    rows[cur].classList.remove('row-focus');
+    cur = (i + rows.length) % rows.length;
+    rows[cur].classList.add('row-focus');
+    rows[cur].scrollIntoView({ block: 'nearest' });
+  }
+  focus(0);
+  document.addEventListener('keydown', function (e) {
+    if (/^(TEXTAREA|INPUT|SELECT)$/.test(e.target.tagName)) return;
+    var k = e.key.toLowerCase();
+    if (k === 'j' || k === 'arrowdown') { focus(cur + 1); e.preventDefault(); }
+    else if (k === 'k' || k === 'arrowup') { focus(cur - 1); e.preventDefault(); }
+    else if (k === 'x') { var c = rows[cur].querySelector('input[type=checkbox]'); if (c) c.checked = !c.checked; }
+    else if (k === '1' || k === '2') {
+      var btn = rows[cur].querySelector('button[value="' + (k === '1' ? '一致' : '不一致') + '"]');
+      if (btn) btn.click();
+    }
+  });
+})();
+</script>
 {% endblock %}
