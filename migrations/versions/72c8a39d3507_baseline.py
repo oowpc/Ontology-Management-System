@@ -428,7 +428,7 @@ def upgrade() -> None:
     sa.Column('created_dt', sa.DateTime(), nullable=True),
     sa.Column('started_dt', sa.DateTime(), nullable=True),
     sa.Column('finished_dt', sa.DateTime(), nullable=True),
-    sa.Column('review', sa.String(length=16), nullable=False),
+    sa.Column('review', sa.Text(), nullable=False),
     sa.Column('tags', sa.JSON(), nullable=False),
     sa.Column('article_code', sa.String(length=32), nullable=False),
     sa.Column('upload_id', sa.Integer(), nullable=True),

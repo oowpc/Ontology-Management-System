@@ -294,7 +294,7 @@ class KeTask(Base):
     created_dt: Mapped[Optional[datetime]] = mapped_column(DateTime)   # 创建时间
     started_dt: Mapped[Optional[datetime]] = mapped_column(DateTime)   # 开始时间
     finished_dt: Mapped[Optional[datetime]] = mapped_column(DateTime)  # 完成时间
-    review: Mapped[str] = mapped_column(String(16), default="")        # 复核结论：一致/不一致/空
+    review: Mapped[str] = mapped_column(Text, default="")        # 复核结论：一致/不一致/空
     tags: Mapped[list] = mapped_column(JSON, default=list)             # 问题标签（多值）
     article_code: Mapped[str] = mapped_column(String(32), default="", index=True)  # 篇编号（可选列，篇级自动汇总）
     upload_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ke_uploads.id"))

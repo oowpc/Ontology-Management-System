@@ -135,7 +135,7 @@ def _link_count():
 
 def _undone_impact_count():
     return (select(func.count(IssueImpact.id))
-            .where(IssueImpact.issue_id == Issue.id, IssueImpact.done == 0)
+            .where(IssueImpact.issue_id == Issue.id, IssueImpact.done.is_(False))
             .correlate(Issue).scalar_subquery())
 
 

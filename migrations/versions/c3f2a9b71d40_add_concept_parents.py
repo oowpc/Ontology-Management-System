@@ -22,7 +22,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("concept_id", sa.Integer(), nullable=False),
         sa.Column("parent_id", sa.Integer(), nullable=False),
-        sa.Column("is_primary", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("is_primary", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("position", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.CheckConstraint("concept_id != parent_id", name="ck_concept_parent_self"),
@@ -35,7 +35,7 @@ def upgrade() -> None:
     op.create_index("ix_concept_parents_parent_id", "concept_parents", ["parent_id"])
     op.execute(
         "INSERT INTO concept_parents (concept_id, parent_id, is_primary, position) "
-        "SELECT id, parent_id, 1, 0 FROM concepts WHERE parent_id IS NOT NULL"
+        "SELECT id, parent_id, TRUE, 0 FROM concepts WHERE parent_id IS NOT NULL"
     )
 
 

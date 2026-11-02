@@ -64,6 +64,10 @@ def upgrade() -> None:
                 "(id,key,name,kind,description,owner,status,created_at) "
                 "VALUES (:id,:key,:name,:kind,:desc,'system','active',CURRENT_TIMESTAMP)"),
                 {"id": lid, "key": key, "name": name, "kind": kind, "desc": desc})
+    if bind.dialect.name == "postgresql":
+        bind.execute(sa.text(
+            "SELECT setval(pg_get_serial_sequence('ontology_libraries','id'), "
+            "(SELECT MAX(id) FROM ontology_libraries), true)"))
 
     for table in TABLES:
         cols = {x["name"] for x in insp.get_columns(table)}
