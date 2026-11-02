@@ -60,6 +60,8 @@ def item_dict(it: GoldItem) -> dict:
                 "ok": v.get("ok"), "error_count": v.get("error_count", 0),
                 "warning_count": v.get("warning_count", 0),
                 "engine": v.get("engine"), "validated_at": v.get("validated_at"),
+                "syntax_engine": v.get("syntax_engine"),
+                "syntax": v.get("syntax"),
             } if v else None)}
 
 
