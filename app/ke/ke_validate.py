@@ -18,6 +18,7 @@ __ 引用未收录记 unknown_entity warning）。校验结果随条目缓存（
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -27,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Concept, KeolEntity, Operator
 
-ENGINE_VERSION = 2          # 校验口径变更时 +1（缓存结果带版本，可据此判旧）
+ENGINE_VERSION = 3          # 校验口径变更时 +1（缓存结果带版本，可据此判旧）
 MAX_ISSUES = 30             # 每级最多入列条数（防爆 JSON），超出只计数
 
 BUILTIN_TYPES = {"string", "number", "bool", "date", "timeinterval", "real", "name", "concept"}
@@ -335,7 +336,7 @@ def _capped(issues: list[dict]) -> tuple[list[dict], int]:
     return issues[:MAX_ISSUES], len(issues)
 
 
-def validate_ke(db: Session, text: str, concepts_field: list | None = None) -> dict:
+def _validate_ke_internal(db: Session, text: str, concepts_field: list | None = None) -> dict:
     """一条 KE 的完整校验。返回可 JSON 序列化的结果（也是 gold_items.validation 的缓存形态）。"""
     parsed = parse_ke(text)
     errors: list[dict] = list(parsed.errors)
@@ -491,6 +492,41 @@ def validate_ke(db: Session, text: str, concepts_field: list | None = None) -> d
                   "consts": len(parsed.consts), "outputs": len(parsed.outputs)},
         "validated_at": datetime.now().isoformat(timespec="seconds"),
     }
+
+
+def validate_ke(db: Session, text: str, concepts_field: list | None = None) -> dict:
+    """统一校验入口：Syntastic 语法层 + OMS 词表/KEOL 语义层。"""
+    base = _validate_ke_internal(db, text, concepts_field)
+    from . import syntastic
+    external = syntastic.validate_ke(db, text)
+    if external is None:
+        base["syntax_engine"] = "internal"
+        return base
+    seen_e = {(x.get("line"), x.get("kind"), x.get("message")) for x in base["errors"]}
+    seen_w = {(x.get("line"), x.get("kind"), x.get("message")) for x in base["warnings"]}
+    # Syntastic 的语法硬错误直接阻断；unknown_* / unbound_var 属于词表层，
+    # 由 OMS 现有闭词表规则以 warning 形式处理，避免与本体词表重复。
+    semantic_kinds = {"unknown_concept", "unknown_operator", "unbound_var", "unknown_type"}
+    for x in external["errors"]:
+        item = dict(x)
+        target = "warnings" if item.get("kind") in semantic_kinds else "errors"
+        k = (item.get("line"), item.get("kind"), item.get("message"))
+        if k not in (seen_w if target == "warnings" else seen_e):
+            base[target].append(item)
+            (seen_w if target == "warnings" else seen_e).add(k)
+    for x in external["warnings"]:
+        k = (x.get("line"), x.get("kind"), x.get("message"))
+        if k not in seen_w:
+            base["warnings"].append(x); seen_w.add(k)
+    base["error_count"] = len(base["errors"])
+    base["warning_count"] = len(base["warnings"])
+    base["ok"] = not base["errors"]
+    base["syntax_engine"] = "syntastic"
+    base["syntax"] = {
+        "passed": external["passed"], "complete": external["complete"],
+        "degraded": external["degraded"], "layer_status": external["layer_status"],
+    }
+    return base
 
 
 # ---------------- 条目级封装（缓存 + 定稿门槛） ----------------

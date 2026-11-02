@@ -5,6 +5,8 @@ on: [push, pull_request]
 jobs:
   sqlite:
     runs-on: ubuntu-latest
+    env:
+      SYNTACTIC_REPO_TOKEN: ${{ secrets.SYNTACTIC_REPO_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -12,16 +14,24 @@ jobs:
           python-version: "3.13"
       - name: 安装依赖
         run: pip install -r requirements-lock.txt --index-url https://pypi.org/simple
+      - name: 检出 Syntastic 语法校验器（配置 secret 后启用）
+        run: |
+          if [ -n "${SYNTACTIC_REPO_TOKEN:-}" ]; then
+            git clone --depth 1 "https://oauth2:${SYNTACTIC_REPO_TOKEN}@git.kclab.cloud/intention-recognition/Syntastic_and_Lexical-Verifier.git" /tmp/Syntastic
+          fi
       - name: pytest（SQLite）
         run: python -m pytest
         env:
           SECRET_KEY: ci-secret
+          KE_FORM_VALIDATOR_PATH: /tmp/Syntastic
 
   postgres:
     # PG lane：验证「切 PostgreSQL 只换 DB_URL」不是摆设（migrations + 全套测试在 PG 上跑）。
     # 首批先 advisory（continue-on-error），稳定后可去掉。
     continue-on-error: true
     runs-on: ubuntu-latest
+    env:
+      SYNTACTIC_REPO_TOKEN: ${{ secrets.SYNTACTIC_REPO_TOKEN }}
     services:
       postgres:
         image: postgres:16
@@ -39,8 +49,14 @@ jobs:
           python-version: "3.13"
       - name: 安装依赖
         run: pip install -r requirements-lock.txt --index-url https://pypi.org/simple
+      - name: 检出 Syntastic 语法校验器（配置 secret 后启用）
+        run: |
+          if [ -n "${SYNTACTIC_REPO_TOKEN:-}" ]; then
+            git clone --depth 1 "https://oauth2:${SYNTACTIC_REPO_TOKEN}@git.kclab.cloud/intention-recognition/Syntastic_and_Lexical-Verifier.git" /tmp/Syntastic
+          fi
       - name: pytest（PostgreSQL；conftest 认 TEST_DB_URL）
         run: python -m pytest
         env:
           TEST_DB_URL: postgresql+psycopg://postgres:postgres@localhost:5432/ontology_test
           SECRET_KEY: ci-secret
+          KE_FORM_VALIDATOR_PATH: /tmp/Syntastic

@@ -10,6 +10,12 @@
   {% if v.ok and not v.warning_count %}<span class="badge approved">✓ 通过</span>
   {% elif v.ok %}<span class="badge pending">⚠ {{ v.warning_count }} 条提示（不阻断定稿）</span>
   {% else %}<span class="badge disabled">✗ {{ v.error_count }} 个结构错误（阻断定稿）</span>{% endif %}
+  <span class="muted">语法引擎：{{ v.syntax_engine or 'internal' }}
+    {% if v.syntax and v.syntax.layer_status %} · {{ v.syntax.layer_status|tojson }}
+      {% if v.syntax.complete %} · complete{% endif %}
+      {% if v.syntax.degraded %} · degraded{% endif %}
+    {% endif %}
+  </span>
   {% if v.errors or v.warnings %}
   <table class="data" style="margin-top:8px">
     <thead><tr><th>级别</th><th class="num">行</th><th>问题</th></tr></thead>
