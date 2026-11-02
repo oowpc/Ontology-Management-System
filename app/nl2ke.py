@@ -80,7 +80,10 @@ def catalog(db: Session | None = None, src: Path | None = None) -> list[dict]:
                 out.append({"db_id": r.key, "has_sqlite": bool(p and p.exists()),
                             "size": p.stat().st_size if p and p.exists() else 0})
             return out
-    _so, tables = _load(src)
+    try:
+        _so, tables = _load(src)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return []
     return [{"db_id": t["db_id"], "has_sqlite": False, "size": 0} for t in tables]
 
 
@@ -89,7 +92,10 @@ def databases(db: Session | None = None, src: Path | None = None) -> list[str]:
         rows = db.scalars(select(OntologySource.key).order_by(OntologySource.key)).all()
         if rows:
             return list(rows)
-    _so, tables = _load(src)
+    try:
+        _so, tables = _load(src)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return []
     return sorted(str(t["db_id"]) for t in tables)
 
 

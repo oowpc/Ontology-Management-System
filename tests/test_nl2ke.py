@@ -1,8 +1,44 @@
 """NL2KE BYOS 桥：子本体构建、OMS 页面/运行记录（不调用真实 LLM）。"""
+import json
+
+import pytest
+
 from conftest import login
 
 
-def test_archer_sub_ontology():
+@pytest.fixture()
+def archer_src(tmp_path, monkeypatch):
+    from app import nl2ke
+    (tmp_path / "super_ontology.json").write_text(json.dumps({
+        "concepts": {
+            "Singer": {"sources": {"concert_singer": {
+                "database": "concert_singer", "table": "singer",
+                "slots": {"SingerId": "Singer_ID", "Name": "Name"},
+                "pk": ["Singer_ID"]}}}
+        },
+        "operators": {
+            "SingerName": {"type": "PROPERTY", "concept": "Singer",
+                           "slot": "Name", "databases": ["concert_singer"]}
+        },
+    }), encoding="utf-8")
+    (tmp_path / "tables.json").write_text(json.dumps([{
+        "db_id": "concert_singer",
+        "table_names_original": ["singer"], "table_names": ["singer"],
+        "column_names_original": [[-1, "*"], [0, "Singer_ID"], [0, "Name"]],
+        "column_names": [[-1, "*"], [0, "Singer_ID"], [0, "Name"]],
+        "column_types": ["integer", "text"], "primary_keys": [1],
+        "foreign_keys": [],
+    }]), encoding="utf-8")
+    (tmp_path / "en_dev.json").write_text(json.dumps([{
+        "db_id": "concert_singer", "question": "How many singers?",
+        "query": "SELECT COUNT(*) FROM singer",
+    }]), encoding="utf-8")
+    monkeypatch.setattr(nl2ke, "ARCHER_SRC", tmp_path)
+    monkeypatch.setattr(nl2ke, "QUESTION_DIRS", (tmp_path,))
+    return tmp_path
+
+
+def test_archer_sub_ontology(archer_src):
     from app import nl2ke
     assert "concert_singer" in nl2ke.databases()
     table, ontology = nl2ke.sub_ontology("concert_singer")
@@ -12,7 +48,7 @@ def test_archer_sub_ontology():
     assert len(ontology["operators"]) >= 1
 
 
-def test_nl2ke_page_and_mocked_run(client, monkeypatch):
+def test_nl2ke_page_and_mocked_run(client, monkeypatch, archer_src):
     login(client, "admin")
     r = client.post("/api/libraries", json={
         "key": "archer", "name": "Archer Benchmark", "kind": "reference"})
@@ -23,7 +59,7 @@ def test_nl2ke_page_and_mocked_run(client, monkeypatch):
     page = client.get("/nl2ke")
     assert page.status_code == 200
     assert "KE 等价校验" in page.text
-    assert len(client.get("/api/nl2ke/databases").json()["items"]) > 100
+    assert len(client.get("/api/nl2ke/databases").json()["items"]) >= 1
 
     from app.routers import nl2ke as nl2ke_router
 
