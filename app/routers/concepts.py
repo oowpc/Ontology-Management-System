@@ -1,7 +1,7 @@
 """概念 API：/api/concepts"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import String as SAString, cast, select
 from sqlalchemy.orm import Session
 
@@ -30,12 +30,13 @@ def _out(db: Session, c: Concept) -> dict:
 
 
 @router.get("")
-def list_concepts(status: str | None = None, parent_id: int | None = None,
+def list_concepts(request: Request, status: str | None = None, parent_id: int | None = None,
                   q: str | None = None, domain: str | None = None,
                   page: int = 1, size: int = Query(50, le=200),
                   db: Session = Depends(get_db), user: dict = Depends(require_role())):
     items, total = query_concepts(db, status=status, parent_id=parent_id, q=q,
-                                  domain=domain, page=page, size=size)
+                                  domain=domain, page=page, size=size,
+                                  library_id=request.state.library.id)
     stats = usage_map(db, [c.id for c in items])
     parents = name_map(db, [c.parent_id for c in items if c.parent_id])
     parent_details = concept_parents_map(db, [c.id for c in items])
@@ -47,14 +48,16 @@ def list_concepts(status: str | None = None, parent_id: int | None = None,
 
 
 @router.post("", status_code=201)
-def create(data: ConceptCreate, db: Session = Depends(get_db),
+def create(data: ConceptCreate, request: Request, db: Session = Depends(get_db),
            user: dict = Depends(require_role("reviewer", "admin"))):
     try:
         c = create_concept(db, name=data.name, domain=data.domain, aliases=data.aliases,
-                           definition=data.definition, parent_id=data.parent_id,
+                           definition=data.definition, description=data.description,
+                           parent_id=data.parent_id,
                            parents=data.parents, source_uri=data.source_uri,
                            ontology_module=data.ontology_module, status=data.status,
-                           actor=user["username"], check_similar=True)
+                           actor=user["username"], check_similar=True,
+                           library_id=request.state.library.id)
     except SimilarityBlock as e:
         raise HTTPException(409, detail={"message": str(e), "similar": e.similar})
     return _out(db, c)
@@ -74,15 +77,18 @@ def search_concepts(q: str = "", status: str | None = None,
         stmt = stmt.where(Concept.id != exclude_id)
     if q.strip():
         like = f"%{q.strip()}%"
-        stmt = stmt.where(Concept.name.like(like) | cast(Concept.aliases, SAString).like(like))
+        stmt = stmt.where(Concept.name.like(like) | cast(Concept.aliases, SAString).like(like)
+                          | Concept.local_code.like(like))
     items = db.scalars(stmt.order_by(Concept.name).limit(limit)).all()
-    return {"items": [{"id": c.id, "name": c.name, "domain": c.domain or "通用",
+    return {"items": [{"id": c.id, "code": c.local_code or f"#{c.id}",
+                       "name": c.name, "domain": c.domain or "通用",
                        "status": c.status} for c in items]}
 
 
 @router.get("/{cid}")
-def detail(cid: int, db: Session = Depends(get_db), user: dict = Depends(require_role())):
-    c = get_concept_or_404(db, cid)
+def detail(cid: int, request: Request, db: Session = Depends(get_db),
+           user: dict = Depends(require_role())):
+    c = get_concept_or_404(db, cid, library_id=request.state.library.id)
     d = _out(db, c)
     child_ids = select(ConceptParent.concept_id).where(ConceptParent.parent_id == cid)
     children = db.scalars(select(Concept).where(Concept.id.in_(child_ids)).order_by(Concept.id)).all()
@@ -94,30 +100,34 @@ def detail(cid: int, db: Session = Depends(get_db), user: dict = Depends(require
 
 
 @router.patch("/{cid}")
-def update(cid: int, data: ConceptUpdate, db: Session = Depends(get_db),
+def update(cid: int, data: ConceptUpdate, request: Request, db: Session = Depends(get_db),
            user: dict = Depends(require_role("reviewer", "admin"))):
-    c = get_concept_or_404(db, cid)
-    c = update_concept(db, c, data.model_dump(exclude_unset=True), user["username"])
+    c = get_concept_or_404(db, cid, library_id=request.state.library.id)
+    c = update_concept(db, c, data.model_dump(exclude_unset=True), user["username"],
+                       library_id=request.state.library.id)
     return _out(db, c)
 
 
 @router.post("/{cid}/disable")
-def disable(cid: int, db: Session = Depends(get_db),
+def disable(cid: int, request: Request, db: Session = Depends(get_db),
             user: dict = Depends(require_role("reviewer", "admin"))):
-    c = get_concept_or_404(db, cid)
-    return _out(db, set_concept_status(db, c, "disabled", user["username"]))
+    c = get_concept_or_404(db, cid, library_id=request.state.library.id)
+    return _out(db, set_concept_status(db, c, "disabled", user["username"],
+                                       library_id=request.state.library.id))
 
 
 @router.post("/{cid}/restore")
-def restore(cid: int, db: Session = Depends(get_db),
+def restore(cid: int, request: Request, db: Session = Depends(get_db),
             user: dict = Depends(require_role("reviewer", "admin"))):
-    c = get_concept_or_404(db, cid)
-    return _out(db, set_concept_status(db, c, "approved", user["username"]))
+    c = get_concept_or_404(db, cid, library_id=request.state.library.id)
+    return _out(db, set_concept_status(db, c, "approved", user["username"],
+                                       library_id=request.state.library.id))
 
 
 @router.get("/{cid}/history")
-def history(cid: int, db: Session = Depends(get_db), user: dict = Depends(require_role())):
-    get_concept_or_404(db, cid)
+def history(cid: int, request: Request, db: Session = Depends(get_db),
+            user: dict = Depends(require_role())):
+    get_concept_or_404(db, cid, library_id=request.state.library.id)
     return {"items": [audit_dict(a) for a in entity_history(db, "concept", cid)]}
 
 

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑个体' if iid else '新建个体' }}{% endblock %}
+{% block content %}
+<h1>{{ '编辑个体' if iid else '新建个体' }}</h1>
+{% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+<form class="form" method="post">
+  <label>名称 *
+    <input name="name" value="{{ i.name }}" required>
+  </label>
+  <div class="field">
+    <span>所属概念 *</span>
+    <div class="picker" data-picker="single" data-name="concept_id"
+         data-selected='{{ selected_concept|tojson }}'
+         data-placeholder="搜索所属概念…"></div>
+  </div>
+  <label>域
+    <input name="domain" value="{{ i.domain }}" placeholder="通用 / KEOL">
+  </label>
+  <label>描述
+    <textarea name="description" rows="2">{{ i.description }}</textarea>
+  </label>
+  <label>sources（逗号 / 换行分隔）
+    <textarea name="sources_text" rows="3">{{ i.sources_text }}</textarea>
+  </label>
+  <label>supply（JSON 对象）
+    <textarea name="supply_text" data-json rows="4" class="mono">{{ i.supply_text }}</textarea>
+  </label>
+  <label>状态
+    <select name="status">
+      {% for k, v in [('draft','草稿'),('pending','待审'),('approved','已通过'),('disabled','停用')] %}
+      <option value="{{ k }}" {{ 'selected' if i.status == k }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions">
+    <button class="btn" type="button" data-json-format>格式化 JSON</button>
+    <button class="btn primary" type="submit">保存</button>
+    <a class="btn" href="{{ '/individuals/' ~ iid if iid else '/individuals' }}">取消</a>
+  </div>
+</form>
+<script>
+document.querySelectorAll("[data-json-format]").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    btn.closest("form").querySelectorAll("textarea[data-json]").forEach(function (el) {
+      try { el.value = JSON.stringify(JSON.parse(el.value), null, 2); el.dispatchEvent(new Event("input")); } catch (e) {}
+    });
+  });
+});
+document.querySelectorAll("textarea[data-json]").forEach(function (el) {
+  function check() {
+    if (!el.value.trim()) { el.classList.remove("json-invalid", "json-valid"); el.title = ""; return; }
+    try { JSON.parse(el.value); el.classList.remove("json-invalid"); el.classList.add("json-valid"); el.title = "JSON 合法"; }
+    catch (e) { el.classList.remove("json-valid"); el.classList.add("json-invalid"); el.title = "JSON 错误：" + e.message; }
+  }
+  el.addEventListener("input", check); check();
+});
+</script>
+{% endblock %}
+{% block scripts %}<script src="/static/picker.js?v=20261027a"></script>{% endblock %}

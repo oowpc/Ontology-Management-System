@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}个体 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>全局个体</h1>
+  {% if user.role in ['reviewer','admin'] %}<a class="btn primary" href="/individuals/new">+ 新建个体</a>{% endif %}
+</div>
+<form class="filters" method="get" action="/individuals">
+  <div class="picker" data-picker="single" data-name="concept_id" data-omit-empty="1"
+       data-selected='{{ selected_concept|tojson }}' data-placeholder="按所属概念筛选…"></div>
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="个体名">
+  <input type="text" name="domain" value="{{ domain or '' }}" placeholder="域" style="width:8rem">
+  <select name="status">
+    <option value="">全部状态</option>
+    {% for k, v in status_labels.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">过滤</button>
+</form>
+<p class="muted">共 {{ total }} 条 · 个体身份 = 所属概念 + 名称</p>
+<div class="table-wrap">
+<table class="data">
+  <thead><tr><th>ID</th><th>名称</th><th>所属概念</th><th>域</th><th>状态</th><th>描述</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for i in items %}
+  <tr>
+    <td>{{ i.id }}</td>
+    <td><a href="/individuals/{{ i.id }}">{{ i.name }}</a></td>
+    <td><a href="/concepts/{{ i.concept_id }}">{{ names.get(i.concept_id, i.concept_id) }}</a></td>
+    <td>{{ i.domain }}</td>
+    <td><span class="badge {{ i.status }}">{{ status_labels.get(i.status, i.status) }}</span></td>
+    <td class="muted">{{ i.description|truncate(60) }}</td>
+    <td class="ops">{% if user.role in ['reviewer','admin'] %}<a href="/individuals/{{ i.id }}/edit">编辑</a>{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="empty">暂无个体；KEOL 加工台“推送”可把个体同步进来</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="btn" href="?page={{ page - 1 }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if domain %}&domain={{ domain|urlencode }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if concept_id %}&concept_id={{ concept_id }}{% endif %}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ pages }} 页</span>
+  {% if page < pages %}<a class="btn" href="?page={{ page + 1 }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if domain %}&domain={{ domain|urlencode }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if concept_id %}&concept_id={{ concept_id }}{% endif %}">下一页</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/picker.js?v=20261027a"></script>{% endblock %}

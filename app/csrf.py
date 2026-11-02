@@ -45,6 +45,9 @@ class CSRFMiddleware:
             await self.app(scope, receive, send)
             return
         session = scope.get("session")
+        if scope.get("path") == "/api/auth/login":
+            await self.app(scope, receive, send)
+            return
         if scope["method"] in SAFE_METHODS:
             # 安全方法：保证 session 里有 token 供页面 meta/表单注入
             if session is not None and "csrf" not in session:

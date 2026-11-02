@@ -10,6 +10,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from ..audit import diff_entries, entity_history, log_change, snapshot
+from ..library_context import library_scoped
 from ..models import (Concept, GoldItem, Issue, IssueCase, IssueComment,
                       IssueImpact, IssueLink, IssueQuestion, IssueViewpoint,
                       Operator, Question, QuestionKeVersion)
@@ -186,6 +187,98 @@ def row_to_dict(i: Issue, link_count: int, undone_count: int) -> dict:
     }
 
 
+def _md_dt(v) -> str:
+    return v.strftime("%Y-%m-%d %H:%M") if hasattr(v, "strftime") else (str(v) if v else "")
+
+
+def issue_markdown(db: Session, issue: Issue) -> str:
+    """单条 Issue 的 Markdown 文档（含案例/问题/观点/评论/关联/影响）。"""
+    p = detail_payload(db, issue)
+    i = p["issue"]
+    lines = [f"# {i['code']} · {i['title']}", "",
+             f"- 状态：{i['status_label']}",
+             f"- 领域 / 组：{i['domain']} / {i['group_name'] or '—'}",
+             f"- 类型：{i['type_tag']}",
+             f"- 重要性 / 紧急度：{i['importance'] or '—'} / {i['urgency'] or '—'}",
+             f"- 负责人：{i['owner'] or i['created_by'] or '—'}",
+             f"- 更新时间：{_md_dt(i['updated_at'])}", "",
+             "## 描述", "", i["description"] or "—", ""]
+    if i.get("conclusion"):
+        lines += ["## 结论", "", i["conclusion"], ""]
+    if i.get("scope"):
+        lines += ["## 适用范围", "", i["scope"], ""]
+    if i.get("open_items"):
+        lines += ["## 未决事项", "", i["open_items"], ""]
+    if p["cases"]:
+        lines += ["## 案例", ""]
+        for c in p["cases"]:
+            lines += [f"### 案例 {c['seq']}　{c['source'] or ''}", "",
+                      c["original_text"] or "", ""]
+            if c.get("variant_a"):
+                lines += [f"**方案 A**：{c['variant_a']}", ""]
+            if c.get("variant_b"):
+                lines += [f"**方案 B**：{c['variant_b']}", ""]
+            if c.get("diff_note"):
+                lines += [f"差异说明：{c['diff_note']}", ""]
+    if p["questions"]:
+        lines += ["## 待讨论问题", ""]
+        for q in p["questions"]:
+            lines.append(f"- {q['text']}（{q['source']}）")
+        lines.append("")
+    if p["viewpoints"]:
+        lines += ["## 观点", ""]
+        for vp in p["viewpoints"]:
+            lines.append(f"### {vp['person']}")
+            for item in vp["items"]:
+                lines.append(f"- **{item['stance']}**：{item['body']}")
+            lines.append("")
+    if p["links"]:
+        lines += ["## 关联对象", ""]
+        for l in p["links"]:
+            lines.append(f"- {l['label']}（{l['entity_type']}#{l['entity_id']}）"
+                         + (f"：{l['note']}" if l.get("note") else ""))
+        lines.append("")
+    if p["impacts"]:
+        prog = p["impact_progress"]
+        lines += [f"## 影响清单（{prog['done']}/{prog['total']} 已完成）", ""]
+        for x in p["impacts"]:
+            mark = "x" if x["done"] else " "
+            lines.append(f"- [{mark}] {x['action']}：{x['label']}（{x['entity_type']}#{x['entity_id']}）")
+        lines.append("")
+    if p["comments"]:
+        lines += ["## 评论", ""]
+        for c in p["comments"]:
+            lines.append(f"- **{c['author']}** {_md_dt(c['created_at'])}：{c['body']}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def batch_issues_markdown(db: Session, batch) -> str:
+    """批次关联 Issue 汇总 Markdown。"""
+    # 只取当前批次单元
+    from ..models import AnnotationUnit
+    unit_ids = list(db.scalars(select(AnnotationUnit.id).where(
+        AnnotationUnit.batch_id == batch.id)).all())
+    cond = Issue.annotation_batch_id == batch.id
+    if unit_ids:
+        from sqlalchemy import or_
+        cond = or_(cond, Issue.annotation_unit_id.in_(unit_ids))
+    issues = db.scalars(select(Issue).where(cond).order_by(Issue.id)).all()
+    out = [f"# 标注批次 Issue 汇总 · {batch.batch_id}", "",
+           f"- 批次：{batch.name}",
+           f"- 状态：{batch.state}",
+           f"- Issue：{len(issues)} 条", ""]
+    if not issues:
+        out.append("暂无关联 Issue。")
+    else:
+        out += ["| 编号 | 标题 | 状态 | 类型 |", "|---|---|---|---|"]
+        for x in issues:
+            out.append(f"| {x.code} | {x.title} | {ISSUE_STATUS_LABELS.get(x.status, x.status)} | {x.type_tag} |")
+        out += ["", "---", ""]
+        out += [issue_markdown(db, x) for x in issues]
+    return "\n".join(out).rstrip() + "\n"
+
+
 def export_csv(rows) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -201,6 +294,7 @@ def export_csv(rows) -> str:
 
 # ================= 详情页（第②步） =================
 
+@library_scoped
 def get_issue_or_404(db: Session, iid: int) -> Issue:
     i = db.get(Issue, iid)
     if not i:

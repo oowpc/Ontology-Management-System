@@ -16,6 +16,9 @@
   <label>定义
     <textarea name="definition" rows="4">{{ c.definition if c else '' }}</textarea>
   </label>
+  <label>描述（description）
+    <textarea name="description" rows="3" placeholder="供下游使用的自然语言描述">{{ c.description if c else '' }}</textarea>
+  </label>
   <noscript><p class="flash err">父类选择器需要 JavaScript；请启用 JS，或通过 API 编辑多父类。</p></noscript>
   <div class="field">
     <span>主父类</span>

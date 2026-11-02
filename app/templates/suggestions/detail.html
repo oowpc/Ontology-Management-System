@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}建议 #{{ s.id }} · 本体管理系统{% endblock %}
+{% block content %}
+<div class="breadcrumbs"><a href="/">工作台</a><span>/</span><a href="/suggestions">本体建议</a><span>/</span><strong>#{{ s.id }}</strong></div>
+<div class="page-head">
+  <div>
+    <h1>{{ s.title or ('建议 #' ~ s.id) }}</h1>
+    <span class="page-sub">{{ s.origin }} · {{ s.created_by }} · {{ s.created_at|dt }}</span>
+  </div>
+  <div class="page-head-actions">
+    <a class="btn" href="/suggestions">← 建议列表</a>
+    {% if s.status == 'pending' and user.role in ['reviewer','admin'] %}
+    <form method="post" action="/suggestions/{{ s.id }}/approve" onsubmit="return confirm('审批通过后会写入全局本体，确认？')">
+      <button class="btn primary" type="submit">通过并应用</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+<div class="ann-grid">
+  <div class="panel">
+    <div class="section-head"><h2>概况</h2></div>
+    <table class="kv">
+      <tr><th>状态</th><td><span class="badge {{ s.status }}">{{ {'pending':'待审','approved':'已通过','rejected':'已驳回','failed':'应用失败'}.get(s.status, s.status) }}</span></td></tr>
+      <tr><th>来源</th><td>{{ s.source }} / {{ s.origin }}</td></tr>
+      <tr><th>概念</th><td>{{ (summary or {}).get('concepts',0) }}</td></tr>
+      <tr><th>算子</th><td>{{ (summary or {}).get('operators',0) }}</td></tr>
+      <tr><th>规则</th><td>{{ (summary or {}).get('rules',0) }}</td></tr>
+      <tr><th>个体</th><td>{{ (summary or {}).get('individuals',0) }}</td></tr>
+      <tr><th>引用映射</th><td>概念 {{ (summary or {}).get('ref_concepts',0) }} · 算子 {{ (summary or {}).get('ref_operators',0) }}</td></tr>
+      <tr><th>审核</th><td>{{ s.reviewed_by or '—' }}{% if s.reviewed_at %} · {{ s.reviewed_at|dt }}{% endif %}</td></tr>
+      <tr><th>应用</th><td>{{ s.applied_at|dt if s.applied_at else '—' }}</td></tr>
+    </table>
+  </div>
+  <div class="panel">
+    <div class="section-head"><h2>审批</h2></div>
+    {% if s.status == 'pending' and user.role in ['reviewer','admin'] %}
+    <p class="muted">通过后按建议包导入概念/算子/规则/个体；已存在的名称按导入规则处理。失败会标记为 failed，不自动回滚已写入部分。</p>
+    <form class="form" method="post" action="/suggestions/{{ s.id }}/reject">
+      <label>驳回理由<textarea name="note" rows="2"></textarea></label>
+      <div class="actions"><button class="btn" type="submit">驳回</button></div>
+    </form>
+    {% elif s.status == 'failed' %}
+    <div class="flash err">{{ s.error or '应用失败' }}</div>
+    {% else %}
+    <p class="muted">该建议已处理。</p>
+    {% endif %}
+    {% if s.note %}<p class="muted">备注：{{ s.note }}</p>{% endif %}
+    {% if s.stats %}<pre class="json">{{ s.stats|tojson(indent=2) }}</pre>{% endif %}
+  </div>
+</div>
+<div class="panel">
+  <div class="section-head"><h2>建议包</h2><span class="muted">只读预览</span></div>
+  <details><summary>package JSON</summary><pre class="json">{{ s.package|tojson(indent=2) }}</pre></details>
+  <details style="margin-top:8px"><summary>refs JSON</summary><pre class="json">{{ s.refs|tojson(indent=2) }}</pre></details>
+</div>
+{% endblock %}

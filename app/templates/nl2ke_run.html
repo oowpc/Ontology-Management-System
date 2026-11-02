@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}NL2KE 运行 #{{ run.id }} · 本体管理系统{% endblock %}
+{% block content %}
+<div class="nl2ke-run-page">
+  <div class="page-head">
+    <div>
+      <div class="nl2ke-eyebrow">NL2KE · RUN #{{ run.id }}</div>
+      <h1>{{ run.db_id }}</h1>
+      <span class="page-sub">{{ run.question }}</span>
+    </div>
+    <div class="page-head-actions">
+      <a class="btn" href="/nl2ke">返回 NL2KE</a>
+    </div>
+  </div>
+
+  {% if not trace_available %}
+  <div class="flash err">本次运行没有保存 trace；只能查看生成结果，无法查看内部步骤。</div>
+  {% endif %}
+
+  <div class="nl2ke-run-layout">
+    <section class="panel nl2ke-summary">
+      <div class="nl2ke-panel-head">
+        <div>
+          <h2>运行概览</h2>
+          <p class="muted">一次 NL2KE 调用的输入、输出和状态</p>
+        </div>
+        <span class="badge {{ 'passed' if run.status in ('ok','accepted','in_batch') else 'failed' }}">{{ run.status }}</span>
+      </div>
+
+      <div class="nl2ke-meta-grid">
+        <div class="nl2ke-meta"><small>数据库</small><strong>{{ run.db_id }}</strong></div>
+        <div class="nl2ke-meta"><small>verify</small><strong>{{ '通过' if run.verify_passed else '未通过' }}</strong></div>
+        <div class="nl2ke-meta"><small>attempts</small><strong>{{ run.attempts }}</strong></div>
+        <div class="nl2ke-meta"><small>耗时</small><strong>{{ run.latency_ms }}ms</strong></div>
+        <div class="nl2ke-meta"><small>创建人</small><strong>{{ run.created_by }}</strong></div>
+        <div class="nl2ke-meta"><small>创建时间</small><strong>{{ (run.created_at or '')[:16] }}</strong></div>
+      </div>
+
+      <div class="nl2ke-field">
+        <h2>问题</h2>
+        <p class="nl2ke-question">{{ run.question }}</p>
+      </div>
+
+      <div class="nl2ke-field">
+        <h2>生成的 KE</h2>
+        <pre class="nl2ke-code">{{ run.ke }}</pre>
+      </div>
+
+      {% if run.equivalence %}
+      <div class="nl2ke-field">
+        <h2>KE 等价校验</h2>
+        <p><span class="badge {{ 'passed' if run.equivalence.status == 'proved_equal' else ('failed' if run.equivalence.status == 'proved_different' else '') }}">{{ run.equivalence.status }}</span>
+          <span class="muted">{{ run.equivalence.verdict or 'unknown' }}</span></p>
+      </div>
+      {% endif %}
+    </section>
+
+    <aside class="panel nl2ke-steps-panel">
+      <div class="nl2ke-panel-head">
+        <div>
+          <h2>NL2KE 内部步骤</h2>
+          <p class="muted">每一步都有独立页面，按顺序查看</p>
+        </div>
+      </div>
+      <div class="nl2ke-step-list">
+        {% for s in steps %}
+        <a class="nl2ke-step-card" href="/nl2ke/runs/{{ run.id }}/steps/{{ s.key }}">
+          <span class="nl2ke-step-num">{{ '%02d'|format(loop.index) }}</span>
+          <span class="nl2ke-step-copy">
+            <strong>{{ s.label }}</strong>
+            <small>{{ s.desc }}</small>
+          </span>
+          <span class="nl2ke-step-arrow">→</span>
+        </a>
+        {% endfor %}
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}

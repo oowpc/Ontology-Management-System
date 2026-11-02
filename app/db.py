@@ -10,9 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from sqlalchemy import create_engine, event, inspect
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker, with_loader_criteria
 
 from .config import settings
+from .library_context import DEFAULT_LIBRARY_ID, current_library_id
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BASELINE_REVISION = "72c8a39d3507"   # migrations/versions/ 下的基线（全表现行结构）
@@ -49,8 +50,57 @@ def _make_engine():
     return eng
 
 
+class LibrarySession(Session):
+    """db.get 也会按当前库校验，避免跨库按 ID 读取。"""
+
+    def get(self, entity, ident, **kwargs):
+        obj = super().get(entity, ident, **kwargs)
+        if obj is not None and hasattr(entity, "library_id"):
+            lib = current_library_id.get()
+            if lib is not None and getattr(obj, "library_id", None) != lib:
+                return None
+        return obj
+
+
 engine = _make_engine()
-SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False,
+                            class_=LibrarySession)
+
+
+def _library_classes():
+    # 延迟 import，避免 db <-> models 循环
+    from . import models
+    return (models.Concept, models.ConceptParent, models.Operator, models.OperatorInput,
+            models.LibraryMember, models.OntologySource,
+            models.ImportBatch, models.AnnotationBatch, models.AnnotationMember,
+            models.AnnotationUnit, models.AnnotationEvidence, models.CoAnnotation,
+            models.CoAlignment, models.KeAnnotation, models.GoldKe,
+            models.OntologyVersion, models.OntologySuggestion, models.CoMergeLog,
+            models.AnnotationCrossReview, models.Nl2keRun, models.DatamakerJob, models.QueryRun, models.OntologyRule,
+            models.OntologyIndividual, models.HealthReport)
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _apply_library_scope(state):
+    """给所有 ORM SELECT 自动加 library_id 条件；维护脚本可 library_scope(None) 关闭。"""
+    if not state.is_select:
+        return
+    lib = current_library_id.get()
+    if lib is None:
+        return
+    for cls in _library_classes():
+        state.statement = state.statement.options(
+            with_loader_criteria(cls, cls.library_id == lib, include_aliases=True))
+
+
+@event.listens_for(Session, "before_flush")
+def _stamp_library(_session, _flush_context, _instances):
+    lib = current_library_id.get()
+    if lib is None:
+        lib = DEFAULT_LIBRARY_ID
+    for obj in _session.new:
+        if hasattr(type(obj), "library_id") and getattr(obj, "library_id", None) is None:
+            obj.library_id = lib
 
 
 def get_db():

@@ -1,0 +1,775 @@
+{
+  "source_batch": {
+    "id": 1,
+    "batch_id": "PILOT-20261028-01",
+    "library_id": 3,
+    "state": "co_alignment"
+  },
+  "target_library": "pilot-yuer",
+  "note": "LLM+确定性规则候选；未 apply，必须人工确认后才可写库",
+  "concepts": [
+    {
+      "name": "补贴对象",
+      "definition": "符合条件并接受补贴的对象。",
+      "aliases": [],
+      "unit_id": "U-004"
+    },
+    {
+      "name": "婴幼儿",
+      "definition": "符合法律法规规定生育的3周岁以下婴幼儿。",
+      "aliases": [],
+      "unit_id": "U-004"
+    },
+    {
+      "name": "年龄条件",
+      "definition": "3周岁以下及年满3周岁的年龄条件。",
+      "aliases": [],
+      "unit_id": "U-004"
+    },
+    {
+      "name": "补贴标准",
+      "definition": "育儿补贴的发放标准。",
+      "aliases": [],
+      "unit_id": "U-005"
+    },
+    {
+      "name": "育儿补贴",
+      "definition": "按年发放的育儿补贴。",
+      "aliases": [],
+      "unit_id": "U-005"
+    },
+    {
+      "name": "国家基础标准",
+      "definition": "每孩每年3600元的国家基础标准。",
+      "aliases": [],
+      "unit_id": "U-005"
+    },
+    {
+      "name": "应补贴月数",
+      "definition": "按实际应补贴月数折算的依据。",
+      "aliases": [],
+      "unit_id": "U-005"
+    },
+    {
+      "name": "个人所得税",
+      "definition": "对育儿补贴免征的个人所得税。",
+      "aliases": [],
+      "unit_id": "U-005"
+    },
+    {
+      "name": "最低生活保障对象",
+      "definition": "最低生活保障对象。",
+      "aliases": [],
+      "unit_id": "U-005"
+    },
+    {
+      "name": "特困人员",
+      "definition": "特困人员。",
+      "aliases": [],
+      "unit_id": "U-005"
+    },
+    {
+      "name": "救助对象认定",
+      "definition": "最低生活保障对象、特困人员等救助对象认定。",
+      "aliases": [],
+      "unit_id": "U-005"
+    },
+    {
+      "name": "家庭或个人收入",
+      "definition": "认定救助对象时的家庭或个人收入。",
+      "aliases": [
+        "家庭收入",
+        "个人收入"
+      ],
+      "unit_id": "U-005"
+    },
+    {
+      "name": "申领人",
+      "definition": "婴幼儿的父母一方或其他监护人。",
+      "aliases": [
+        "父母一方",
+        "其他监护人",
+        "父母",
+        "监护人"
+      ],
+      "unit_id": "U-006"
+    },
+    {
+      "name": "婴幼儿户籍所在地",
+      "definition": "婴幼儿户籍所在地，作为申领受理地。",
+      "aliases": [],
+      "unit_id": "U-006"
+    },
+    {
+      "name": "申请材料",
+      "definition": "申领时提供的证明材料。",
+      "aliases": [],
+      "unit_id": "U-007"
+    },
+    {
+      "name": "出生医学证明",
+      "definition": "婴幼儿的出生医学证明。",
+      "aliases": [],
+      "unit_id": "U-007"
+    },
+    {
+      "name": "户口簿",
+      "definition": "婴幼儿的户口簿。",
+      "aliases": [],
+      "unit_id": "U-007"
+    },
+    {
+      "name": "育儿补贴信息管理系统",
+      "definition": "用于线上申请的育儿补贴信息管理系统。",
+      "aliases": [],
+      "unit_id": "U-007"
+    },
+    {
+      "name": "乡镇政府（街道办事处）",
+      "definition": "负责初审的乡镇政府或街道办事处。",
+      "aliases": [
+        "乡镇政府",
+        "街道办事处"
+      ],
+      "unit_id": "U-008"
+    },
+    {
+      "name": "村（居）民委员会",
+      "definition": "协助做好初审相关工作的村（居）民委员会。",
+      "aliases": [],
+      "unit_id": "U-008"
+    },
+    {
+      "name": "申请信息",
+      "definition": "接受初审的申请信息。",
+      "aliases": [],
+      "unit_id": "U-008"
+    },
+    {
+      "name": "县级卫生健康部门",
+      "definition": "负责审核确认的县级卫生健康部门。",
+      "aliases": [],
+      "unit_id": "U-009"
+    },
+    {
+      "name": "同级财政部门",
+      "definition": "接收相关信息的同级财政部门。",
+      "aliases": [],
+      "unit_id": "U-009"
+    },
+    {
+      "name": "补贴对象信息",
+      "definition": "审核确认并向财政部门提供的相关信息。",
+      "aliases": [
+        "相关信息"
+      ],
+      "unit_id": "U-009"
+    },
+    {
+      "name": "抽查",
+      "definition": "按一定比例对补贴对象信息进行抽查。",
+      "aliases": [],
+      "unit_id": "U-010"
+    },
+    {
+      "name": "市级卫生健康部门",
+      "definition": "按一定比例开展抽查的市级卫生健康部门。",
+      "aliases": [],
+      "unit_id": "U-010"
+    },
+    {
+      "name": "省级卫生健康部门",
+      "definition": "根据需要开展抽查的省级卫生健康部门。",
+      "aliases": [],
+      "unit_id": "U-010"
+    },
+    {
+      "name": "财政分担比例",
+      "definition": "中央与地方财政分担比例。",
+      "aliases": [],
+      "unit_id": "U-011"
+    },
+    {
+      "name": "中央财政",
+      "definition": "设立补助资金并予以补助的中央财政。",
+      "aliases": [],
+      "unit_id": "U-011"
+    },
+    {
+      "name": "共同财政事权转移支付",
+      "definition": "中央财政设立的共同财政事权转移支付。",
+      "aliases": [],
+      "unit_id": "U-011"
+    },
+    {
+      "name": "育儿补贴补助资金",
+      "definition": "共同财政事权转移支付项目“育儿补贴补助资金”。",
+      "aliases": [],
+      "unit_id": "U-011"
+    },
+    {
+      "name": "东部地区",
+      "definition": "中央财政按比例补助的东部地区。",
+      "aliases": [],
+      "unit_id": "U-011"
+    },
+    {
+      "name": "中部地区",
+      "definition": "中央财政按比例补助的中部地区。",
+      "aliases": [],
+      "unit_id": "U-011"
+    },
+    {
+      "name": "西部地区",
+      "definition": "中央财政按比例补助的西部地区。",
+      "aliases": [],
+      "unit_id": "U-011"
+    },
+    {
+      "name": "地方提标",
+      "definition": "地方提高补贴标准的部分。",
+      "aliases": [],
+      "unit_id": "U-011"
+    },
+    {
+      "name": "地方财政",
+      "definition": "自行承担地方提标资金的财政。",
+      "aliases": [],
+      "unit_id": "U-011"
+    },
+    {
+      "name": "补贴发放时间",
+      "definition": "各省份结合实际确定的具体发放时间。",
+      "aliases": [],
+      "unit_id": "U-012"
+    },
+    {
+      "name": "各省份",
+      "definition": "确定具体发放时间的各省份。",
+      "aliases": [],
+      "unit_id": "U-012"
+    },
+    {
+      "name": "补贴资金",
+      "definition": "发放的补贴资金。",
+      "aliases": [],
+      "unit_id": "U-012"
+    },
+    {
+      "name": "补贴发放渠道",
+      "definition": "补贴发放所使用渠道。",
+      "aliases": [],
+      "unit_id": "U-013"
+    },
+    {
+      "name": "银行卡",
+      "definition": "补贴发放使用的银行卡。",
+      "aliases": [],
+      "unit_id": "U-013"
+    },
+    {
+      "name": "金融账户",
+      "definition": "补贴发放使用的其他金融账户。",
+      "aliases": [],
+      "unit_id": "U-013"
+    },
+    {
+      "name": "惠民惠农财政补贴资金“一卡通”",
+      "definition": "鼓励使用的惠民惠农财政补贴资金“一卡通”。",
+      "aliases": [
+        "“一卡通”"
+      ],
+      "unit_id": "U-013"
+    },
+    {
+      "name": "社会保障卡",
+      "definition": "婴幼儿的社会保障卡。",
+      "aliases": [],
+      "unit_id": "U-013"
+    },
+    {
+      "name": "出生一件事联办",
+      "definition": "结合“出生一件事”联办。",
+      "aliases": [
+        "出生一件事"
+      ],
+      "unit_id": "U-014"
+    },
+    {
+      "name": "信息管理制度",
+      "definition": "建立的信息管理制度。",
+      "aliases": [],
+      "unit_id": "U-014"
+    },
+    {
+      "name": "信息安全责任",
+      "definition": "落实信息安全责任。",
+      "aliases": [],
+      "unit_id": "U-014"
+    },
+    {
+      "name": "个人信息安全",
+      "definition": "保障个人信息安全。",
+      "aliases": [
+        "信息安全",
+        "个人信息"
+      ],
+      "unit_id": "U-014"
+    },
+    {
+      "name": "审计部门",
+      "definition": "加强全过程监督检查的审计部门。",
+      "aliases": [],
+      "unit_id": "U-015"
+    },
+    {
+      "name": "财政部门",
+      "definition": "加强全过程监督检查的财政部门。",
+      "aliases": [],
+      "unit_id": "U-015"
+    },
+    {
+      "name": "纪检监察机关",
+      "definition": "强化监督执纪问责的纪检监察机关。",
+      "aliases": [],
+      "unit_id": "U-015"
+    },
+    {
+      "name": "省级政府",
+      "definition": "加强统筹管理和财政承受能力评估的省级政府。",
+      "aliases": [],
+      "unit_id": "U-016"
+    },
+    {
+      "name": "育儿补贴政策",
+      "definition": "与本地区经济社会发展水平相协调的育儿补贴政策。",
+      "aliases": [],
+      "unit_id": "U-016"
+    },
+    {
+      "name": "实施方案",
+      "definition": "本省份实施方案。",
+      "aliases": [],
+      "unit_id": "U-016"
+    },
+    {
+      "name": "国家卫生健康委",
+      "definition": "实施方案备案和管理规范制定的国家卫生健康委。",
+      "aliases": [],
+      "unit_id": "U-016"
+    },
+    {
+      "name": "财政部",
+      "definition": "实施方案备案和管理规范制定的财政部。",
+      "aliases": [],
+      "unit_id": "U-016"
+    },
+    {
+      "name": "管理规范",
+      "definition": "育儿补贴制度有关管理规范。",
+      "aliases": [],
+      "unit_id": "U-016"
+    },
+    {
+      "name": "省级卫生健康部门、财政部门",
+      "definition": "制定本省份实施方案的省级卫生健康部门、财政部门。",
+      "aliases": [],
+      "unit_id": "U-016"
+    },
+    {
+      "name": "市级行政区域",
+      "definition": "执行统一政策及标准的市级行政区域。",
+      "aliases": [],
+      "unit_id": "U-017"
+    },
+    {
+      "name": "县级以下政府",
+      "definition": "不得自行出台政策或标准的县级以下政府。",
+      "aliases": [],
+      "unit_id": "U-017"
+    },
+    {
+      "name": "提标",
+      "definition": "省级或市级拟出台其他政策或提标。",
+      "aliases": [],
+      "unit_id": "U-017"
+    },
+    {
+      "name": "事前论证评估",
+      "definition": "出台其他政策或提标前的事前论证评估。",
+      "aliases": [],
+      "unit_id": "U-017"
+    },
+    {
+      "name": "民生政策备案",
+      "definition": "按照民生政策备案有关要求备案。",
+      "aliases": [
+        "备案"
+      ],
+      "unit_id": "U-017"
+    },
+    {
+      "name": "上一级主管部门",
+      "definition": "接受备案的上一级主管部门。",
+      "aliases": [],
+      "unit_id": "U-017"
+    },
+    {
+      "name": "省级或市级政府部门",
+      "definition": "拟出台其他育儿补贴政策或提标的省级或市级政府部门。",
+      "aliases": [],
+      "unit_id": "U-017"
+    },
+    {
+      "name": "孕产妇保健",
+      "definition": "结合孕产妇保健服务。",
+      "aliases": [],
+      "unit_id": "U-018"
+    },
+    {
+      "name": "住院分娩",
+      "definition": "结合住院分娩服务。",
+      "aliases": [],
+      "unit_id": "U-018"
+    },
+    {
+      "name": "婴幼儿预防接种",
+      "definition": "结合婴幼儿预防接种服务。",
+      "aliases": [],
+      "unit_id": "U-018"
+    },
+    {
+      "name": "健康管理",
+      "definition": "结合健康管理服务。",
+      "aliases": [],
+      "unit_id": "U-018"
+    },
+    {
+      "name": "户籍登记",
+      "definition": "结合户籍登记服务。",
+      "aliases": [],
+      "unit_id": "U-018"
+    },
+    {
+      "name": "社会保障卡申领",
+      "definition": "结合社会保障卡申领服务。",
+      "aliases": [],
+      "unit_id": "U-018"
+    },
+    {
+      "name": "服务流程",
+      "definition": "优化服务流程。",
+      "aliases": [],
+      "unit_id": "U-018"
+    },
+    {
+      "name": "政策宣传解读",
+      "definition": "做好政策宣传解读。",
+      "aliases": [
+        "政策宣传"
+      ],
+      "unit_id": "U-018"
+    },
+    {
+      "name": "群众知晓率",
+      "definition": "提高群众知晓率。",
+      "aliases": [],
+      "unit_id": "U-018"
+    },
+    {
+      "name": "意见建议",
+      "definition": "广泛听取意见建议。",
+      "aliases": [],
+      "unit_id": "U-018"
+    },
+    {
+      "name": "育儿补贴制度实施情况",
+      "definition": "评估育儿补贴制度实施情况。",
+      "aliases": [],
+      "unit_id": "U-018"
+    }
+  ],
+  "operators": [
+    {
+      "name": "年满三周岁",
+      "subject": "婴幼儿",
+      "return_type": "年龄条件",
+      "unit_id": "U-004"
+    },
+    {
+      "name": "填写",
+      "subject": "申领人",
+      "return_type": "申请信息",
+      "unit_id": "U-007"
+    },
+    {
+      "name": "提交材料",
+      "subject": "申领人",
+      "return_type": "申请材料",
+      "unit_id": "U-007"
+    },
+    {
+      "name": "确定",
+      "subject": "各省份",
+      "return_type": "补贴发放时间",
+      "unit_id": "U-012"
+    },
+    {
+      "name": "制定实施方案",
+      "subject": "省级卫生健康部门、财政部门",
+      "return_type": "实施方案",
+      "unit_id": "U-016"
+    },
+    {
+      "name": "优化",
+      "subject": "服务流程",
+      "return_type": "服务流程",
+      "unit_id": "U-018"
+    }
+  ],
+  "units": [
+    {
+      "unit_id": "U-001",
+      "unit_role": "context",
+      "concepts": [],
+      "operators": []
+    },
+    {
+      "unit_id": "U-002",
+      "unit_role": "context",
+      "concepts": [],
+      "operators": []
+    },
+    {
+      "unit_id": "U-003",
+      "unit_role": "context",
+      "concepts": [],
+      "operators": []
+    },
+    {
+      "unit_id": "U-004",
+      "unit_role": "normative",
+      "concepts": [
+        "补贴对象",
+        "婴幼儿",
+        "年龄条件"
+      ],
+      "operators": [
+        {
+          "name": "年满三周岁",
+          "subject": "婴幼儿",
+          "return_type": "年龄条件"
+        }
+      ]
+    },
+    {
+      "unit_id": "U-005",
+      "unit_role": "normative",
+      "concepts": [
+        "补贴标准",
+        "育儿补贴",
+        "国家基础标准",
+        "应补贴月数",
+        "个人所得税",
+        "最低生活保障对象",
+        "特困人员",
+        "救助对象认定",
+        "家庭或个人收入"
+      ],
+      "operators": []
+    },
+    {
+      "unit_id": "U-006",
+      "unit_role": "normative",
+      "concepts": [
+        "申领人",
+        "婴幼儿户籍所在地"
+      ],
+      "operators": []
+    },
+    {
+      "unit_id": "U-007",
+      "unit_role": "normative",
+      "concepts": [
+        "申领人",
+        "申请材料",
+        "出生医学证明",
+        "户口簿",
+        "育儿补贴信息管理系统"
+      ],
+      "operators": [
+        {
+          "name": "填写",
+          "subject": "申领人",
+          "return_type": "申请信息"
+        },
+        {
+          "name": "提交材料",
+          "subject": "申领人",
+          "return_type": "申请材料"
+        }
+      ]
+    },
+    {
+      "unit_id": "U-008",
+      "unit_role": "normative",
+      "concepts": [
+        "婴幼儿户籍所在地",
+        "乡镇政府（街道办事处）",
+        "村（居）民委员会",
+        "申请信息"
+      ],
+      "operators": []
+    },
+    {
+      "unit_id": "U-009",
+      "unit_role": "normative",
+      "concepts": [
+        "县级卫生健康部门",
+        "同级财政部门",
+        "补贴对象信息"
+      ],
+      "operators": []
+    },
+    {
+      "unit_id": "U-010",
+      "unit_role": "normative",
+      "concepts": [
+        "抽查",
+        "市级卫生健康部门",
+        "省级卫生健康部门",
+        "补贴对象信息"
+      ],
+      "operators": []
+    },
+    {
+      "unit_id": "U-011",
+      "unit_role": "normative",
+      "concepts": [
+        "财政分担比例",
+        "中央财政",
+        "共同财政事权转移支付",
+        "育儿补贴补助资金",
+        "国家基础标准",
+        "东部地区",
+        "中部地区",
+        "西部地区",
+        "地方提标",
+        "地方财政"
+      ],
+      "operators": []
+    },
+    {
+      "unit_id": "U-012",
+      "unit_role": "normative",
+      "concepts": [
+        "补贴发放时间",
+        "各省份",
+        "补贴资金"
+      ],
+      "operators": [
+        {
+          "name": "确定",
+          "subject": "各省份",
+          "return_type": "补贴发放时间"
+        }
+      ]
+    },
+    {
+      "unit_id": "U-013",
+      "unit_role": "normative",
+      "concepts": [
+        "补贴发放渠道",
+        "申领人",
+        "婴幼儿",
+        "银行卡",
+        "金融账户",
+        "惠民惠农财政补贴资金“一卡通”",
+        "社会保障卡"
+      ],
+      "operators": []
+    },
+    {
+      "unit_id": "U-014",
+      "unit_role": "normative",
+      "concepts": [
+        "育儿补贴信息管理系统",
+        "出生一件事联办",
+        "信息管理制度",
+        "信息安全责任",
+        "个人信息安全"
+      ],
+      "operators": []
+    },
+    {
+      "unit_id": "U-015",
+      "unit_role": "normative",
+      "concepts": [
+        "审计部门",
+        "财政部门",
+        "纪检监察机关"
+      ],
+      "operators": []
+    },
+    {
+      "unit_id": "U-016",
+      "unit_role": "normative",
+      "concepts": [
+        "省级政府",
+        "育儿补贴政策",
+        "实施方案",
+        "国家卫生健康委",
+        "财政部",
+        "管理规范",
+        "省级卫生健康部门、财政部门"
+      ],
+      "operators": [
+        {
+          "name": "制定实施方案",
+          "subject": "省级卫生健康部门、财政部门",
+          "return_type": "实施方案"
+        }
+      ]
+    },
+    {
+      "unit_id": "U-017",
+      "unit_role": "normative",
+      "concepts": [
+        "育儿补贴政策",
+        "补贴标准",
+        "市级行政区域",
+        "县级以下政府",
+        "提标",
+        "事前论证评估",
+        "民生政策备案",
+        "上一级主管部门",
+        "省级或市级政府部门"
+      ],
+      "operators": []
+    },
+    {
+      "unit_id": "U-018",
+      "unit_role": "normative",
+      "concepts": [
+        "孕产妇保健",
+        "住院分娩",
+        "婴幼儿预防接种",
+        "健康管理",
+        "户籍登记",
+        "社会保障卡申领",
+        "服务流程",
+        "政策宣传解读",
+        "群众知晓率",
+        "意见建议",
+        "育儿补贴制度实施情况"
+      ],
+      "operators": [
+        {
+          "name": "优化",
+          "subject": "服务流程",
+          "return_type": "服务流程"
+        }
+      ]
+    }
+  ]
+}

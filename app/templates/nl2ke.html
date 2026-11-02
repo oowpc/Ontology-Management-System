@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}NL2KE · 本体管理系统{% endblock %}
+{% block content %}
+<div class="nl2ke-page">
+<div class="page-head">
+  <div>
+    <h1>NL2KE · 自然语言 → KE</h1>
+    <span class="page-sub">OMS Archer 子本体 + NL2KE BYOS；每一步和产出都可见</span>
+  </div>
+  <div class="page-head-actions"><a class="btn" href="/libraries">切换本体库</a></div>
+</div>
+{% if not archer %}
+<div class="flash err">当前不是 Archer 库。请先在顶栏切换到 <b>Archer Benchmark</b>。</div>
+{% else %}
+<div class="nl2ke-workspace">
+  <section class="panel nl2ke-form-card">
+    <div class="nl2ke-panel-head"><div><h2>单次生成</h2><p class="muted">输入问题，生成 KE 并查看完整过程</p></div></div>
+    <form id="nl2ke-form" class="form nl2ke-form">
+      <label>数据库
+        <select id="db-id" required><option>加载中…</option></select>
+      </label>
+      <label>自然语言问题 *
+        <textarea id="question" rows="3" required placeholder="例如：List the name and age of each singer."></textarea>
+      </label>
+      <label>Evidence / 提示（可选）
+        <textarea id="evidence" rows="2"></textarea>
+      </label>
+
+      <details class="nl2ke-params" open>
+        <summary><strong>模型参数</strong> <span class="muted">直接传给 NL2KE BYOS</span></summary>
+        <div class="form-row">
+          <label>模型档
+            <input id="agent" value="{{ agent }}" list="agent-list">
+            <datalist id="agent-list">
+              <option value="qwen3_coder_flash">
+              <option value="qwen3_coder_plus">
+              <option value="qwen3_coder_30b">
+              <option value="qwen3_8b">
+              <option value="deepseek">
+              <option value="doubao_seed16">
+            </datalist>
+          </label>
+          <label>Reasoning
+            <select id="reasoning-effort">
+              <option value="">默认</option>
+              <option value="off">off</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </label>
+          <label>Temperature
+            <input id="temperature" type="number" min="0" max="2" step="0.1" value="0">
+          </label>
+          <label>最大重试
+            <input id="max-retries" type="number" min="0" max="5" value="2">
+          </label>
+          <label>Few-shot K
+            <input id="fewshot-k" type="number" min="1" max="8" value="5">
+          </label>
+        </div>
+        <div class="form-row">
+          <label class="inline"><input id="verify" type="checkbox" checked> verify</label>
+          <label class="inline"><input id="run-sql" type="checkbox" checked> 翻译并执行 SQL</label>
+          <label class="inline"><input id="use-fc" type="checkbox" checked> use_fc</label>
+          <label class="inline"><input id="refine-ontology" type="checkbox" checked> refine_ontology</label>
+          <label class="inline"><input id="verify-ontology" type="checkbox" checked> verify_ontology</label>
+          <label class="inline"><input id="verify-semantic" type="checkbox" checked> verify_semantic</label>
+          <label class="inline"><input id="fewshot" type="checkbox" checked> fewshot</label>
+        </div>
+      </details>
+
+      <label>加入标注批次（可选）
+        <select id="batch-select"><option value="">自动新建 NL2KE 批次</option></select>
+      </label>
+      <div class="actions">
+        <button class="btn primary" id="run-btn" type="submit">生成 KE</button>
+        <span class="muted">模型：{{ agent }}</span>
+      </div>
+    </form>
+
+    <div id="result" class="panel nl2ke-result" style="display:none"></div>
+
+    <details class="nl2ke-batch">
+      <summary><strong>批量运行</strong> <span class="muted">每行一个问题，串行调用 NL2KE</span></summary>
+      <label>问题列表
+        <textarea id="batch-questions" rows="5" placeholder="每行一个问题"></textarea>
+      </label>
+      <div class="actions"><button class="btn" id="load-questions" type="button">载入该库 Archer 题目</button><button class="btn" id="batch-btn" type="button">批量生成</button></div>
+      <div id="batch-result" class="muted"></div>
+    </details>
+  </section>
+
+  <aside class="panel nl2ke-history">
+    <div class="nl2ke-panel-head"><div><h2>最近运行</h2><p class="muted">点击查看每次运行的内部步骤</p></div></div>
+    <div id="history" class="nl2ke-history-list">
+      {% for r in runs %}
+      <div class="nl2ke-run-row">
+        <div class="nl2ke-run-main">
+          <div class="nl2ke-run-title"><strong>{{ r.db_id }}</strong>
+            <span class="badge {{ 'passed' if r.status in ('ok','accepted','in_batch') else 'failed' }}">{{ r.status }}</span>
+          </div>
+          <small>{{ r.created_at[:16] if r.created_at else '' }}</small>
+        </div>
+        <a class="btn" href="/nl2ke/runs/{{ r.id }}">查看</a>
+      </div>
+      {% else %}<div class="nl2ke-empty-small">还没有运行记录。</div>{% endfor %}
+    </div>
+  </aside>
+</div>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+const $ = (id) => document.getElementById(id);
+if ($('nl2ke-form')) {
+function esc(s){return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function params(){
+  return {
+    verify: $('verify').checked,
+    agent: $('agent').value || null,
+    reasoning_effort: $('reasoning-effort').value || null,
+    max_retries: parseInt($('max-retries').value, 10) || 0,
+    use_fc: $('use-fc').checked,
+    temperature: parseFloat($('temperature').value) || 0,
+    refine_ontology: $('refine-ontology').checked,
+    verify_ontology: $('verify-ontology').checked,
+    verify_semantic: $('verify-semantic').checked,
+    fewshot: $('fewshot').checked,
+    fewshot_k: parseInt($('fewshot-k').value, 10) || 5,
+    run_sql: $('run-sql').checked,
+  };
+}
+function historyRow(x){
+  const cls = ['ok','accepted','in_batch'].includes(x.status) ? 'passed' : 'failed';
+  const gold = x.gold_item_id ? `<a href="/gold/items">GOLD #${x.gold_item_id}</a>` : '';
+  const batch = x.annotation_batch_id ? `<a href="/annotation/batches/${x.annotation_batch_id}">批次 #${x.annotation_batch_id}</a>` : '';
+  const meta = [ (x.created_at||'').slice(0,16), x.params?.agent || '' ].filter(Boolean).join(' · ');
+  return `<div class="nl2ke-run-row">
+    <div class="nl2ke-run-main">
+      <div class="nl2ke-run-title"><strong>${esc(x.db_id)}</strong><span class="badge ${cls}">${esc(x.status)}</span></div>
+      <small>${esc(meta)}</small>
+    </div>
+    <div class="nl2ke-run-links">${gold}${batch}<a class="btn" href="/nl2ke/runs/${x.id}">查看</a></div>
+  </div>`;
+}
+async function loadHistory(){
+  const r = await fetch('/api/nl2ke/runs'); const d = await r.json();
+  $('history').innerHTML = (d.items || []).map(historyRow).join('') || '<p class="muted">还没有运行记录。</p>';
+}
+function stepsHtml(d){
+  return `<div class="panel"><h2>处理过程</h2>` + (d.steps || []).map((s, i) =>
+    `<details ${i < 3 ? 'open' : ''}><summary><strong>${i+1}. ${esc(s.label)}</strong></summary><pre>${esc(JSON.stringify(s.output, null, 2))}</pre></details>`).join('') + `</div>`;
+}
+function preJson(v){ return `<pre>${esc(JSON.stringify(v ?? null, null, 2))}</pre>`; }
+function traceHtml(t){
+  if (!t || !Object.keys(t).length) {
+    return `<div class="panel"><h2>NL2KE 内部步骤</h2><p class="muted">本次没有内部 trace（可能是旧运行记录，或 NL2KE debug 未启用）。</p></div>`;
+  }
+  const schema = t.schema || {};
+  const onto = t.ontology || {};
+  const meta = t.meta || {};
+  const few = t.fewshot || {};
+  const vl = t.verify_loop || {};
+  const history = (vl.history || []).map((h, i) => {
+    const cls = h.verify_passed ? 'passed' : 'failed';
+    const oc = h.ontology_check;
+    return `<details ${i === (vl.history || []).length - 1 ? 'open' : ''}>
+      <summary><strong>尝试 ${esc(h.attempt ?? i+1)}</strong>
+        <span class="badge ${cls}">${h.verify_passed ? '通过' : '未通过'}</span></summary>
+      <p class="muted">尝试 KE</p>${preJson(h.ke)}
+      <p class="muted">本体规则校验</p>${preJson(oc)}
+      <p class="muted">反构自然语言</p>${preJson(h.reconstructed_nl)}
+      <p class="muted">失败原因</p>${preJson(h.mismatch_reason)}
+    </details>`;
+  }).join('');
+  const raw = t.generation ? `<details><summary><strong>裸生成结果</strong></summary>${preJson(t.generation)}</details>` : '';
+  return `<div class="panel">
+    <h2>NL2KE 内部步骤 <span class="muted">${esc(t.mode || '')}</span></h2>
+    <details open><summary><strong>1. Schema</strong>
+      <span class="muted">${esc(schema.table_count ?? '')} 表 · ${esc(schema.chars ?? '')} 字符</span></summary>
+      ${preJson(schema)}
+    </details>
+    <details><summary><strong>2. 问题元信息</strong>
+      <span class="muted">${meta.enabled ? '已提取' : '未启用'}</span></summary>
+      ${preJson(meta)}
+    </details>
+    <details><summary><strong>3. 本体精炼</strong>
+      <span class="muted">${esc((onto.initial || {}).concept_count ?? '')} → ${esc((onto.refined || {}).concept_count ?? '')} 概念 · ${esc((onto.initial || {}).operator_count ?? '')} → ${esc((onto.refined || {}).operator_count ?? '')} 算子</span></summary>
+      ${preJson(onto)}
+    </details>
+    <details><summary><strong>4. Few-shot</strong>
+      <span class="muted">${few.enabled ? `k=${esc(few.k ?? '')}` : '未启用'} · ${esc((few.hits || []).length)} 条</span></summary>
+      ${preJson(few)}
+    </details>
+    <details open><summary><strong>5. 生成与校验</strong>
+      <span class="muted">${esc(vl.attempts ?? 0)} 次尝试</span></summary>
+      ${history || '<p class="muted">没有尝试记录。</p>'}
+    </details>
+    <details><summary><strong>6. 初始 Prompt</strong>
+      <span class="muted">${esc(vl.prompt_chars ?? 0)} 字符</span></summary>
+      <pre>${esc(vl.prompt || '')}</pre>
+    </details>
+    <details><summary><strong>7. 分阶段耗时</strong></summary>${preJson(t.timings)}</details>
+    ${raw}
+  </div>`;
+}
+function equivalenceHtml(e){
+  if (!e) return '<p class="muted">尚未校验。</p>';
+  const status = e.status || 'unknown';
+  const cls = status === 'proved_equal' ? 'passed' : (status === 'proved_different' ? 'failed' : '');
+  return `<p><span class="badge ${cls}">${esc(status)}</span>
+    <span class="muted">verdict=${esc(e.verdict || 'unknown')} · level=${esc(e.level || '')} · ${esc(e.total_ms ?? '')}ms</span></p>
+    <p class="muted">${esc(e.reason || '')}</p>
+    <details><summary>证据</summary><pre>${esc(JSON.stringify(e.evidence ?? null, null, 2))}</pre></details>
+    <details><summary>完整结果</summary><pre>${esc(JSON.stringify(e, null, 2))}</pre></details>`;
+}
+function resultHtml(d){
+  return `<h2>结果 <span class="badge ${d.status==='ok'?'passed':'failed'}">${esc(d.status)}</span></h2>
+    <pre>${esc(d.ke)}</pre>
+    <p class="muted">verify=${d.verify_passed} · attempts=${d.attempts} · ${d.latency_ms}ms · ${esc(d.request_id||'')}</p>
+    ${stepsHtml(d)}
+    <div class="actions"><a class="btn primary" href="/nl2ke/runs/${d.id}">分步查看 NL2KE 内部步骤</a></div>
+    ${traceHtml(d.trace)}
+    <details style="margin-top:10px"><summary>原始 NL2KE 响应</summary><pre>${esc(JSON.stringify(d.result || {}, null, 2))}</pre></details>
+    <div class="panel" style="margin-top:14px">
+      <h2>KE 等价校验 <span class="muted">可选</span></h2>
+      <p class="muted">参考 KE 只发送给 KE-matcher，不会传给 NL2KE。默认做表面归一化校验。</p>
+      <label>参考 KE
+        <textarea id="reference-ke" rows="5" placeholder="粘贴 gold / 人工确认的 KE"></textarea>
+      </label>
+      <div class="actions"><button class="btn" data-action="equivalence" data-id="${d.id}">校验</button></div>
+      <div id="equivalence-result">${equivalenceHtml(d.equivalence)}</div>
+    </div>
+    <div id="run-actions">
+      <button class="btn primary" data-action="accept" data-id="${d.id}">保存为 GOLD 草稿</button>
+      <button class="btn" data-action="to-batch" data-id="${d.id}">加入标注批次</button>
+      <button class="btn ghost" data-action="reject" data-id="${d.id}">拒绝</button>
+    </div>`;
+}
+async function act(action,id){
+  const bs = action === 'to-batch' ? $('batch-select').value : '';
+  const q = bs ? `?batch_id=${bs}` : '';
+  if (action === 'equivalence') {
+    const ref = ($('reference-ke')?.value || '').trim();
+    if (!ref) { $('equivalence-result').innerHTML = '<span class="badge failed">请先粘贴参考 KE</span>'; return; }
+    const btn = document.querySelector('button[data-action="equivalence"]');
+    if (btn) btn.disabled = true;
+    $('equivalence-result').textContent = '校验中…';
+    try {
+      const r = await fetch(`/api/nl2ke/runs/${id}/equivalence`, {
+        method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+        body:JSON.stringify({reference_ke:ref})
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || r.statusText);
+      $('equivalence-result').innerHTML = equivalenceHtml(d.equivalence);
+    } catch(e) {
+      $('equivalence-result').innerHTML = `<span class="badge failed">失败</span> ${esc(e.message)}`;
+    } finally { if (btn) btn.disabled = false; }
+    return;
+  }
+  const r = await fetch(`/api/nl2ke/runs/${id}/${action}${q}`, {method:'POST',headers:{'X-CSRF-Token':csrf}});
+  const d = await r.json();
+  if(!r.ok) { $('run-actions').innerHTML = `<span class="badge failed">${esc(d.detail)}</span>`; return; }
+  if (action === 'accept') $('run-actions').innerHTML = `<span class="badge passed">已保存 GOLD 草稿 #${d.gold_item_id}</span> <a class="btn" href="/gold/items">打开 GOLD</a>`;
+  else if (action === 'to-batch') $('run-actions').innerHTML = `<span class="badge passed">已加入批次 #${d.batch_id} / 单元 #${d.unit_id}</span> <a class="btn" href="${d.batch_url}">打开批次</a>`;
+  else $('run-actions').innerHTML = '<span class="badge failed">已拒绝</span>';
+  loadHistory();
+}
+async function loadDbs(){
+  try {
+    const r = await fetch('/api/nl2ke/databases'); const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    $('db-id').innerHTML = d.items.map(x => `<option value="${esc(x.db_id)}">${esc(x.db_id)}${x.has_sqlite ? ' · SQLite' : ''}</option>`).join('');
+  } catch(e) { $('db-id').innerHTML = `<option>${esc(e.message)}</option>`; }
+}
+async function loadBatches(){
+  try {
+    const r = await fetch('/api/nl2ke/batches'); const d = await r.json();
+    if (r.ok) $('batch-select').innerHTML = '<option value="">自动新建 NL2KE 批次</option>' +
+      (d.items || []).map(x => `<option value="${x.id}">${esc(x.batch_id)} · ${esc(x.name)}</option>`).join('');
+  } catch(e) { /* ignore */ }
+}
+$('nl2ke-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const btn = $('run-btn'); btn.disabled = true;
+  $('result').style.display = 'block'; $('result').innerHTML = '生成中…';
+  try {
+    const r = await fetch('/api/nl2ke/run', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      body:JSON.stringify({db_id:$('db-id').value, question:$('question').value,
+        evidence:$('evidence').value, ...params()})
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    $('result').innerHTML = resultHtml(d); loadHistory();
+  } catch(e) { $('result').innerHTML = `<span class="badge failed">失败</span> ${esc(e.message)}`; }
+  finally { btn.disabled = false; }
+});
+$('result').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-action]');
+  if (b) act(b.dataset.action, b.dataset.id);
+});
+$('load-questions').addEventListener('click', async () => {
+  try {
+    const r = await fetch(`/api/nl2ke/questions?db_id=${encodeURIComponent($('db-id').value)}&limit=50`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    $('batch-questions').value = (d.items || []).map(x => x.question).join('\n');
+    $('batch-questions').scrollIntoView({behavior:'smooth', block:'center'});
+  } catch(e) { $('batch-result').innerHTML = `<span class="badge failed">${esc(e.message)}</span>`; }
+});
+$('batch-btn').addEventListener('click', async () => {
+  const questions = $('batch-questions').value.split('\n').map(x => x.trim()).filter(Boolean);
+  if (!questions.length) return;
+  $('batch-btn').disabled = true; $('batch-result').textContent = '批量生成中（串行）…';
+  try {
+    const r = await fetch('/api/nl2ke/batch', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      body:JSON.stringify({db_id:$('db-id').value, questions, ...params()})
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    $('batch-result').innerHTML = `<p>批次 ${esc(d.batch_tag)}：${d.items.length} 条</p>` +
+      d.items.map(x => `<div class="list-row"><span><strong>${esc(x.question)}</strong><small>${esc(x.ke)}</small></span><span class="badge ${x.status==='ok'?'passed':'failed'}">${esc(x.status)}</span></div>`).join('');
+    loadHistory();
+  } catch(e) { $('batch-result').innerHTML = `<span class="badge failed">失败</span> ${esc(e.message)}`; }
+  finally { $('batch-btn').disabled = false; }
+});
+loadDbs(); loadBatches(); loadHistory();
+}
+</script>
+{% endblock %}

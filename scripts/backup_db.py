@@ -42,6 +42,14 @@ def backup_sqlite(src_path: str, backup_dir: Path) -> Path:
     return dst
 
 
+def verify_backup(path: Path) -> bool:
+    con = sqlite3.connect(str(path))
+    try:
+        return con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    finally:
+        con.close()
+
+
 def rotate(backup_dir: Path, keep: int) -> list[Path]:
     olds = sorted(backup_dir.glob("ontology-*.db"),
                   key=lambda p: p.stat().st_mtime, reverse=True)
@@ -68,8 +76,11 @@ def main() -> int:
     backup_dir = Path(src).parent / "backups"
     dst = backup_sqlite(src, backup_dir)
     size_kb = dst.stat().st_size // 1024
+    if not verify_backup(dst):
+        print(f"备份完整性校验失败：{dst}")
+        return 1
     removed = rotate(backup_dir, args.keep)
-    print(f"备份完成：{dst}（{size_kb} KB）")
+    print(f"备份完成：{dst}（{size_kb} KB，integrity_check=ok）")
     if removed:
         print(f"轮换清理 {len(removed)} 份旧备份（保留最近 {args.keep} 份）")
     return 0

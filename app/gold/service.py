@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..library_context import library_scoped
 from ..models import GoldArticle, GoldIssue, GoldSample, GoldScheduleCell, KeTask
 
 STAGES = [k for k, _ in settings.gold_stages]           # 阶段流水线（GOLD_STAGES 可配，建库前设定）
@@ -25,6 +26,7 @@ def list_groups(db: Session) -> list[str]:
 
 # ---------------- 篇级任务 ----------------
 
+@library_scoped
 def get_article_or_404(db: Session, aid: int) -> GoldArticle:
     a = db.get(GoldArticle, aid)
     if not a:

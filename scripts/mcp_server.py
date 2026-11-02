@@ -1,4 +1,4 @@
-"""MCP stdio server：把本体管理系统 API 暴露为 MCP 工具，agent 直连操控（47 个工具）。
+"""MCP stdio server：把本体管理系统 API 暴露为 MCP 工具，agent 直连操控（83 个工具）。
 
 启动（两种认证）：
   ONTOLOGY_TOKEN=ke_... python scripts/mcp_server.py
@@ -7,10 +7,11 @@
 环境变量：
   ONTOLOGY_BASE_URL  默认 http://127.0.0.1:8000
   ONTOLOGY_TOKEN     Bearer Token（POST /api/tokens 签发）
+  ONTOLOGY_LIBRARY   本体库 key（默认 co-baseline；写操作务必显式设置）
 
 Claude Code 接入示例（.mcp.json）：
   {"mcpServers": {"ontology": {"command": "python", "args": ["scripts/mcp_server.py"],
-    "env": {"ONTOLOGY_TOKEN": "ke_..."}}}}
+    "env": {"ONTOLOGY_TOKEN": "ke_...", "ONTOLOGY_LIBRARY": "co-baseline"}}}}
 """
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ except ModuleNotFoundError:  # mcp 2.x: FastMCP renamed to MCPServer
 
 BASE_URL = os.environ.get("ONTOLOGY_BASE_URL", "http://127.0.0.1:8000")
 TOKEN = os.environ.get("ONTOLOGY_TOKEN", "")
+LIBRARY = os.environ.get("ONTOLOGY_LIBRARY", "co-baseline")
 
 mcp = FastMCP("ontology-manager")
 
@@ -34,7 +36,8 @@ _client = None
 def build_client() -> httpx.Client:
     return httpx.Client(
         base_url=BASE_URL,
-        headers={"Authorization": f"Bearer {TOKEN}"},
+        headers={"Authorization": f"Bearer {TOKEN}",
+                 "X-Ontology-Library": LIBRARY},
         timeout=30,
     )
 
@@ -432,3 +435,362 @@ def keol_list_facts(pred: str = "", subj: str = "", value: str = "", limit: int 
 
 if __name__ == "__main__":
     mcp.run()  # stdio
+
+
+# ---------------- Agent JSON API: 标注工作流 ----------------
+
+@mcp.tool()
+def list_annotation_batches(q: str = "", state: str = "", page: int = 1, size: int = 50) -> dict:
+    """列出当前用户可见的标注批次（admin 全部；其他用户仅自己参与的批次）。"""
+    return api("GET", "/api/annotation/batches",
+               params={"q": q, "state": state, "page": page, "size": size})
+
+
+@mcp.tool()
+def get_annotation_batch(batch_id: int) -> dict:
+    """批次详情：状态、成员、统计、版本、权限标记。"""
+    return api("GET", f"/api/annotation/batches/{batch_id}")
+
+
+@mcp.tool()
+def create_annotation_batch(name: str, source_name: str, guide_version: str,
+                            source_checksum: str, annotator_a: str = "",
+                            annotator_b: str = "", lead: str = "",
+                            cross_checkers: list[str] | None = None,
+                            project_owner: str = "", arbiter: str = "",
+                            batch_id: str = "", source_version: str = "",
+                            source_type: str = "policy", domain: str = "通用",
+                            statistical_unit: str = "标注单元",
+                            acceptance_threshold: str = "", note: str = "") -> dict:
+    """创建标注批次（reviewer/admin）；cross_checkers 传用户名数组。"""
+    return api("POST", "/api/annotation/batches", json={
+        "batch_id": batch_id or None, "name": name, "source_name": source_name,
+        "source_version": source_version, "source_checksum": source_checksum,
+        "source_type": source_type, "domain": domain, "guide_version": guide_version,
+        "statistical_unit": statistical_unit,
+        "acceptance_threshold": acceptance_threshold, "annotator_a": annotator_a,
+        "annotator_b": annotator_b, "lead": lead,
+        "cross_checkers": cross_checkers or [], "project_owner": project_owner,
+        "arbiter": arbiter, "note": note,
+    })
+
+
+@mcp.tool()
+def add_annotation_units(batch_id: int, units: list[dict]) -> dict:
+    """向草稿批次导入/更新标注单元；units 每项至少有 unit_id。"""
+    return api("POST", f"/api/annotation/batches/{batch_id}/units", json={"units": units})
+
+
+@mcp.tool()
+def list_annotation_units(batch_id: int, page: int = 1, size: int = 100) -> dict:
+    """列出批次单元及 CO/对齐/KE/GOLD 完成标记。"""
+    return api("GET", f"/api/annotation/batches/{batch_id}/units",
+               params={"page": page, "size": size})
+
+
+@mcp.tool()
+def get_annotation_unit(unit_id: int) -> dict:
+    """单元详情：当前 CO/对齐/KE/GOLD、evidence、执行记录、当前用户可执行动作。"""
+    return api("GET", f"/api/annotation/units/{unit_id}")
+
+
+@mcp.tool()
+def add_annotation_evidence(unit_id: int, quote: str, source_id: str = "",
+                            locator: dict | None = None, language: str = "zh",
+                            kind: str = "text") -> dict:
+    """给标注单元添加 evidence。"""
+    return api("POST", f"/api/annotation/units/{unit_id}/evidence", json={
+        "source_id": source_id, "locator": locator, "quote": quote,
+        "language": language, "kind": kind,
+    })
+
+
+@mcp.tool()
+def submit_annotation_co(unit_id: int, side: str,
+                         concepts: list[str] | None = None,
+                         constants: list[str] | None = None,
+                         operators: list[str] | None = None,
+                         decision: str = "include", reason: str = "",
+                         evidence_ids: list[int] | None = None) -> dict:
+    """提交 A/B 侧 CO（双盲阶段；只能提交自己被分配的侧）。"""
+    return api("POST", f"/api/annotation/units/{unit_id}/co", json={
+        "side": side, "decision": decision, "concepts": concepts or [],
+        "constants": constants or [], "operators": operators or [],
+        "reason": reason, "evidence_ids": evidence_ids or [],
+    })
+
+
+@mcp.tool()
+def submit_annotation_alignment(unit_id: int, conclusion: str = "aligned",
+                                concepts: list[str] | None = None,
+                                constants: list[str] | None = None,
+                                operators: list[str] | None = None,
+                                concept_rows: list[dict] | None = None,
+                                operator_rows: list[dict] | None = None,
+                                differences: list[str] | None = None,
+                                reason: str = "", evidence_ids: list[int] | None = None) -> dict:
+    """提交逐题 CO 对齐结论；concept_rows/operator_rows 可直接驱动 CO_M 应用。"""
+    return api("POST", f"/api/annotation/units/{unit_id}/align", json={
+        "conclusion": conclusion, "concepts": concepts or [],
+        "constants": constants or [], "operators": operators or [],
+        "concept_rows": concept_rows, "operator_rows": operator_rows,
+        "differences": differences or [], "reason": reason,
+        "evidence_ids": evidence_ids or [],
+    })
+
+
+@mcp.tool()
+def submit_annotation_ke(unit_id: int, side: str, content: str,
+                         evidence_ids: list[int] | None = None,
+                         execution: dict | None = None,
+                         self_check: dict | None = None) -> dict:
+    """提交 A/B 侧 KE；Query 数据集建议同时传 execution。"""
+    return api("POST", f"/api/annotation/units/{unit_id}/ke", json={
+        "side": side, "content": content, "evidence_ids": evidence_ids or [],
+        "execution": execution, "self_check": self_check,
+    })
+
+
+@mcp.tool()
+def submit_annotation_gold(unit_id: int, content: str, source: str = "A",
+                           differences: list[str] | None = None, reason: str = "",
+                           evidence_ids: list[int] | None = None) -> dict:
+    """提交逐题 GOLD KE。"""
+    return api("POST", f"/api/annotation/units/{unit_id}/gold", json={
+        "source": source, "content": content, "differences": differences or [],
+        "reason": reason, "evidence_ids": evidence_ids or [],
+    })
+
+
+@mcp.tool()
+def run_annotation_query(unit_id: int, side: str) -> dict:
+    """对 SQL/SPARQL/LEAN 单元执行/编译并留痕。"""
+    return api("POST", f"/api/annotation/units/{unit_id}/run-query", json={"side": side})
+
+
+@mcp.tool()
+def advance_annotation_batch(batch_id: int, action: str,
+                             return_state: str = "") -> dict:
+    """状态推进：freeze/start_co/start_alignment/start_merge/start_ke/start_gold/start_cross/validate/pass/rework/resume。"""
+    body = {"action": action}
+    if return_state:
+        body["return_state"] = return_state
+    return api("POST", f"/api/annotation/batches/{batch_id}/state", json=body)
+
+
+@mcp.tool()
+def apply_annotation_alignments(batch_id: int, label: str = "") -> dict:
+    """CO_M 应用：把对齐结果写入全局概念/算子并生成版本草稿。"""
+    return api("POST", f"/api/annotation/batches/{batch_id}/apply",
+               json={"label": label or None})
+
+
+@mcp.tool()
+def create_annotation_version(batch_id: int, label: str, note: str = "",
+                              parent_version_id: int | None = None,
+                              import_batch_id: int | None = None) -> dict:
+    """创建本体版本草稿。"""
+    return api("POST", f"/api/annotation/batches/{batch_id}/versions", json={
+        "label": label, "note": note, "parent_version_id": parent_version_id,
+        "import_batch_id": import_batch_id,
+    })
+
+
+@mcp.tool()
+def freeze_annotation_version(version_id: int) -> dict:
+    """冻结本体版本（需校验通过）。"""
+    return api("POST", f"/api/annotation/versions/{version_id}/freeze")
+
+
+@mcp.tool()
+def release_annotation_version(version_id: int) -> dict:
+    """发布已冻结的本体版本（项目负责人/admin）。"""
+    return api("POST", f"/api/annotation/versions/{version_id}/release")
+
+
+@mcp.tool()
+def add_annotation_cross_review(batch_id: int, conclusion: str = "pass",
+                                scope: str = "", findings: list[str] | None = None) -> dict:
+    """记录交叉检查结论（pass/changes/block）。"""
+    return api("POST", f"/api/annotation/batches/{batch_id}/cross-review", json={
+        "scope": scope, "conclusion": conclusion, "findings": findings or [],
+    })
+
+
+# ---------------- Agent JSON API: 全局规则/个体 ----------------
+
+@mcp.tool()
+def list_rules(q: str = "", status: str = "", domain: str = "",
+               page: int = 1, size: int = 50) -> dict:
+    """分页检索全局规则。"""
+    return api("GET", "/api/rules", params={
+        "q": q, "status": status, "domain": domain, "page": page, "size": size,
+    })
+
+
+@mcp.tool()
+def get_rule(rule_id: int) -> dict:
+    """读取单条全局规则。"""
+    return api("GET", f"/api/rules/{rule_id}")
+
+
+@mcp.tool()
+def create_rule(name: str, head: list[dict], body: dict | None = None,
+                domain: str = "通用", description: str = "",
+                sources: list[str] | None = None, status: str = "approved",
+                source_uri: str = "", ontology_module: str = "") -> dict:
+    """创建全局规则；body/head 为 spec_v1 节点，结构引用用 OMS ID。"""
+    return api("POST", "/api/rules", json={
+        "name": name, "domain": domain, "description": description,
+        "body": body, "head": head, "sources": sources or [], "status": status,
+        "source_uri": source_uri or None, "ontology_module": ontology_module or None,
+    })
+
+
+@mcp.tool()
+def update_rule(rule_id: int, name: str = "", domain: str = "",
+                description: str = "", body: dict | None = None,
+                head: list[dict] | None = None, sources: list[str] | None = None,
+                status: str = "", source_uri: str = "",
+                ontology_module: str = "") -> dict:
+    """局部更新全局规则；只传需要变更的字段。"""
+    patch = {}
+    for key, value in (("name", name), ("domain", domain),
+                       ("description", description), ("status", status)):
+        if value:
+            patch[key] = value
+    if body is not None:
+        patch["body"] = body
+    if head is not None:
+        patch["head"] = head
+    if sources is not None:
+        patch["sources"] = sources
+    if source_uri:
+        patch["source_uri"] = source_uri
+    if ontology_module:
+        patch["ontology_module"] = ontology_module
+    return api("PATCH", f"/api/rules/{rule_id}", json=patch)
+
+
+@mcp.tool()
+def list_individuals(q: str = "", status: str = "", domain: str = "",
+                     concept_id: int | None = None, page: int = 1,
+                     size: int = 50) -> dict:
+    """分页检索全局个体。"""
+    params = {"q": q, "status": status, "domain": domain,
+              "page": page, "size": size}
+    if concept_id is not None:
+        params["concept_id"] = concept_id
+    return api("GET", "/api/individuals", params=params)
+
+
+@mcp.tool()
+def get_individual(individual_id: int) -> dict:
+    """读取单个全局个体。"""
+    return api("GET", f"/api/individuals/{individual_id}")
+
+
+@mcp.tool()
+def create_individual(name: str, concept_id: int | None = None, concept: str = "",
+                      domain: str = "通用", description: str = "",
+                      sources: list[str] | None = None, status: str = "approved",
+                      source_uri: str = "", ontology_module: str = "") -> dict:
+    """创建全局个体；concept_id 或 concept 名称二选一。"""
+    return api("POST", "/api/individuals", json={
+        "name": name, "concept_id": concept_id, "concept": concept or None,
+        "domain": domain, "description": description, "sources": sources or [],
+        "status": status, "source_uri": source_uri or None,
+        "ontology_module": ontology_module or None,
+    })
+
+
+@mcp.tool()
+def update_individual(individual_id: int, name: str = "", concept_id: int | None = None,
+                      concept: str = "", domain: str = "", description: str = "",
+                      sources: list[str] | None = None, status: str = "",
+                      source_uri: str = "", ontology_module: str = "") -> dict:
+    """局部更新全局个体。"""
+    patch = {}
+    for key, value in (("name", name), ("domain", domain),
+                       ("description", description), ("status", status)):
+        if value:
+            patch[key] = value
+    if concept_id is not None:
+        patch["concept_id"] = concept_id
+    if concept:
+        patch["concept"] = concept
+    if sources is not None:
+        patch["sources"] = sources
+    if source_uri:
+        patch["source_uri"] = source_uri
+    if ontology_module:
+        patch["ontology_module"] = ontology_module
+    return api("PATCH", f"/api/individuals/{individual_id}", json=patch)
+
+
+# ---------------- Agent JSON API: 本体建议箱 ----------------
+
+@mcp.tool()
+def list_ontology_suggestions(status: str = "") -> dict:
+    """列出 KEOL/agent 提交的本体建议（pending/approved/rejected/failed）。"""
+    return api("GET", "/api/keol/suggestions", params={"status": status})
+
+
+@mcp.tool()
+def get_ontology_suggestion(suggestion_id: int) -> dict:
+    """读取建议包详情（含 package/refs 与审批统计）。"""
+    return api("GET", f"/api/keol/suggestions/{suggestion_id}")
+
+
+@mcp.tool()
+def approve_ontology_suggestion(suggestion_id: int) -> dict:
+    """审批通过并应用到全局本体（reviewer/admin）。"""
+    return api("POST", f"/api/keol/suggestions/{suggestion_id}/approve")
+
+
+@mcp.tool()
+def reject_ontology_suggestion(suggestion_id: int, note: str = "") -> dict:
+    """驳回建议（reviewer/admin）。"""
+    return api("POST", f"/api/keol/suggestions/{suggestion_id}/reject",
+               json={"note": note})
+
+
+# ---------------- P2: 搜索 / 版本快照 / 可移植导出 ----------------
+
+@mcp.tool()
+def search_ontology(q: str, types: str = "", limit: int = 20) -> dict:
+    """跨概念/算子/规则/个体搜索；types 可选逗号分隔。"""
+    return api("GET", "/api/search", params={"q": q, "types": types, "limit": limit})
+
+
+@mcp.tool()
+def get_annotation_version_payload(version_id: int) -> dict:
+    """读取冻结/已发布版本的完整 payload（用于钉版本拉取/审计）。"""
+    return api("GET", f"/api/annotation/versions/{version_id}/payload")
+
+
+@mcp.tool()
+def diff_annotation_versions(version_id: int, base_version_id: int | None = None) -> dict:
+    """比较目标版本与基准版本（缺省父版本）。"""
+    params = {}
+    if base_version_id is not None:
+        params["base_version_id"] = base_version_id
+    return api("GET", f"/api/annotation/versions/{version_id}/diff", params=params)
+
+
+@mcp.tool()
+def rollback_annotation_version(version_id: int) -> dict:
+    """生成指向旧快照的回滚草稿（不覆盖全局）。"""
+    return api("POST", f"/api/annotation/versions/{version_id}/rollback")
+
+
+@mcp.tool()
+def export_portable_ontology() -> dict:
+    """带概念/算子 ID 的完整导出，供规则跨实例 remap。"""
+    return api("GET", "/api/export/portable")
+
+
+@mcp.tool()
+def ops_summary() -> dict:
+    """OMS 运行状态：DB/备份/证书/Token/待审建议/端口。"""
+    return api("GET", "/api/ops/summary")

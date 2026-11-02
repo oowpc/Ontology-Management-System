@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .actor import actor_token
 from .models import AuditLog, Concept, ConceptParent, GoldItem, Operator
 
 ENTITY_MODELS = {"concept": Concept, "operator": Operator, "gold_item": GoldItem}
@@ -50,7 +51,8 @@ def concept_snapshot(db: Session, c: Concept) -> dict:
 def log_change(db: Session, entity_type: str, entity_id: int, action: str,
                before: dict | None, after: dict | None, actor: str):
     db.add(AuditLog(entity_type=entity_type, entity_id=entity_id, action=action,
-                    before=before, after=after, actor=actor))
+                    before=before, after=after, actor=actor,
+                    token_name=actor_token.get()))
 
 
 def entity_history(db: Session, entity_type: str, entity_id: int, limit: int = 100):
@@ -65,7 +67,7 @@ def audit_dict(a: AuditLog) -> dict:
     return {
         "id": a.id, "entity_type": a.entity_type, "entity_id": a.entity_id,
         "action": a.action, "before": a.before, "after": a.after,
-        "actor": a.actor, "created_at": a.created_at,
+        "actor": a.actor, "token_name": a.token_name, "created_at": a.created_at,
     }
 
 

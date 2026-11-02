@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from datetime import datetime
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -17,8 +18,11 @@ from ..models import (AnnotationBatch, AnnotationCrossReview, AnnotationEvidence
                       CoAnnotation, CoMergeLog, GoldKe, Issue, KeAnnotation,
                       OntologyVersion, QueryRun, User)
 from ..security import current_user
-from ..templating import templates
+from ..templating import flash, templates
 from . import service
+from .archive import build_batch_archive
+from .dashboard import dashboard_data
+from ..issues.service import batch_issues_markdown
 
 router = APIRouter(prefix="/annotation", tags=["annotation"])
 
@@ -44,6 +48,15 @@ def _dict(obj) -> dict:
             v = v.isoformat()
         out[col.name] = v
     return out
+
+
+@router.get("/dashboard")
+def dashboard(request: Request, db: Session = Depends(get_db),
+              user: dict = Depends(current_user)):
+    data = dashboard_data(db)
+    return templates.TemplateResponse(request=request, name="annotation/dashboard.html", context={
+        "request": request, "user": user, **data,
+    })
 
 
 @router.get("")
@@ -77,6 +90,16 @@ async def create_batch(request: Request, db: Session = Depends(get_db),
     except HTTPException as e:
         return _back("/annotation", err=e.detail)
     return _back(f"/annotation/batches/{batch.id}", ok="批次已创建")
+
+
+@router.get("/batches/{bid}/issues.md")
+def batch_issues_md(bid: int, db: Session = Depends(get_db),
+                    user: dict = Depends(current_user)):
+    batch = service.get_batch_or_404(db, bid)
+    service.require_view_batch(db, batch, user)
+    text = batch_issues_markdown(db, batch)
+    return Response(text, media_type="text/markdown; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{batch.batch_id}-issues.md"'})
 
 
 @router.get("/batches/{bid}")
@@ -140,6 +163,24 @@ async def import_units(bid: int, request: Request, db: Session = Depends(get_db)
                  ok=f"单元导入完成：新建 {stats['created']} / 更新 {stats['updated']}")
 
 
+@router.post("/batches/{bid}/units/bulk-delete")
+async def bulk_delete_units(bid: int, request: Request, db: Session = Depends(get_db),
+                            user: dict = Depends(current_user)):
+    batch = service.get_batch_or_404(db, bid)
+    form = await request.form()
+    ids = []
+    for x in form.getlist("unit_ids"):
+        try:
+            ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    try:
+        res = service.bulk_delete_units(db, batch, ids, user)
+    except HTTPException as e:
+        return _back(f"/annotation/batches/{bid}", err=e.detail)
+    return _back(f"/annotation/batches/{bid}", ok=f"已删除 {res['units']} 个单元")
+
+
 @router.post("/batches/{bid}/state")
 async def advance_state(bid: int, request: Request, db: Session = Depends(get_db),
                         user: dict = Depends(current_user)):
@@ -170,6 +211,37 @@ async def create_version(bid: int, request: Request, db: Session = Depends(get_d
     except HTTPException as e:
         return _back(f"/annotation/batches/{bid}", err=e.detail)
     return _back(f"/annotation/batches/{bid}", ok="版本已创建（草稿）")
+
+
+@router.get("/versions/{vid}/diff")
+def version_diff_page(vid: int, request: Request, base_version_id: int | None = None,
+                      db: Session = Depends(get_db), user: dict = Depends(current_user)):
+    v = service.get_version_or_404(db, vid)
+    batch = service.get_batch_or_404(db, v.batch_id)
+    service.require_view_batch(db, batch, user)
+    bid = base_version_id or v.parent_version_id
+    base = service.get_version_or_404(db, bid) if bid else None
+    if base:
+        base_batch = service.get_batch_or_404(db, base.batch_id)
+        service.require_view_batch(db, base_batch, user)
+    diff = service.diff_version_payloads(base.payload, v.payload) if base and base.payload and v.payload else None
+    return templates.TemplateResponse(request=request, name="annotation/version_diff.html", context={
+        "request": request, "user": user, "version": v, "base": base, "diff": diff,
+        "can_manage": service.can_manage(db, batch, user),
+        "can_approve": service.can_project_approve(db, batch, user),
+    })
+
+
+@router.post("/versions/{vid}/rollback")
+def version_rollback_page(vid: int, request: Request, db: Session = Depends(get_db),
+                          user: dict = Depends(current_user)):
+    v = service.get_version_or_404(db, vid)
+    try:
+        new = service.rollback_version(db, v, user)
+    except HTTPException as e:
+        return _back(f"/annotation/versions/{vid}/diff", err=e.detail)
+    flash(request, f"已生成回滚草稿 {new.label}")
+    return _back("/annotation/versions", ok=f"已生成回滚草稿 {new.label}")
 
 
 @router.post("/versions/{vid}/freeze")
@@ -271,65 +343,7 @@ def export_batch(bid: int, db: Session = Depends(get_db),
     batch = service.get_batch_or_404(db, bid)
     if not (service.can_manage(db, batch, user) or service.can_project_approve(db, batch, user)):
         raise HTTPException(403, "仅组长/批次负责人/项目负责人可导出归档")
-    units = service.list_units(db, batch)
-    unit_ids = [u.id for u in units]
-    evidence = db.scalars(select(AnnotationEvidence).where(
-        AnnotationEvidence.batch_id == bid).order_by(AnnotationEvidence.id)).all()
-    co = db.scalars(select(CoAnnotation).where(CoAnnotation.batch_id == bid)
-                    .order_by(CoAnnotation.id)).all()
-    align = db.scalars(select(CoAlignment).where(CoAlignment.batch_id == bid)
-                       .order_by(CoAlignment.id)).all()
-    ke = db.scalars(select(KeAnnotation).where(KeAnnotation.batch_id == bid)
-                    .order_by(KeAnnotation.id)).all()
-    gold = db.scalars(select(GoldKe).where(GoldKe.batch_id == bid)
-                      .order_by(GoldKe.id)).all()
-    runs = db.scalars(select(QueryRun).where(QueryRun.batch_id == bid)
-                      .order_by(QueryRun.id)).all()
-    versions = db.scalars(select(OntologyVersion).where(OntologyVersion.batch_id == bid)
-                          .order_by(OntologyVersion.id)).all()
-    logs = db.scalars(select(CoMergeLog).where(CoMergeLog.batch_id == bid)
-                      .order_by(CoMergeLog.id)).all()
-    reviews = db.scalars(select(AnnotationCrossReview).where(
-        AnnotationCrossReview.batch_id == bid).order_by(AnnotationCrossReview.id)).all()
-    issue_cond = Issue.annotation_batch_id == bid
-    if unit_ids:
-        issue_cond = issue_cond | Issue.annotation_unit_id.in_(unit_ids)
-    issues = db.scalars(select(Issue).where(issue_cond).order_by(Issue.id)).all()
-    version_ids = [v.id for v in versions]
-    audit_cond = (AuditLog.entity_type == "annotation_batch") & (AuditLog.entity_id == bid)
-    if version_ids:
-        audit_cond = audit_cond | ((AuditLog.entity_type == "ontology_version")
-                                   & AuditLog.entity_id.in_(version_ids))
-    audits = db.scalars(select(AuditLog).where(audit_cond).order_by(AuditLog.id)).all()
-    files = {
-        "batch.json": {"batch": _dict(batch), "stats": service.batch_stats(db, batch),
-                       "members": [_dict(m) for m in service._members(db, bid)]},
-        "units.json": [_dict(u) for u in units],
-        "evidence.json": [_dict(e) for e in evidence],
-        "co_annotations.json": [_dict(c) for c in co],
-        "co_alignments.json": [_dict(a) for a in align],
-        "ke_annotations.json": [_dict(k) for k in ke],
-        "gold_kes.json": [_dict(g) for g in gold],
-        "query_runs.json": [_dict(r) for r in runs],
-        "ontology_versions.json": [_dict(v) for v in versions],
-        "merge_logs.json": [_dict(l) for l in logs],
-        "cross_reviews.json": [_dict(r) for r in reviews],
-        "issues.json": [_dict(i) for i in issues],
-        "audit.json": [_dict(a) for a in audits],
-    }
-    readme = ("# 标注批次归档\n\n"
-              f"- 批次：{batch.batch_id} {batch.name}\n"
-              f"- 状态：{service.STATE_LABELS.get(batch.state, batch.state)}\n"
-              f"- 来源：{batch.source_name} {batch.source_version}\n"
-              f"- 校验和：{batch.source_checksum}\n\n"
-              "文件：batch/units/evidence/CO/对齐/KE/GOLD/query_runs/versions/merge_logs/"
-              "cross_reviews/issues/audit。\n")
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for name, data in files.items():
-            z.writestr(name, json.dumps(data, ensure_ascii=False, indent=2))
-        z.writestr("README.md", readme)
-    return Response(buf.getvalue(), media_type="application/zip",
+    return Response(build_batch_archive(db, batch), media_type="application/zip",
                     headers={"Content-Disposition":
                              f'attachment; filename="annotation-{batch.batch_id}.zip"'})
 
@@ -360,6 +374,27 @@ def unit_detail(uid: int, request: Request, db: Session = Depends(get_db),
                 "STATE_LABELS": service.STATE_LABELS,
                 "UNIT_STATUS_LABELS": service.UNIT_STATUS_LABELS})
     return templates.TemplateResponse(request=request, name="annotation/unit.html", context=ctx)
+
+
+@router.post("/units/{uid}/nl2ke/{action}")
+def review_nl2ke(uid: int, action: str, request: Request,
+                 db: Session = Depends(get_db),
+                 user: dict = Depends(current_user)):
+    if action not in {"accept", "reject"}:
+        raise HTTPException(400, "action 取值 accept/reject")
+    unit = service.get_unit_or_404(db, uid)
+    batch = service.get_batch_or_404(db, unit.batch_id)
+    service.require_view_batch(db, batch, user)
+    payload = dict(unit.source_payload or {})
+    if not payload.get("nl2ke_run_id"):
+        raise HTTPException(400, "该单元不是 NL2KE 生成单元")
+    payload["nl2ke_status"] = "accepted" if action == "accept" else "rejected"
+    payload["nl2ke_reviewed_by"] = user["username"]
+    payload["nl2ke_reviewed_at"] = datetime.now().isoformat(timespec="seconds")
+    unit.source_payload = payload
+    db.commit()
+    flash(request, "NL2KE 结果已接受" if action == "accept" else "NL2KE 结果已拒绝")
+    return RedirectResponse(f"/annotation/units/{uid}", status_code=303)
 
 
 @router.post("/units/{uid}/evidence")

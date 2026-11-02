@@ -14,18 +14,17 @@
   <button class="btn" type="submit">过滤</button>
 </form>
 <p class="muted">共 {{ total }} 条</p>
+<div class="table-wrap">
 <table class="data">
   <thead>
-    <tr><th>ID</th><th>名称</th><th>主体概念</th><th>参数类型</th><th>返回类型</th><th>所属概念</th><th>状态</th><th>操作</th></tr>
+    <tr><th>ID</th><th>签名</th><th>主体概念</th><th>所属概念</th><th>状态</th><th>操作</th></tr>
   </thead>
   <tbody>
   {% for o in operators %}
   <tr>
     <td>{{ o.id }}</td>
-    <td>{{ o.name }}</td>
+    <td><code>{{ signatures.get(o.id, o.name) }}</code></td>
     <td><a href="/concepts/{{ o.subject_concept_id }}">{{ names.get(o.subject_concept_id, o.subject_concept_id) }}</a></td>
-    <td class="muted">{{ (o.param_types or [])|join('、') or '—' }}</td>
-    <td>{{ o.return_type }}</td>
     <td class="muted">{{ names.get(o.owner_concept_id or o.subject_concept_id, '—') }}</td>
     <td><span class="badge {{ o.status }}">{{ STATUS_LABELS.get(o.status, o.status) }}</span></td>
     <td class="ops">
@@ -38,10 +37,11 @@
     </td>
   </tr>
   {% else %}
-  <tr><td colspan="8" class="empty">没有匹配的算子</td></tr>
+  <tr><td colspan="6" class="empty">没有匹配的算子</td></tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% if pages > 1 %}
 <div class="pager">
   {% if page > 1 %}<a class="btn" href="?page={{ page - 1 }}{% if subject_concept_id %}&subject_concept_id={{ subject_concept_id }}{% endif %}{% if q %}&q={{ q|urlencode }}{% endif %}">上一页</a>{% endif %}

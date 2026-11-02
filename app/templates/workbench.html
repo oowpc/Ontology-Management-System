@@ -2,8 +2,15 @@
 {% block title %}工作台 · 本体管理系统{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>工作台</h1>
-  <span class="muted">{{ today }} · {{ user.username }}（{{ ROLE_LABELS.get(user.role, user.role) }}）</span>
+  <div>
+    <h1>工作台</h1>
+    <span class="page-sub">{{ today }} · {{ user.username }}（{{ ROLE_LABELS.get(user.role, user.role) }}）</span>
+  </div>
+  <div class="page-head-actions">
+    {% if user.role in ['reviewer','admin'] %}<a class="btn" href="/annotation">标注批次</a>{% endif %}
+    <a class="btn" href="/concepts">概念库</a>
+    <a class="btn" href="/ke/upload">KE 上传</a>
+  </div>
 </div>
 
 {# ---- 今日上传（标注员最关心） ---- #}
@@ -91,6 +98,8 @@
       <div class="wstat"><div class="n"><a href="/admin/users">{{ sys.users }}</a></div><div class="l">用户</div></div>
       <div class="wstat"><div class="n"><a href="/concepts">{{ sys.concepts }}</a></div><div class="l">概念</div></div>
       <div class="wstat"><div class="n"><a href="/operators">{{ sys.operators }}</a></div><div class="l">算子</div></div>
+      <div class="wstat"><div class="n"><a href="/rules">{{ sys.rules }}</a></div><div class="l">规则</div></div>
+      <div class="wstat"><div class="n"><a href="/individuals">{{ sys.individuals }}</a></div><div class="l">个体</div></div>
       <div class="wstat"><div class="n"><a href="/gold/items">{{ sys.gold_items }}</a></div><div class="l">成品</div></div>
     </div>
     <div class="wactions">

@@ -151,6 +151,15 @@ def _form_ctx(db: Session, request: Request, user: dict, **kw) -> dict:
     return {"request": request, "user": user, **_filters(db), **kw}
 
 
+@router.get("/issues/{iid}/export.md")
+def issue_export_md(iid: int, db: Session = Depends(get_db),
+                    user: dict = Depends(current_user)):
+    issue = service.get_issue_or_404(db, iid)
+    text = service.issue_markdown(db, issue)
+    return Response(text, media_type="text/markdown; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{issue.code}.md"'})
+
+
 @router.get("/issues/new")
 def issue_new_page(request: Request, entity_type: str | None = None, entity_id: int | None = None,
                    annotation_batch_id: int | None = None,

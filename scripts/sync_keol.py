@@ -183,11 +183,12 @@ def build_payload(src: str, include_review_pool: bool = False) -> tuple[dict, di
     return payload, stats
 
 
-def post_api(api: str, token: str, payload: dict) -> dict:
+def post_api(api: str, token: str, payload: dict, library: str = "co-baseline") -> dict:
     req = urllib.request.Request(
         api.rstrip("/") + "/api/import/json",
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}",
+                 "X-Ontology-Library": library},
         method="POST")
     with urllib.request.urlopen(req, timeout=60) as resp:
         return json.loads(resp.read().decode("utf-8"))
@@ -204,6 +205,7 @@ def main() -> int:
     ap.add_argument("--include-review-pool", action="store_true",
                     help="同时导入 _ 开头的评审候选池文件（条目以 draft 状态入库）")
     ap.add_argument("--batch-id", help="导入批次 ID（缺省自动生成）；用于批量回滚")
+    ap.add_argument("--library", default="co-baseline", help="本体库 key（默认 co-baseline）")
     args = ap.parse_args()
 
     from app.config import settings
@@ -238,9 +240,21 @@ def main() -> int:
         from sqlalchemy import select
 
         from app.db import SessionLocal
+        from app.libraries import get_library
+        from app.library_context import library_scope
         from app.models import Concept, Operator
         # dry-run 只读：不执行 init_db()/Alembic 迁移，避免顺带改库。
         # 若库结构落后，请先手动 `alembic upgrade head`。
+        probe = SessionLocal()
+        try:
+            dry_lib = get_library(probe, args.library)
+        finally:
+            probe.close()
+        if not dry_lib:
+            print(f"本体库不存在：{args.library}")
+            return 1
+        dry_scope = library_scope(dry_lib.id)
+        dry_scope.__enter__()
         db = SessionLocal()
         try:
             if want_vocab:
@@ -261,18 +275,31 @@ def main() -> int:
                       f"（谓词 {istats['preds']} 种、类型 {istats['types']} 种，将全量重建镜像表）")
         finally:
             db.close()
+            dry_scope.__exit__(None, None, None)
         return 0
 
     if args.api:
         if not args.token:
             print("--api 模式需要 --token 或环境变量 ONTOLOGY_TOKEN")
             return 1
-        result = post_api(args.api, args.token, payload)
+        result = post_api(args.api, args.token, payload, args.library)
         print("导入结果:", json.dumps(result, ensure_ascii=False))
         return 0
 
     from app.db import SessionLocal, init_db
+    from app.libraries import get_library
+    from app.library_context import library_scope
     init_db()
+    probe = SessionLocal()
+    try:
+        lib = get_library(probe, args.library)
+    finally:
+        probe.close()
+    if not lib:
+        print(f"本体库不存在：{args.library}")
+        return 1
+    scope = library_scope(lib.id)
+    scope.__enter__()
     db = SessionLocal()
     try:
         if want_vocab:
@@ -296,6 +323,7 @@ def main() -> int:
             print("镜像现状:", json.dumps(mirror_status(db), ensure_ascii=False))
     finally:
         db.close()
+        scope.__exit__(None, None, None)
     return 0
 
 

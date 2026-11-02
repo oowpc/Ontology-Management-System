@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
+from ..annotation import service as annotation_service
 from ..gold.service import SLOTS, STAGE_LABELS, STAGES, list_groups as gold_groups
+from ..libraries import list_libraries
 from ..llm import enabled as llm_enabled
 from ..security import require_role
 
@@ -47,16 +49,39 @@ WORKFLOWS = [
     {
         "name": "本体迁移与体检",
         "steps": [
-            "GET /api/export/json —— 全量导出（名称自然键，可移植）",
+            "GET /api/export/json —— 当前库全量导出（名称自然键，可移植；X-Ontology-Library 选库）",
             "POST /api/import/json —— 幂等 upsert（重复导入零变化）",
             "POST /api/health/run → GET /api/health/latest —— 四类体检（未使用/孤立/近义对/算子计数）",
             "GET /api/history —— 全部写操作的 before/after 快照；POST /api/concepts/{id}/rollback/{audit_id} 回滚（admin）",
+        ],
+    },
+    {
+        "name": "标注批次全流程",
+        "steps": [
+            "POST /api/annotation/batches {name, source_name, guide_version, source_checksum, annotator_a, annotator_b, lead, cross_checkers:[...], project_owner, ...}",
+            "POST /api/annotation/batches/{bid}/units {units:[{unit_id, source_id, source_type, raw_text, source_payload, ...}]}",
+            "POST /api/annotation/batches/{bid}/state {action:freeze|start_co|start_alignment|start_merge|start_ke|start_gold|start_cross|validate|pass}",
+            "POST /api/annotation/units/{uid}/co {side:A|B, concepts, constants, operators, evidence_ids}",
+            "POST /api/annotation/units/{uid}/align {conclusion, concept_rows, operator_rows, differences, evidence_ids}",
+            "POST /api/annotation/batches/{bid}/apply {label} → 草稿版本；POST /api/annotation/versions/{vid}/freeze|release",
+            "POST /api/annotation/units/{uid}/ke {side, content, execution, self_check}；POST /api/annotation/units/{uid}/run-query {side}（SQL/SPARQL/LEAN）",
+            "POST /api/annotation/units/{uid}/gold；POST /api/annotation/batches/{bid}/cross-review；最后 validate → pass；GET /api/annotation/batches/{bid}/export 下载 ZIP",
+        ],
+    },
+    {
+        "name": "全局规则/个体",
+        "steps": [
+            "GET /api/rules / /api/individuals —— 当前库分页检索（X-Ontology-Library 选库）",
+            "POST /api/rules {name, body, head, sources, status}；POST /api/individuals {name, concept_id|concept}",
+            "PATCH /api/rules/{id} / /api/individuals/{id} —— 局部更新",
+            "POST /api/import/json / GET /api/export/json —— 整包同步（含 rules/individuals，需 admin）",
         ],
     },
 ]
 
 INVARIANTS = {
     "auth": "Authorization: Bearer <token>（POST /api/tokens 自助签发，明文仅返回一次；代签需 admin）",
+    "library": "写操作必须显式带 X-Ontology-Library: <key>（或 ?library=<key>）；读操作不传时默认 co-baseline。库 key：fibo-cmns / co-baseline / pilot-yuer",
     "errors": "统一 {\"detail\": \"…\"}；400 参数 / 401 未认证 / 403 越权 / 404 不存在 / 409 幂等或重名冲突 / 422 校验",
     "idempotency_keys": {
         "concepts/operators": "名称自然键（重名 409）",
@@ -71,19 +96,29 @@ INVARIANTS = {
 }
 
 
+def _library_brief(lib) -> dict | None:
+    if lib is None:
+        return None
+    return {"id": lib.id, "key": lib.key, "name": lib.name, "kind": lib.kind}
+
+
 def _iter_routes(app):
     """遍历全部路由（新版 Starlette 的 include_router 为懒加载 _IncludedRouter，
-    需经 original_router 展开；Mount/静态目录无 methods 自动跳过）。"""
-    def walk(routes, prefix=""):
+    需经 original_router 展开；Mount/静态目录无 methods 自动跳过）。
+
+    注意：FastAPI 的 APIRoute.path 已经是包含 router prefix 的完整路径，
+    展开时不能再叠加 original_router.prefix，否则 manifest 会出现 /api/api/...。
+    """
+    def walk(routes):
         for r in routes:
             orig = getattr(r, "original_router", None)
             if orig is not None:
-                yield from walk(orig.routes, prefix + (getattr(orig, "prefix", "") or ""))
+                yield from walk(orig.routes)
                 continue
             path = getattr(r, "path", "")
             methods = getattr(r, "methods", None)
             if path and methods:
-                yield prefix + path, methods
+                yield path, methods
     yield from walk(app.routes)
 
 
@@ -102,9 +137,13 @@ def manifest(request: Request, db: Session = Depends(get_db),
         endpoints.setdefault(seg, []).append(f"{'|'.join(ms)} {path}")
     for v in endpoints.values():
         v.sort()
+    current = getattr(request.state, "library", None)
+    libs = list_libraries(db)
     return {
         "service": "本体管理系统（Ontology Management System）",
         "version": app.version,
+        "current_library": _library_brief(current),
+        "libraries": [_library_brief(x) for x in libs],
         "auth": INVARIANTS["auth"],
         "docs": {"openapi": "/openapi.json", "swagger": "/docs", "manual": "AGENTS.md（仓库根目录）"},
         "endpoint_count": sum(len(v) for v in endpoints.values()),
@@ -127,5 +166,10 @@ def manifest(request: Request, db: Session = Depends(get_db),
                 "suggest_threshold": settings.similarity_suggest_threshold,
             },
             "llm_enabled": llm_enabled(),
+            "annotation_states": [{"key": k, "label": v}
+                                  for k, v in annotation_service.STATE_LABELS.items()],
+            "annotation_unit_statuses": [{"key": k, "label": v}
+                                         for k, v in annotation_service.UNIT_STATUS_LABELS.items()],
+            "annotation_member_roles": annotation_service.MEMBER_ROLE_LABELS,
         },
     }

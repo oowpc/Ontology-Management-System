@@ -1,0 +1,138 @@
+# OMS × DataMaker
+
+## 入口
+
+`/datamaker`：选择 Archer 数据库、模型、题量、KE 类型、并发，后台启动 datamaker。
+
+任务页：
+
+- `/datamaker`
+- `/datamaker/jobs/{id}`
+
+## 流程
+
+```text
+OMS 当前 Archer 库
+  → 读取 OntologySource.sqlite_path
+  → 从 Concept/Operator.source_payload 导出 registry.json
+  → datamaker gen_ke.py（后台 subprocess）
+  → 读取 workdir/ke1.jsonl
+  → 创建 draft AnnotationBatch + AnnotationUnit
+```
+
+- 生成结果不会直接写入正式 GOLD
+- 草稿批次名称：`DataMaker #{job_id}`
+- 每条单元 `raw_text = question`，`source_payload` 保存 KE/evidence/type/tags/job_id
+
+## 任务与产物
+
+- 表：`datamaker_jobs`
+- 工作目录：`data/datamaker/job-{id}/`
+- 产物：`ke1.jsonl`、`registry.json`、`spec.json`、`coverage.json`、`run_manifest.jsonl`、`job.log`
+- 页面可下载产物、查看日志、取消任务
+- OMS 重启会把未完成且不在当前进程 active 集合内的任务标记为 `interrupted`
+
+## 配置
+
+`.env`：
+
+```text
+DATAMAKER_DIR=/home/oowpc/datamaker
+DATAMAKER_PYTHON=/home/oowpc/datamaker/.venv/bin/python
+DATAMAKER_WORK_ROOT=/home/oowpc/Ontology-Management-System/data/datamaker
+DATAMAKER_LLM_BASE_URL=...
+DATAMAKER_LLM_API_KEY=...
+DATAMAKER_LLM_MODEL=qwen3-coder-flash
+DATAMAKER_MODELS=qwen3-coder-flash
+DATAMAKER_KE2SQL_PATH=/home/oowpc/ke2sql-v031
+DATAMAKER_VERIFIER_PATH=/home/oowpc/Syntastic_and_Lexical-Verifier
+DATAMAKER_MAX_ACTIVE=1
+DATAMAKER_TIMEOUT=7200
+```
+
+`DATAMAKER_PYTHON` 使用 datamaker 自己的 venv；当前 venv 需要 `lark` 和 `sqlglot`。
+
+## 权限
+
+- 仅 Archer 库
+- 只有 reviewer/admin 可以启动和取消
+- 只允许配置白名单模型
+- 仅允许 OMS 已注册的 SQLite
+
+## 当前限制
+
+- 只接 `gen-ke`，不是 roundtrip/NLI/三方互比
+- 生成问题是 datamaker 的合成候选，不是人工审核数据
+- 同一库默认最多 1 个运行中任务
+- 不自动创建正式 GOLD
+- DataMaker 执行已从 Web 进程拆到 `oms-datamaker-worker.service`
+- Web 只入队；worker 取 `queued` 任务执行
+- worker 重启会把遗留 `running` 标记为 interrupted
+
+## P1：重试、产物和质量指标
+
+- 任务结束后可在详情页「重试」；会创建新任务，不复用旧 workdir
+- 取消：运行中任务发送 `POST /api/datamaker/jobs/{id}/cancel`
+- 产物下载：`ke1.jsonl`、`registry.json`、`spec.json`、`coverage.json`、`run_manifest.jsonl`、`job.log`
+- 任务列表显示：任务总数、成功/失败、生成条数、导入条数、任务成功率
+- 任务详情显示：
+  - 完成率
+  - 导入单元数
+  - 本体算子覆盖
+  - 内置算子覆盖
+  - KE 类型分布
+  - 未覆盖概念
+
+重试只允许已结束任务；生产默认每次重试生成独立任务，便于对比。
+
+## P2a：roundtrip / tri
+
+任务模式：
+
+- `gen-ke`：只生成 KE
+- `roundtrip`：`roundtrip_pipeline.py all`，KE→SQL→NL→KE→等价→NLI
+- `tri`：KE1/KE2/KE3 三方回环和等价分类
+
+新增参数：
+
+- `nl_source`：`ke` / `sql`
+- `cross_check`
+- `service_url`：必须为本机 ke2sql 服务
+- `timeout_s`
+- `DATAMAKER_Z3_PATH`
+
+产物新增：
+
+- `equiv.jsonl` / `nli.jsonl` / `report.json`
+- `equiv_tri.jsonl` / `report_tri.json` / `report_tri.md`
+- `sql.jsonl` / `nl2.jsonl` / `ke2.jsonl` / `ke3.jsonl`
+
+质量指标新增：
+
+- 等价对数、pass/mismatch
+- NLI paraphrase/neutral
+- tri identical / sem_eq / sem_diff
+- roundtrip/tri 仍只导入 `ke1.jsonl` 到草稿批次
+
+安全处理：
+
+- `roundtrip_pipeline.py` 不再把 LLM key 写入命令行日志
+- OMS 读取日志时会再脱敏 `--key` 和 `sk-*`
+
+
+## P2b：多库与 ontology-only
+
+- 非 Archer 库不再要求 SQLite，任务以 `db_id=__ontology__` 运行
+- 本体从 OMS 当前库导出，生成 ontology-only registry
+- 概念/算子名若不是 ASCII，会映射为 `Concept{id}` / `Operator{id}`
+- 映射写入 `name_map.json` 产物；批次中的 KE 使用映射后的名字
+- 只有当前库的 `OntologySource` 才允许走 SQLite 完整模式
+- 没有 SQLite 时跳过执行级校验；roundtrip/tri 的等价/NLI 结果可能为空
+
+## Worker claim/lease
+
+- `datamaker_jobs` 增加 `worker_id`、`heartbeat_at`
+- worker 用条件 UPDATE 原子 claim `queued` 任务
+- 执行期间定期刷新 heartbeat
+- worker 启动和每 60 秒清理 heartbeat 超时（默认 300 秒）的 `running`
+- 多 worker 不会同时执行同一任务；活跃 worker 的任务不会被误杀

@@ -106,3 +106,11 @@ def test_pages_render(client):
     assert "概念管理" in body and "使用次数" in body
     jid = concept_id_by_name(client, "机构")
     assert "绑定算子" in client.get(f"/concepts/{jid}").text
+
+
+def test_global_search_page(client):
+    login(client, "admin")
+    r = client.get("/search", params={"q": "机构"})
+    assert r.status_code == 200
+    assert "搜索" in r.text and "/concepts/" in r.text
+    assert client.get("/search").status_code == 200

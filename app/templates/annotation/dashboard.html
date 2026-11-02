@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}标注运营看板 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>标注运营看板</h1><span class="page-sub">当前本体库的全部批次进度、证据、Issue 与 LLM 审核</span></div>
+  <div class="page-head-actions"><a class="btn" href="/annotation">批次列表</a></div>
+</div>
+<div class="wgrid">
+  <div class="wcard"><h2>批次 / 单元</h2><div class="wstats">
+    <div class="wstat"><div class="n">{{ totals.batches }}</div><div class="l">批次</div></div>
+    <div class="wstat"><div class="n">{{ totals.units }}</div><div class="l">单元</div></div>
+  </div></div>
+  <div class="wcard"><h2>CO / 对齐</h2><div class="wstats">
+    <div class="wstat"><div class="n">{{ totals.co_a }}/{{ totals.co_b }}</div><div class="l">CO A/B</div></div>
+    <div class="wstat"><div class="n">{{ totals.aligned }}</div><div class="l">已对齐</div></div>
+  </div></div>
+  <div class="wcard"><h2>KE / GOLD</h2><div class="wstats">
+    <div class="wstat"><div class="n">{{ totals.ke_a }}/{{ totals.ke_b }}</div><div class="l">KE A/B</div></div>
+    <div class="wstat"><div class="n">{{ totals.gold }}</div><div class="l">GOLD</div></div>
+  </div></div>
+  <div class="wcard"><h2>质量与阻塞</h2><div class="wstats">
+    <div class="wstat"><div class="n">{{ totals.evidence_units }}</div><div class="l">有证据单元</div></div>
+    <div class="wstat"><div class="n">{{ totals.issues_open }}</div><div class="l">开放 Issue</div></div>
+    <div class="wstat"><div class="n">{{ totals.blocked }}</div><div class="l">阻塞单元</div></div>
+  </div></div>
+</div>
+<div class="table-meta"><span>LLM 审核报告：已生成 <strong>{{ totals.llm_audited }}</strong> 个批次</span><span>点击批次进入明细</span></div>
+<div class="table-wrap">
+<table class="data">
+  <thead><tr><th>批次</th><th>状态</th><th>进度</th><th>CO A/B</th><th>对齐</th><th>KE A/B</th><th>GOLD</th><th>证据</th><th>Issue</th><th>LLM 审核</th><th>阻塞</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td><a href="/annotation/batches/{{ r.batch.id }}"><strong>{{ r.batch.batch_id }}</strong></a><div class="muted">{{ r.batch.name }}</div></td>
+    <td><span class="badge state-{{ r.batch.state }}">{{ state_labels.get(r.batch.state, r.batch.state) }}</span></td>
+    <td><div class="progressbar sm"><div style="width:{{ r.progress }}%"></div></div><span class="muted">{{ r.progress }}%</span></td>
+    <td>{{ r.stats.co_a }}/{{ r.stats.co_b }}</td>
+    <td>{{ r.stats.aligned }}<span class="muted">/{{ r.stats.units }}</span>{% if r.pending %}<div class="muted">pending {{ r.pending }}</div>{% endif %}</td>
+    <td>{{ r.stats.ke_a }}/{{ r.stats.ke_b }}</td>
+    <td>{{ r.stats.gold }}</td>
+    <td>{{ r.evidence_units }}<span class="muted">/{{ r.stats.units }}（{{ r.evidence_pct }}%）</span></td>
+    <td>{{ r.issues_open }}<span class="muted">/{{ r.issues }}</span></td>
+    <td>{% if r.audit %}<span class="badge passed">已生成</span><div class="muted">{{ r.audit.kept_concepts }} 概念 / {{ r.audit.kept_operators }} 算子</div>{% else %}<span class="muted">未生成</span>{% endif %}</td>
+    <td>{% if r.blocked %}<strong style="color:var(--bad)">{{ r.blocked }}</strong>{% else %}0{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="11" class="empty">当前库还没有批次</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

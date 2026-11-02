@@ -101,6 +101,7 @@ def test_annotation_core_workflow(client):
     r = client.post(f"/annotation/units/{uid}/co", data={
         "side": "B", "decision": "include", "concepts": "CO_B_CONCEPT\n共享概念",
         "constants": "", "operators": "OP_B", "reason": "B 理由",
+        "evidence_ids": [str(evid)],
     }, follow_redirects=False)
     assert r.status_code == 303
     page_b = client.get(f"/annotation/units/{uid}")
@@ -162,6 +163,7 @@ def test_annotation_core_workflow(client):
         r = client.post(f"/annotation/units/{uid}/ke", data={
             "side": side, "content": f"KE_{side} = True",
             "execution": '{"ok": true}', "self_check": '{"ok": true}',
+            "evidence_ids": [str(evid)],
         }, follow_redirects=False)
         assert r.status_code == 303
 
@@ -173,7 +175,7 @@ def test_annotation_core_workflow(client):
     login(client, "reviewer")
     r = client.post(f"/annotation/units/{uid}/gold", data={
         "source": "merged", "content": "GOLD_KE = True", "differences": "合并",
-        "reason": "一致",
+        "reason": "一致", "evidence_ids": [str(evid)],
     }, follow_redirects=False)
     assert r.status_code == 303
 

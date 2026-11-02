@@ -10,7 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
+from .annotation.api import router as annotation_api_router
 from .annotation.router import router as annotation_router
+from .actor_middleware import ActorTokenMiddleware
 from .config import ensure_secret_key, settings
 from .csrf import CSRFMiddleware
 from .db import SessionLocal, init_db
@@ -19,10 +21,13 @@ from .gold.router import router as gold_router
 from .ke.review import router as ke_review_router
 from .ke.router import router as ke_router
 from .issues.router import router as issues_router
+from .libraries import OntologyLibraryMiddleware
+from .library_context import library_session
 from .questions.router import router as questions_router
-from .routers import (agent, auth, concepts, graph, health, io, keol, llm,
-                      operators, pages, paste, similarity, submissions, tmp,
-                      tokens, users)
+from .routers import (agent, auth, concepts, datamaker, graph, health, io, keol,
+                      libraries, library, library_api, llm, nl2ke, operators, ops,
+                      pages, paste, search, similarity, submissions, suggestions,
+                      tmp, tokens, users)
 from .security import LoginRequired
 from .seed import seed_if_empty
 from .templating import templates
@@ -31,13 +36,22 @@ _scheduler = None
 
 
 def _scheduled_health():
-    """定时体检（HEALTH_CRON，默认每日 03:30）。"""
+    """定时体检：每个本体库独立执行，不能依赖线程默认上下文。"""
+    import logging
     from .healthcheck import run_health
-    db = SessionLocal()
-    try:
-        run_health(db, "scheduled")
-    finally:
-        db.close()
+    from .models import OntologyLibrary
+
+    from sqlalchemy import select
+    with library_session(None) as db:
+        library_ids = [row.id for row in db.scalars(
+            select(OntologyLibrary).order_by(OntologyLibrary.id))]
+    for library_id in library_ids:
+        try:
+            with library_session(library_id) as db:
+                run_health(db, "scheduled", library_id=library_id)
+        except Exception:
+            logging.getLogger("app").exception(
+                "scheduled health failed for library %s", library_id)
 
 
 @asynccontextmanager
@@ -66,6 +80,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="本体管理系统", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CSRFMiddleware)  # 后注册的 SessionMiddleware 成为外层：先解 session 再校 CSRF
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key, same_site="lax")
+app.add_middleware(ActorTokenMiddleware)
+app.add_middleware(OntologyLibraryMiddleware)
 
 app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parent / "static"), name="static")
 
@@ -104,8 +120,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 app.include_router(auth.router)
+app.include_router(libraries.router)
 app.include_router(concepts.router)
 app.include_router(operators.router)
+app.include_router(library.router)
+app.include_router(library_api.router)
+app.include_router(suggestions.router)
 app.include_router(similarity.router)
 app.include_router(submissions.router)
 app.include_router(tmp.router)
@@ -124,6 +144,11 @@ app.include_router(gold_items_router)
 app.include_router(questions_router)
 app.include_router(issues_router)
 app.include_router(keol.router)
+app.include_router(nl2ke.router)
+app.include_router(datamaker.router)
 app.include_router(annotation_router)
+app.include_router(annotation_api_router)
+app.include_router(search.router)
+app.include_router(ops.router)
 app.include_router(pages.router)
 

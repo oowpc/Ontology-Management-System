@@ -1,4 +1,6 @@
 > 《CO/KE 手工标注质量管理 SOP（试行版）》v0.5 系统内副本。来源：https://feishu.cn/docx/Qhp4dxnP7olOSlxCUsDcI3Rjnph ，以飞书原文为准。同步时间：2026-10-27。
+>
+> 系统当前 As-Is 流程、权限门槛与实现边界见 [`docs/oms-workflow.md`](oms-workflow.md)。
 
 版本 v0.5（Issue 分层裁决版）
 v0.5 改动：重写第 6 章 Issue 管理，分类对齐《入口组 KE/CO 问题 issue 整理》，解决层级为组内两人 → 组长 → 技术讨论会。

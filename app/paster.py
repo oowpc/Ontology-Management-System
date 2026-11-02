@@ -20,9 +20,11 @@ from .services import create_concept, create_operator
 from .similarity import find_similar
 
 BUILTIN_TYPES = {"String", "Number", "Bool", "Date", "TimeInterval", "Real", "Name", "Concept"}
+BUILTIN_ALIASES = {"字符串": "String", "数字": "Number", "布尔": "Bool", "日期": "Date",
+                   "时间区间": "TimeInterval", "实数": "Real", "名称": "Name", "概念": "Concept"}
 
 RE_CONCEPT = re.compile(r"^concept\s+(\S+?)(?:\s*<:\s*(\S+))?$")
-RE_OP = re.compile(r"^op\s+([^\s(]+)\s*\(([^)]*)\)\s*:\s*(.+?)$")
+RE_OP = re.compile(r"^op\s+([^\s(]+)\s*\(([^)]*)\)\s*[:：]\s*(.+?)$")
 RE_CONST = re.compile(r"^const\s+(\S+)\s*:\s*(\S+)$")
 RE_FACT = re.compile(r"^([^\s(=]+)\s*\((.+?)\)\s*=\s*(.+?)$")
 RE_CONST_REF = re.compile(r"__[\w一-鿿]+")
@@ -102,8 +104,9 @@ def parse_keol(text: str) -> dict:
             out["operators"].append({
                 "name": m.group(1),
                 "subject": args[0] if args else "",      # 括号第一个 = 主体概念
-                "param_types": args[1:] if len(args) > 1 else [],
-                "return_type": m.group(3).strip(), "line": ln,
+                "param_types": [BUILTIN_ALIASES.get(x, x) for x in (args[1:] if len(args) > 1 else [])],
+                "return_type": BUILTIN_ALIASES.get(m.group(3).strip(), m.group(3).strip()),
+                "line": ln,
             })
             continue
         m = RE_CONST.match(line)
@@ -127,6 +130,7 @@ def parse_keol(text: str) -> dict:
 def check_type_expr(expr: str, known: set[str]) -> str | None:
     """返回 None=合法；否则返回错误原因。支持 内置类型 / 概念名 / Set[X] 嵌套。"""
     expr = (expr or "").strip()
+    expr = BUILTIN_ALIASES.get(expr, expr)
     if not expr:
         return "类型为空"
     m = RE_SET_EXPR.match(expr)

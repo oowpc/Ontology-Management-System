@@ -9,6 +9,15 @@ def _normalized(payload):
     payload.pop("exported_at", None)
     payload["concepts"] = sorted(payload["concepts"], key=lambda c: c["name"])
     payload["operators"] = sorted(payload["operators"], key=lambda o: (o["name"], o["subject"] or ""))
+    payload["rules"] = sorted(payload.get("rules") or [], key=lambda r: r["name"])
+    payload["individuals"] = sorted(payload.get("individuals") or [],
+                                     key=lambda i: (i.get("concept") or "", i["name"]))
+    for row in payload["rules"]:
+        row.pop("created_at", None)
+        row.pop("updated_at", None)
+    for row in payload["individuals"]:
+        row.pop("created_at", None)
+        row.pop("updated_at", None)
     return payload
 
 
@@ -19,9 +28,12 @@ def test_export_import_idempotent(client):
 
     # 直接清库（模拟导入到空环境）
     from app.db import SessionLocal
-    from app.models import Concept, ConceptParent, Operator, UsageStat
+    from app.models import (Concept, ConceptParent, OntologyIndividual,
+                            OntologyRule, Operator, UsageStat)
     db = SessionLocal()
     db.query(UsageStat).delete()
+    db.query(OntologyIndividual).delete()
+    db.query(OntologyRule).delete()
     db.query(Operator).delete()
     db.query(ConceptParent).delete()
     db.query(Concept).delete()
@@ -106,3 +118,11 @@ def test_io_page_and_form_import(client):
                            ensure_ascii=False),
     })
     assert r.status_code == 200 and "新建 1" in r.text
+
+
+def test_portable_export_has_ids(client):
+    login(client, "admin")
+    data = client.get("/api/export/portable").json()
+    assert data["concepts"] and data["operators"]
+    assert all("id" in c for c in data["concepts"])
+    assert all("id" in o for o in data["operators"])
