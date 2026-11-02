@@ -47,8 +47,12 @@ def ontology(db) -> dict:
     operators = {}
     for o in db.scalars(select(Operator)).all():
         subject = names.get(o.subject_concept_id)
-        sig = ([subject] if subject else []) + list(o.param_types or [])
-        operators[o.name] = {"type": "PROPERTY", "signature": sig}
+        spec = {"type": "PROPERTY"}
+        if subject:
+            spec["concept"] = subject
+        if o.param_types:
+            spec["signature"] = ([subject] if subject else []) + list(o.param_types or [])
+        operators[o.name] = spec
     return {"concepts": concepts, "operators": operators}
 
 
