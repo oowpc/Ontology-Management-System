@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}版本差异 · {{ version.label }}{% endblock %}
+{% block content %}
+<div class="breadcrumbs"><a href="/">工作台</a><span>/</span><a href="/annotation/versions">本体版本</a><span>/</span><strong>差异</strong></div>
+<div class="page-head">
+  <div>
+    <h1>版本差异</h1>
+    <span class="page-sub">{{ base.label if base else '无基准版本' }} → {{ version.label }}</span>
+  </div>
+  <div class="page-head-actions">
+    <a class="btn" href="/annotation/versions">← 版本列表</a>
+    {% if can_manage and version.status in ['frozen','released'] and version.payload %}
+    <form method="post" action="/annotation/versions/{{ version.id }}/rollback" onsubmit="return confirm('生成一个指向该快照的回滚草稿？不会自动覆盖全局。')">
+      <button class="btn" type="submit">生成回滚草稿</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% if not base or not diff %}
+<div class="empty-state"><div class="empty-icon">Δ</div><h2>无法比较</h2><p>需要两个带完整快照的版本，且当前版本存在父版本或指定 base_version_id。</p></div>
+{% else %}
+<div class="ann-grid">
+  <div class="panel"><div class="section-head"><h2>基准</h2></div>
+    <p><strong>{{ base.label }}</strong> · {{ base.status }}</p>
+    <p class="muted">{{ base.note or '无说明' }}</p>
+  </div>
+  <div class="panel"><div class="section-head"><h2>目标</h2></div>
+    <p><strong>{{ version.label }}</strong> · {{ version.status }}</p>
+    <p class="muted">{{ version.note or '无说明' }}</p>
+  </div>
+</div>
+{% set labels = {'concepts':'概念','operators':'算子','rules':'规则','individuals':'个体'} %}
+{% for kind in ['concepts','operators','rules','individuals'] %}
+{% set d = diff.get(kind, {}) %}
+<div class="panel">
+  <div class="section-head"><h2>{{ labels[kind] }} <span class="muted">+{{ d.get('added',0) }} / −{{ d.get('removed',0) }} / ~{{ d.get('changed',0) }}</span></h2></div>
+  <div class="ann-grid">
+    <div><h3 class="muted">新增</h3>{% for k in d.get('added_keys',[]) %}<span class="chip">{{ k }}</span>{% else %}<span class="muted">—</span>{% endfor %}</div>
+    <div><h3 class="muted">移除</h3>{% for k in d.get('removed_keys',[]) %}<span class="chip">{{ k }}</span>{% else %}<span class="muted">—</span>{% endfor %}</div>
+  </div>
+  {% if d.get('changed_keys') %}<p class="muted" style="margin-bottom:0">变更：{% for k in d.get('changed_keys',[]) %}<span class="chip">{{ k }}</span>{% endfor %}</p>{% endif %}
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}

@@ -2,7 +2,7 @@
 {% block title %}{{ o.name }} · 算子详情{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1><code>{{ o.name }}({{ (o.param_types or [])|join(', ') }}) : {{ o.return_type }}</code>
+  <h1><code>{{ signature }}</code>
     <span class="badge {{ o.status }}">{{ STATUS_LABELS.get(o.status, o.status) }}</span></h1>
   <div>
     {% if user.role in ['reviewer','admin'] %}<a class="btn" href="/operators/{{ o.id }}/edit">编辑</a>{% endif %}
@@ -14,8 +14,16 @@
     <tr><th>ID</th><td>{{ o.id }}</td></tr>
     <tr><th>主体概念</th><td><a href="/concepts/{{ o.subject_concept_id }}">{{ subject_name }}</a></td></tr>
     <tr><th>所属概念</th><td>{{ owner_name }}</td></tr>
-    <tr><th>参数类型</th><td>{{ (o.param_types or [])|join('、') or '—' }}</td></tr>
+    <tr><th>输入</th><td>
+      {% if inputs %}
+        {% for x in inputs %}
+          {% if x.concept_id %}<a href="/concepts/{{ x.concept_id }}">{{ x.name }}</a>{% else %}<code>{{ x.name }}</code>{% endif %}{% if not loop.last %}、{% endif %}
+        {% endfor %}
+      {% else %}—{% endif %}
+    </td></tr>
+    <tr><th>输出概念</th><td>{% if output_name %}<a href="/concepts/{{ o.output_concept_id }}">{{ output_name }}</a>{% else %}—{% endif %}</td></tr>
     <tr><th>返回类型</th><td>{{ o.return_type }}</td></tr>
+    {% if o.description %}<tr><th>说明 / 来源</th><td>{{ o.description }}</td></tr>{% endif %}
     <tr><th>来源</th><td>{% if o.ontology_module %}<span class="chip">{{ o.ontology_module }}</span> {% endif %}{% if o.source_uri %}<a class="source-uri" href="{{ o.source_uri }}" target="_blank" rel="noopener">{{ o.source_uri }}</a>{% elif not o.ontology_module %}—{% endif %}</td></tr>
     <tr><th>创建</th><td>{{ o.created_by }} · {{ o.created_at|dt }}</td></tr>
   </table>

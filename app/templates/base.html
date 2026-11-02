@@ -6,64 +6,133 @@
 <meta name="csrf-token" content="{{ request.session.get('csrf', '') if request is defined else '' }}">
 <title>{% block title %}本体管理系统{% endblock %}</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="/static/app.css?v=20261027a">
+<link rel="stylesheet" href="/static/app.css?v=20261031a">
 </head>
-<body>
-<header class="topbar">
-  <a class="brand" href="/">本体管理系统</a>
-  {% if user is defined and user %}
-  <nav>
-    <a href="/" class="{{ 'active' if request.url.path == '/' }}">工作台</a>
-    <span class="nav-sep"></span>
-    <a href="/questions" class="{{ 'active' if request.url.path.startswith('/questions') }}">题目</a>
-    <a href="/ke/upload" class="{{ 'active' if request.url.path.startswith('/ke/upload') }}">KE 上传</a>
-    <a href="/ke/dashboard" class="{{ 'active' if request.url.path.startswith('/ke/dashboard') }}">KE 看板</a>
-    <a href="/paste" class="{{ 'active' if request.url.path.startswith('/paste') }}">粘贴识别</a>
-    <a href="/issues" class="{{ 'active' if request.url.path.startswith('/issues') }}">Issue</a>
-    <span class="nav-sep"></span>
-    <a href="/concepts" class="{{ 'active' if request.url.path.startswith('/concepts') }}">概念</a>
-    <a href="/annotation" class="{{ 'active' if request.url.path.startswith('/annotation') }}">标注</a>
-    <a href="/operators" class="{{ 'active' if request.url.path.startswith('/operators') }}">算子</a>
-    <a href="/graph" class="{{ 'active' if request.url.path == '/graph' }}">图</a>
-    <a href="/keol" class="{{ 'active' if request.url.path.startswith('/keol') }}">KEOL 库</a>
-    <a href="/tmp" class="{{ 'active' if request.url.path.startswith('/tmp') }}">TMP 回填</a>
-    <span class="nav-sep"></span>
-    {% if user.role in ['reviewer','admin'] %}
-    <a href="/review" class="{{ 'active' if request.url.path.startswith('/review') }}">审核</a>
-    <a href="/ke/review" class="{{ 'active' if request.url.path.startswith('/ke/review') }}">KE 复核</a>
-    {% endif %}
-    <a href="/submit" class="{{ 'active' if request.url.path.startswith('/submit') }}">提交</a>
-    <a href="/gold/items" class="{{ 'active' if request.url.path.startswith('/gold/items') }}">成品库</a>
-    <a href="/gold" class="{{ 'active' if request.url.path.startswith('/gold') and not request.url.path.startswith('/gold/items') }}">GOLD</a>
-    <a href="/history" class="{{ 'active' if request.url.path.startswith('/history') }}">变更日志</a>
-    <a href="/static/docs/co-ke-annotation-sop.html" target="_blank" rel="noopener">标注 SOP</a>
-    <a href="{{ KEOL_CONSOLE_URL }}" target="_blank" rel="noopener">KEOL 加工台</a>
-    {% if user.role in ['reviewer','admin'] %}
-    <span class="nav-sep"></span>
-    <a href="/health" class="{{ 'active' if request.url.path.startswith('/health') }}">体检</a>
-    {% endif %}
-    {% if user.role == 'admin' %}
-    <a href="/io" class="{{ 'active' if request.url.path.startswith('/io') }}">导入导出</a>
-    <a href="/admin/users" class="{{ 'active' if request.url.path.startswith('/admin/users') }}">用户</a>
-    {% endif %}
-  </nav>
-  <div class="who">
-    <span>{{ user.username }} · {{ ROLE_LABELS.get(user.role, user.role) }}</span>
-    <a href="/logout">退出</a>
+<body class="{{ 'auth-page' if not (user is defined and user) else '' }}">
+{% macro side_link(href, label, active_prefix=None) -%}
+<a class="side-link {{ 'active' if request.url.path == href or (active_prefix and request.url.path.startswith(active_prefix)) }}" href="{{ href }}">{{ label }}</a>
+{%- endmacro %}
+{% if user is defined and user %}
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <a class="side-brand" href="/" title="本体管理系统">
+      <span class="brand-mark">O</span>
+      <span class="brand-text">本体管理系统<small>Ontology Ops</small></span>
+    </a>
+    <nav class="side-nav" aria-label="主导航">
+      {{ side_link('/', '工作台') }}
+      <div class="nav-group">
+        <div class="nav-group-title">本体</div>
+        {{ side_link('/concepts', '概念', '/concepts') }}
+        {{ side_link('/operators', '算子', '/operators') }}
+        {{ side_link('/rules', '规则', '/rules') }}
+        {{ side_link('/individuals', '个体', '/individuals') }}
+        {{ side_link('/graph', '概念图') }}
+        {{ side_link('/submit', '提交概念') }}
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">标注与审核</div>
+        {{ side_link('/annotation/dashboard', '标注看板') }}
+        {{ side_link('/annotation', '标注批次', '/annotation/batches') }}
+        {{ side_link('/annotation/versions', '本体版本', '/annotation/versions') }}
+        {{ side_link('/issues', 'Issue') }}
+        {% if user.role in ['reviewer','admin'] %}
+        {{ side_link('/review', '提交审核') }}
+        {{ side_link('/ke/review', 'KE 复核') }}
+        {{ side_link('/suggestions', '本体建议') }}
+        {% endif %}
+        <a class="side-link" href="/static/docs/co-ke-annotation-sop.html" target="_blank" rel="noopener">标注 SOP <span class="nav-ext">外</span></a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">题库与成果</div>
+        {{ side_link('/questions', '题目') }}
+        {{ side_link('/ke/upload', 'KE 上传') }}
+        {{ side_link('/ke/dashboard', 'KE 看板') }}
+        {{ side_link('/paste', '粘贴识别') }}
+        {{ side_link('/tmp', 'TMP 回填') }}
+        {{ side_link('/gold/items', '成品库') }}
+        {{ side_link('/gold', 'GOLD 看板') }}
+        {{ side_link('/datamaker', '数据生成') }}
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">NL2KE</div>
+        {{ side_link('/nl2ke', 'NL2KE 生成') }}
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">KEOL</div>
+        {{ side_link('/keol', 'KEOL 实例库') }}
+        <a class="side-link" href="{{ KEOL_CONSOLE_URL }}" target="_blank" rel="noopener">KEOL 加工台 <span class="nav-ext">外</span></a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">系统</div>
+        {{ side_link('/libraries', '本体库与权限') }}
+        {{ side_link('/history', '变更日志') }}
+        {% if user.role in ['reviewer','admin'] %}
+        {{ side_link('/health', '本体体检') }}
+        {% endif %}
+        {% if user.role == 'admin' %}
+        {{ side_link('/io', '导入导出') }}
+        {{ side_link('/admin/users', '用户与组') }}
+        {{ side_link('/ops', '运行状态') }}
+        {% endif %}
+      </div>
+    </nav>
+    <div class="side-foot">OMS · 内网工作台</div>
+  </aside>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+  <div class="app-main">
+    <header class="topbar">
+      <button class="menu-btn" id="menu-btn" type="button" aria-label="打开导航" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      {% if request.state.library is defined and request.state.library %}
+      <form class="library-switch" action="/library/switch" method="get" title="切换当前本体库">
+        <span class="library-switch-label">本体库</span>
+        <select name="key" onchange="this.form.submit()" aria-label="当前本体库">
+          {% for lib in request.state.libraries %}
+          <option value="{{ lib.key }}" {{ 'selected' if lib.id == request.state.library.id else '' }}>{{ lib.name }}</option>
+          {% endfor %}
+        </select>
+        <input type="hidden" name="next" value="{{ request.url.path }}">
+        <noscript><button type="submit">切换</button></noscript>
+      </form>
+      {% endif %}
+      <form class="global-search" action="/search" method="get" role="search">
+        <input type="search" name="q" value="{{ request.query_params.get('q', '') if request.url.path == '/search' else '' }}" placeholder="搜索概念 / 算子 / 规则 / 个体" aria-label="全局搜索">
+        <button type="submit" aria-label="搜索">搜索</button>
+      </form>
+      <div class="topbar-right">
+        <span class="build-tag">OMS</span>
+        <details class="user-menu">
+          <summary>
+            <span class="avatar">{{ user.username[:1]|upper }}</span>
+            <span class="user-meta">{{ user.username }}<small>{{ ROLE_LABELS.get(user.role, user.role) }}</small></span>
+          </summary>
+          <div class="user-pop">
+            <a href="/history">变更日志</a>
+            <a href="/logout">退出登录</a>
+          </div>
+        </details>
+      </div>
+    </header>
+    <main class="wrap">
+      {% for f in request.session.pop('_flash', []) %}
+      <div class="flash {{ f.kind }}">{{ f.msg }}</div>
+      {% endfor %}
+      {% if request.query_params.get('ok') %}<div class="flash ok">{{ request.query_params.get('ok') }}</div>{% endif %}
+      {% if request.query_params.get('err') %}<div class="flash err">{{ request.query_params.get('err') }}</div>{% endif %}
+{% else %}
+<main class="auth-wrap">
+{% endif %}
+{% block content %}{% endblock %}
+{% if user is defined and user %}
+    </main>
   </div>
-  {% endif %}
-</header>
-<main class="wrap">
-  {# 一次性消息：session flash（消费即清，刷新不重现）+ 兼容旧的 ?ok=/?err= query 传法 #}
-  {% if request is defined %}
-    {% for f in request.session.pop('_flash', []) %}
-    <div class="flash {{ f.kind }}">{{ f.msg }}</div>
-    {% endfor %}
-  {% endif %}
-  {% if request.query_params.get('ok') %}<div class="flash ok">{{ request.query_params.get('ok') }}</div>{% endif %}
-  {% if request.query_params.get('err') %}<div class="flash err">{{ request.query_params.get('err') }}</div>{% endif %}
-  {% block content %}{% endblock %}
+</div>
+{% else %}
 </main>
+{% endif %}
 {% block scripts %}{% endblock %}
 <script>
 // P0 · CSRF：给所有 POST 表单自动补隐藏域（含 multipart 上传表单）
@@ -77,6 +146,48 @@ document.addEventListener("DOMContentLoaded", function () {
     var i = document.createElement("input");
     i.type = "hidden"; i.name = "csrf_token"; i.value = t;
     f.appendChild(i);
+  });
+});
+</script>
+<script>
+// 侧栏：桌面折叠 / 移动端抽屉；状态存 localStorage
+(function () {
+  var body = document.body;
+  var btn = document.getElementById("menu-btn");
+  var backdrop = document.getElementById("sidebar-backdrop");
+  if (!btn) return;
+  var mobile = window.matchMedia("(max-width: 960px)");
+  function closeMobile() {
+    body.classList.remove("sidebar-open");
+    btn.setAttribute("aria-expanded", "false");
+  }
+  btn.addEventListener("click", function () {
+    var open = body.classList.toggle("sidebar-open");
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  if (backdrop) backdrop.addEventListener("click", closeMobile);
+  document.querySelectorAll(".side-link").forEach(function (a) {
+    a.addEventListener("click", function () { if (mobile.matches) closeMobile(); });
+  });
+  mobile.addEventListener("change", closeMobile);
+})();
+</script>
+<script>
+// 轻量标签页：页面内 [data-tabgroup] + [data-tab] + [data-panel]
+document.addEventListener("DOMContentLoaded", function () {
+  document.querySelectorAll("[data-tabgroup]").forEach(function (group) {
+    var tabs = group.querySelectorAll("[data-tab]");
+    var panels = group.querySelectorAll("[data-panel]");
+    function activate(name) {
+      tabs.forEach(function (t) { t.classList.toggle("active", t.dataset.tab === name); });
+      panels.forEach(function (p) { p.hidden = p.dataset.panel !== name; });
+    }
+    tabs.forEach(function (t) {
+      t.addEventListener("click", function () { activate(t.dataset.tab); });
+    });
+    var initial = (location.hash || "").replace("#", "");
+    var first = tabs.length ? tabs[0].dataset.tab : "";
+    activate([...tabs].some(function (t) { return t.dataset.tab === initial; }) ? initial : first);
   });
 });
 </script>

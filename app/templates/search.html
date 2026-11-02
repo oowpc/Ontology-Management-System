@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}搜索 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="breadcrumbs"><a href="/">工作台</a><span>/</span><strong>搜索</strong></div>
+<div class="page-head">
+  <div>
+    <h1>搜索</h1>
+    <span class="page-sub">{% if q %}“{{ q }}” 的跨模块结果 · {{ total }} 条{% else %}从概念、算子、规则、个体中查找{% endif %}</span>
+  </div>
+</div>
+<div class="search-page">
+  <form action="/search" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="输入名称、定义或描述…" autofocus>
+    <button class="btn primary" type="submit">搜索</button>
+  </form>
+  {% if q %}
+    {% if not total %}
+    <div class="empty-state">
+      <div class="empty-icon">?</div>
+      <h2>没有找到匹配项</h2>
+      <p>试试更短的关键词，或从左侧导航进入具体模块。</p>
+    </div>
+    {% endif %}
+    {% if results.concepts %}
+    <div class="search-group"><h2>概念（{{ results.concepts|length }}）</h2><div class="search-card">
+      {% for c in results.concepts %}<a class="search-result" href="/concepts/{{ c.id }}"><span><span class="sr-title">{{ c.name }}</span><span class="sr-meta"> · {{ c.domain or '通用' }}</span></span><span class="sr-meta">概念 #{{ c.id }}</span></a>{% endfor %}
+    </div></div>
+    {% endif %}
+    {% if results.operators %}
+    <div class="search-group"><h2>算子（{{ results.operators|length }}）</h2><div class="search-card">
+      {% for o in results.operators %}<a class="search-result" href="/operators?q={{ o.name|urlencode }}"><span><span class="sr-title">{{ o.name }}</span><span class="sr-meta"> · {{ o.return_type }}</span></span><span class="sr-meta">算子 #{{ o.id }}</span></a>{% endfor %}
+    </div></div>
+    {% endif %}
+    {% if results.rules %}
+    <div class="search-group"><h2>规则（{{ results.rules|length }}）</h2><div class="search-card">
+      {% for r in results.rules %}<a class="search-result" href="/rules/{{ r.id }}"><span><span class="sr-title">{{ r.name }}</span><span class="sr-meta"> · {{ r.domain }}</span></span><span class="sr-meta">规则 #{{ r.id }}</span></a>{% endfor %}
+    </div></div>
+    {% endif %}
+    {% if results.individuals %}
+    <div class="search-group"><h2>个体（{{ results.individuals|length }}）</h2><div class="search-card">
+      {% for i in results.individuals %}<a class="search-result" href="/individuals/{{ i.id }}"><span><span class="sr-title">{{ i.name }}</span><span class="sr-meta"> · 个体</span></span><span class="sr-meta">#{{ i.id }}</span></a>{% endfor %}
+    </div></div>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

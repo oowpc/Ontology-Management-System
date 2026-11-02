@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}DataMaker #{{ job.id }} · 本体管理系统{% endblock %}
+{% block content %}
+<div class="datamaker-page">
+  <div class="page-head">
+    <div>
+      <div class="dm-eyebrow">DATAMAKER · JOB #{{ job.id }}</div>
+      <h1>{{ job.db_id }} 数据生成</h1>
+      <span class="page-sub">{{ job.model }} · {{ job.mode }} · {{ job.n }} 题 · {{ job.workers }} 并发</span>
+    </div>
+    <div class="page-head-actions">
+      <a class="btn" href="/datamaker">返回数据生成</a>
+      {% if job.status in ('queued','running') and user.role in ('reviewer','admin') %}
+      <button class="btn" id="dm-cancel" type="button">取消任务</button>
+      {% elif user.role in ('reviewer','admin') %}
+      <button class="btn" id="dm-retry" type="button">重试</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="dm-layout">
+    <section class="panel dm-main">
+      <div class="dm-status-head">
+        <div>
+          <h2>任务状态</h2>
+          <p class="muted">进度 {{ job.progress }} / {{ job.n }}</p>
+        </div>
+        <span id="dm-status" class="badge {{ 'passed' if job.status == 'succeeded' else ('failed' if job.status in ('failed','interrupted','cancelled') else '') }}">{{ job.status }}</span>
+      </div>
+      <div class="dm-progress dm-progress-lg"><span id="dm-progress" style="width:{{ [100, (job.progress * 100 // job.n) if job.n else 0]|min }}%"></span></div>
+
+      {% if job.error %}<div class="flash err">{{ job.error }}</div>{% endif %}
+      {% if job.annotation_batch_id %}
+      <div class="dm-result-link"><span class="badge passed">已导入草稿批次</span>
+        <a class="btn" href="/annotation/batches/{{ job.annotation_batch_id }}">打开批次 #{{ job.annotation_batch_id }}</a>
+      </div>
+      {% endif %}
+
+      <h2>质量指标</h2>
+      <div class="dm-quality">
+        <div class="dm-quality-item"><small>完成率</small><strong>{{ quality.completion_rate }}%</strong><span>{{ quality.generated }} / {{ quality.requested }}</span></div>
+        <div class="dm-quality-item"><small>导入</small><strong>{{ quality.imported }}</strong><span>草稿单元</span></div>
+        <div class="dm-quality-item"><small>本体算子覆盖</small><strong>{{ quality.ontology_used }} / {{ quality.ontology_total }}</strong><span>{{ ((quality.ontology_used * 100 / quality.ontology_total) if quality.ontology_total else 0)|round(1) }}%</span></div>
+        <div class="dm-quality-item"><small>内置算子覆盖</small><strong>{{ quality.builtin_used }} / {{ quality.builtin_total }}</strong><span>{{ ((quality.builtin_used * 100 / quality.builtin_total) if quality.builtin_total else 0)|round(1) }}%</span></div>
+      </div>
+      {% if job.mode != 'gen-ke' %}
+      <div class="dm-quality">
+        <div class="dm-quality-item"><small>等价对数</small><strong>{{ quality.equiv_pairs }}</strong><span>pass {{ quality.equiv_pass }} · mismatch {{ quality.equiv_mismatch }}</span></div>
+        <div class="dm-quality-item"><small>NLI</small><strong>{{ quality.nli_paraphrase }} paraphrase</strong><span>{{ quality.nli_neutral }} neutral · verdict {{ quality.verdict_consistent }}</span></div>
+        {% if job.mode == 'tri' %}
+        <div class="dm-quality-item"><small>Tri identical</small><strong>{{ quality.tri_identical }}</strong><span>sem_eq {{ quality.tri_equiv }} · diff {{ quality.tri_diff }}</span></div>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if quality.types %}
+      <div class="dm-chip-row">{% for k, v in quality.types.items() %}<span class="chip">{{ k }} · {{ v }}</span>{% endfor %}</div>
+      {% endif %}
+      {% if quality.coverage_missing %}
+      <p class="muted">未覆盖概念：{{ quality.coverage_missing|join('、') }}</p>
+      {% endif %}
+
+      <h2>任务信息</h2>
+      <table class="kv dm-kv">
+        <tr><th>任务 ID</th><td>{{ job.id }}</td></tr>
+        <tr><th>数据库</th><td>{{ 'ontology-only' if job.db_id == '__ontology__' else job.db_id }}</td></tr>
+        <tr><th>模式</th><td>{{ job.mode }}</td></tr>
+        <tr><th>生成条数</th><td>{{ job.result_count }} / {{ job.n }}</td></tr>
+        <tr><th>导入条数</th><td>{{ job.imported_count }}</td></tr>
+        <tr><th>创建人</th><td>{{ job.created_by }}</td></tr>
+        <tr><th>开始</th><td>{{ job.started_at or '—' }}</td></tr>
+        <tr><th>结束</th><td>{{ job.finished_at or '—' }}</td></tr>
+      </table>
+
+      {% if artifacts %}
+      <h2>产物</h2>
+      <div class="dm-artifacts">
+        {% for a in artifacts %}
+        <a class="chip" href="/api/datamaker/jobs/{{ job.id }}/artifacts/{{ a.name }}">{{ a.name }} · {{ (a.size / 1024)|round(1) }} KB</a>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if job.db_id == '__ontology__' %}
+      <p class="muted">非 Archer 本体使用 ontology-only；概念/算子名可能被映射为 ASCII，见 <code>name_map.json</code>。</p>
+      {% endif %}
+
+      {% if items %}
+      <h2>生成预览</h2>
+      <div class="dm-items">
+        {% for x in items %}
+        <details class="dm-item">
+          <summary><strong>{{ loop.index }}. {{ x.question }}</strong><span class="muted">{{ x.type or '' }}</span></summary>
+          <pre>{{ x.ke }}</pre>
+        </details>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+
+    <aside class="panel dm-side">
+      <div class="dm-panel-head"><div><h2>运行日志</h2><p class="muted">实时刷新</p></div></div>
+      <pre id="dm-log" class="dm-log">{{ log }}</pre>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const jobId = {{ job.id }};
+const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+const logEl = document.getElementById('dm-log');
+const statusEl = document.getElementById('dm-status');
+let finished = ['succeeded','failed','cancelled','interrupted'].includes(statusEl.textContent.trim());
+const cancel = document.getElementById('dm-cancel');
+if (cancel) cancel.addEventListener('click', async () => {
+  cancel.disabled = true;
+  const r = await fetch('/api/datamaker/jobs/' + jobId + '/cancel', {method:'POST', headers:{'X-CSRF-Token': csrf}});
+  if (!r.ok) cancel.disabled = false;
+});
+const retry = document.getElementById('dm-retry');
+if (retry) retry.addEventListener('click', async () => {
+  retry.disabled = true;
+  const r = await fetch('/api/datamaker/jobs/' + jobId + '/retry', {method:'POST', headers:{'X-CSRF-Token': csrf}});
+  const d = await r.json();
+  if (!r.ok) { retry.disabled = false; return; }
+  location.href = '/datamaker/jobs/' + d.id;
+});
+async function refresh() {
+  if (finished) return;
+  try {
+    const [lr, sr] = await Promise.all([
+      fetch('/api/datamaker/jobs/' + jobId + '/log'),
+      fetch('/api/datamaker/jobs/' + jobId)
+    ]);
+    if (lr.ok) logEl.textContent = await lr.text();
+    if (sr.ok) {
+      const d = await sr.json();
+      if (d.status !== statusEl.textContent.trim()) location.reload();
+    }
+  } catch (e) {}
+  setTimeout(refresh, 2000);
+}
+setTimeout(refresh, 1500);
+</script>
+{% endblock %}

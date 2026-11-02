@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}本体库与权限 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>本体库与权限</h1><span class="page-sub">按库控制成员可见性与角色</span></div>
+</div>
+<div class="ann-grid">
+  <aside class="panel">
+    <h2>我的本体库</h2>
+    <div class="stack">
+      {% for lib, role in libraries %}
+      <a class="list-row {{ 'active' if selected and lib.id == selected.id else '' }}"
+         href="/libraries?key={{ lib.key }}">
+        <span><strong>{{ lib.name }}</strong><small>{{ lib.key }}</small></span>
+        <span class="chip">{{ role_labels.get(role, role) }}</span>
+      </a>
+      {% else %}
+      <p class="muted">暂无授权本体库，请联系管理员添加成员。</p>
+      {% endfor %}
+    </div>
+  </aside>
+  <section class="panel">
+    {% if selected %}
+    <h2>{{ selected.name }} <span class="muted">/ {{ selected.key }}</span></h2>
+    <p class="muted">我的库角色：{{ role_labels.get(selected_role, selected_role) }}</p>
+    {% if can_manage %}
+    <form class="filters" method="post" action="/libraries/{{ selected.key }}/members">
+      <select name="username" required>
+        <option value="">选择用户</option>
+        {% for u in all_users %}<option value="{{ u.username }}">{{ u.username }}（{{ u.role }}）</option>{% endfor %}
+      </select>
+      <select name="role">
+        <option value="annotator">标注员</option>
+        <option value="reviewer">审核员</option>
+        <option value="owner">库管理员</option>
+      </select>
+      <button class="btn primary" type="submit">添加 / 更新成员</button>
+    </form>
+    {% endif %}
+    {% if members %}
+    <table class="data" style="margin-top:14px">
+      <thead><tr><th>用户</th><th>账号角色</th><th>库角色</th><th></th></tr></thead>
+      <tbody>
+      {% for m, u in members %}
+      <tr>
+        <td>{{ u.username }}</td><td>{{ ROLE_LABELS.get(u.role, u.role) }}</td>
+        <td><span class="chip">{{ role_labels.get(m.role, m.role) }}</span></td>
+        <td class="ops">
+          {% if can_manage %}
+          <form method="post" action="/libraries/{{ selected.key }}/members/{{ u.username }}/remove" onsubmit="return confirm('确认移除？')"><button class="link" type="submit">移除</button></form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% elif can_manage %}
+    <p class="muted">还没有成员。</p>
+    {% endif %}
+    {% else %}
+    <p class="muted">没有可访问的本体库。</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

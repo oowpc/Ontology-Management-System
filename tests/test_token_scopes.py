@@ -67,3 +67,48 @@ def test_last_used_throttled(client, monkeypatch):
     monkeypatch.setattr(security, "TOKEN_LAST_USED_THROTTLE", 0)
     assert client.get("/api/me", headers=h).status_code == 200
     assert _last_used(tok) > t1            # 阈值置 0：每次调用都写
+
+
+def test_token_expiry_and_rate_limit(client, monkeypatch):
+    from datetime import datetime, timedelta
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import ApiToken
+    from app import security
+
+    login(client, "admin")
+    token = client.post("/api/tokens", json={"name": "expiry-test"}).json()["token"]
+    h = {"Authorization": f"Bearer {token}"}
+    import hashlib
+    db = SessionLocal()
+    row = db.scalar(select(ApiToken).where(
+        ApiToken.token_hash == hashlib.sha256(token.encode()).hexdigest()))
+    row.expires_at = datetime.now() - timedelta(seconds=1)
+    db.commit(); db.close()
+    assert client.get("/api/me", headers=h).status_code == 401
+
+    token2 = client.post("/api/tokens", json={"name": "rate-test"}).json()["token"]
+    h2 = {"Authorization": f"Bearer {token2}"}
+    monkeypatch.setattr(security, "TOKEN_RATE_LIMIT", 1)
+    security._TOKEN_HITS.clear()
+    assert client.get("/api/me", headers=h2).status_code == 200
+    assert client.get("/api/me", headers=h2).status_code == 429
+    security._TOKEN_HITS.clear()
+
+
+def test_token_name_written_to_audit(client):
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import AuditLog
+
+    login(client, "admin")
+    token = _mint(client, name="audit-token")["token"]
+    h = {"Authorization": f"Bearer {token}"}
+    r = client.post("/api/concepts", json={"name": "Token审计概念", "domain": "通用"},
+                    headers=h)
+    assert r.status_code == 201, r.text
+    db = SessionLocal()
+    row = db.scalar(select(AuditLog).where(
+        AuditLog.entity_type == "concept", AuditLog.entity_id == r.json()["id"]))
+    db.close()
+    assert row is not None and row.token_name == "audit-token"

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ r.name }} · 规则{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ r.name }}</h1>
+  {% if user.role in ['reviewer','admin'] %}<a class="btn" href="/rules/{{ r.id }}/edit">编辑</a>{% endif %}
+</div>
+<div class="meta-grid">
+  <div><span class="muted">ID</span><br>{{ r.id }}</div>
+  <div><span class="muted">域</span><br>{{ r.domain }}</div>
+  <div><span class="muted">类型</span><br>{% if r.body is none %}事实（无前提）{% else %}规则{% endif %}</div>
+  <div><span class="muted">状态</span><br><span class="badge {{ r.status }}">{{ status_labels.get(r.status, r.status) }}</span></div>
+  <div><span class="muted">创建</span><br>{{ r.created_by }} · {{ r.created_at|dt }}</div>
+  <div><span class="muted">修改</span><br>{{ r.updated_at|dt }}</div>
+</div>
+<p>{{ r.description or '—' }}</p>
+<h2>body</h2>
+<pre class="json">{{ body_text }}</pre>
+<h2>head</h2>
+<pre class="json">{{ head_text }}</pre>
+<h2>sources</h2>
+<p>{{ (r.sources or [])|join('、') or '—' }}</p>
+<h2>supply</h2>
+<pre class="json">{{ supply_text }}</pre>
+{% endblock %}

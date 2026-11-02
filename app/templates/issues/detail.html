@@ -6,6 +6,7 @@
 <div class="page-head">
   <h1><code>{{ i.code }}</code> {{ i.title }} <span class="badge issue-st-{{ i.status }}">{{ i.status_label }}</span></h1>
   <div>
+    <a class="btn" href="/issues/{{ i.id }}/export.md">导出 Markdown</a>
     <a class="btn" href="/issues/{{ i.id }}/edit">编辑</a>
     <a class="btn" href="/issues">返回列表</a>
   </div>

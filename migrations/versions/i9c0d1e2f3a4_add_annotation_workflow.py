@@ -29,10 +29,13 @@ NEW_TABLES = [
 
 def upgrade() -> None:
     bind = op.get_bind()
+    insp = inspect(bind)
+    # PostgreSQL 要求被引用表先存在；SQLite 旧库也走同一路径。
+    if not insp.has_table("ontology_libraries"):
+        models.OntologyLibrary.__table__.create(bind, checkfirst=True)
     for name in NEW_TABLES:
         Base.metadata.tables[name].create(bind, checkfirst=True)
 
-    insp = inspect(bind)
     have = {c["name"] for c in insp.get_columns("issues")}
     extra = [
         sa.Column("annotation_batch_id", sa.Integer(), nullable=True),

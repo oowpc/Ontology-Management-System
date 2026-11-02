@@ -108,6 +108,10 @@ def main() -> int:
         except Exception:
             pass
         check("login", "/login" not in page.url, page.url)
+        # 截图回归使用参考库中的 FIBO/CMNS 夹具
+        page.goto(args.base_url + "/library/switch?key=fibo-cmns&next=/concepts",
+                  wait_until="networkidle")
+        check("library switch", "fibo-cmns" in page.content(), page.url)
         flush_console("login")
 
         def api_get(path: str, **params):

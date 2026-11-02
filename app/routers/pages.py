@@ -6,7 +6,7 @@ import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import diff_entries, entity_history
@@ -18,15 +18,16 @@ from ..importer import csv_to_payload, import_payload, parse_field_map
 from ..llm import enabled as llm_enabled
 from ..models import (AuditLog, BackfillRecord, Concept, ConceptParent,
                       GoldItem, GoldSample, HealthReport, Issue, KeolEntity,
-                      KeTask, KeUpload, Operator, Question, QuestionConcept,
-                      Submission, TmpMapping, User)
+                      KeTask, KeUpload, OntologyIndividual, OntologyRule, Operator,
+                      Question, QuestionConcept, Submission, TmpMapping, User)
 from ..review import (SUB_STATUS, approve, batch_action, create_submission,
                       get_submission_or_404, merge, reject, submission_dict)
 from ..security import current_user
 from ..services import (concept_parents_map, create_concept, create_operator,
                         get_concept_or_404, get_operator_or_404, name_map,
-                        query_concepts, set_concept_status, set_operator_status,
-                        update_concept, update_operator, usage_map)
+                        operator_inputs_map, operator_signature, query_concepts,
+                        set_concept_status, set_operator_status, update_concept,
+                        update_operator, usage_map)
 from ..similarity import SimilarityBlock
 from ..templating import flash, templates
 
@@ -109,9 +110,38 @@ def workbench(request: Request, db: Session = Depends(get_db), user: dict = Depe
             "users": db.scalar(select(func.count(User.id))) or 0,
             "concepts": db.scalar(select(func.count(Concept.id))) or 0,
             "operators": db.scalar(select(func.count(Operator.id))) or 0,
+            "rules": db.scalar(select(func.count(OntologyRule.id))) or 0,
+            "individuals": db.scalar(select(func.count(OntologyIndividual.id))) or 0,
             "gold_items": db.scalar(select(func.count(GoldItem.id))) or 0,
         }
     return templates.TemplateResponse(request=request, name="workbench.html", context=ctx)
+
+
+# ================= 全局搜索 =================
+
+@router.get("/search")
+def search_page(request: Request, q: str = "", db: Session = Depends(get_db),
+                user: dict = Depends(current_user)):
+    q = q.strip()
+    results = {"concepts": [], "operators": [], "rules": [], "individuals": []}
+    if q:
+        like = f"%{q}%"
+        results["concepts"] = db.scalars(
+            select(Concept).where(or_(Concept.name.like(like), Concept.definition.like(like)))
+            .order_by(Concept.name).limit(12)).all()
+        results["operators"] = db.scalars(
+            select(Operator).where(Operator.name.like(like)).order_by(Operator.name).limit(12)).all()
+        results["rules"] = db.scalars(
+            select(OntologyRule).where(or_(OntologyRule.name.like(like),
+                                           OntologyRule.description.like(like)))
+            .order_by(OntologyRule.name).limit(12)).all()
+        results["individuals"] = db.scalars(
+            select(OntologyIndividual).where(OntologyIndividual.name.like(like))
+            .order_by(OntologyIndividual.name).limit(12)).all()
+    return templates.TemplateResponse(request=request, name="search.html", context={
+        "request": request, "user": user, "q": q, "results": results,
+        "total": sum(len(v) for v in results.values()),
+    })
 
 
 # ================= 概念页面 =================
@@ -161,6 +191,7 @@ async def _concept_form(request: Request) -> dict:
         "domain": str(form.get("domain", "")).strip() or "通用",
         "aliases": _split_multi(str(form.get("aliases", ""))),
         "definition": str(form.get("definition", "")),
+        "description": str(form.get("description", "")),
         "parent_id": primary,
         "parents": parents,
         "status": str(form.get("status", "approved")),
@@ -330,7 +361,11 @@ def operators_page(request: Request, subject_concept_id: int | None = None, q: s
         stmt = stmt.where(Operator.name.like(f"%{q.strip()}%"))
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     ops = db.scalars(stmt.order_by(Operator.id).offset((page - 1) * size).limit(size)).all()
-    names = name_map(db, [o.subject_concept_id for o in ops] + [o.owner_concept_id for o in ops])
+    names = name_map(db, [o.subject_concept_id for o in ops]
+                     + [o.owner_concept_id for o in ops]
+                     + [o.output_concept_id for o in ops])
+    inputs = operator_inputs_map(db, [o.id for o in ops])
+    signatures = {o.id: operator_signature(o, inputs.get(o.id, [])) for o in ops}
     selected_subject = None
     if subject_concept_id is not None:
         sc = db.get(Concept, subject_concept_id)
@@ -338,6 +373,7 @@ def operators_page(request: Request, subject_concept_id: int | None = None, q: s
             selected_subject = {"id": sc.id, "name": sc.name}
     return templates.TemplateResponse(request=request, name="operators/list.html", context={
         "request": request, "user": user, "operators": ops, "names": names,
+        "signatures": signatures,
         "selected_subject": selected_subject, "total": total,
         "page": page, "pages": max(1, (total + size - 1) // size),
         "subject_concept_id": subject_concept_id, "q": q,
@@ -355,6 +391,7 @@ async def _operator_form(request: Request) -> dict:
         "owner_concept_id": _int_or_none(form.get("owner_concept_id")),
         "param_types": _split_multi(str(form.get("param_types", ""))),
         "return_type": str(form.get("return_type", "")),
+        "description": str(form.get("description", "")),
     }
 
 
@@ -394,11 +431,15 @@ def operator_detail_page(oid: int, request: Request, db: Session = Depends(get_d
                          user: dict = Depends(current_user)):
     """算子详情页（Issue 集成入口之一；纯增量）。"""
     o = get_operator_or_404(db, oid)
-    names = name_map(db, [o.subject_concept_id, o.owner_concept_id])
+    names = name_map(db, [o.subject_concept_id, o.owner_concept_id, o.output_concept_id])
+    inputs = operator_inputs_map(db, [o.id]).get(o.id, [])
     from ..issues.service import related_issues
     return templates.TemplateResponse(request=request, name="operators/detail.html", context={
         "request": request, "user": user, "o": o,
         "subject_name": names.get(o.subject_concept_id),
+        "inputs": inputs,
+        "signature": operator_signature(o, inputs),
+        "output_name": names.get(o.output_concept_id),
         "owner_name": names.get(o.owner_concept_id or o.subject_concept_id),
         "related_issues": related_issues(db, "operator", oid),
     })

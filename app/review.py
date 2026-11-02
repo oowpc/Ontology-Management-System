@@ -57,8 +57,11 @@ def create_submission(db: Session, *, name, aliases, definition, suggested_paren
     concept = Concept(
         name=name, domain=(domain or "通用").strip() or "通用",
         aliases=list(aliases or []), definition=definition or "",
+        description=definition or f"概念 {name}",
         parent_id=primary_parent, status="pending", created_by=actor,
     )
+    from .services import assign_local_code
+    assign_local_code(db, concept)
     db.add(concept)
     db.flush()
     for pos, pid in enumerate(parent_ids):

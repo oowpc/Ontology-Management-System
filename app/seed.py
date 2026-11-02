@@ -7,8 +7,9 @@ from pathlib import Path
 from sqlalchemy import func, select
 
 from .config import settings
+from .library_context import library_scope
 from .db import SessionLocal
-from .models import Concept, ConceptParent, Operator, UsageStat, User
+from .models import Concept, ConceptParent, LibraryMember, OntologyLibrary, Operator, UsageStat, User
 from .security import hash_password
 
 # (name, parent_name, aliases, definition)
@@ -63,6 +64,30 @@ def _seed_users(db):
     db.commit()
 
 
+def _seed_library_members(db):
+    """给种子账号补默认成员关系；新用户仍由库管理员显式授权。"""
+    with library_scope(None):
+        libs = {x.key: x for x in db.scalars(select(OntologyLibrary)).all()}
+        if not libs:
+            return
+        for username, role, _group in USERS:
+            u = db.scalar(select(User).where(User.username == username))
+            if not u or u.role == "admin":
+                continue
+            for key, lib_role in (("co-baseline", "owner" if u.role == "reviewer" else "annotator"),
+                                  ("fibo-cmns", "reviewer" if u.role == "reviewer" else "annotator"),
+                                  ("pilot-yuer", "reviewer" if u.role == "reviewer" else "annotator")):
+                lib = libs.get(key)
+                if not lib:
+                    continue
+                exists = db.scalar(select(LibraryMember).where(
+                    LibraryMember.library_id == lib.id, LibraryMember.user_id == u.id))
+                if not exists:
+                    db.add(LibraryMember(library_id=lib.id, user_id=u.id,
+                                         role=lib_role, created_by="seed"))
+        db.commit()
+
+
 def _seed_ke(db):
     """M7 演示数据：向「一组」灌入示例标注 CSV（ke_tasks 非空则跳过）。"""
     if not settings.seed_ke:
@@ -82,6 +107,7 @@ def seed_if_empty():
     db = SessionLocal()
     try:
         _seed_users(db)
+        _seed_library_members(db)
 
         if settings.seed_demo and (db.scalar(select(func.count()).select_from(Concept)) or 0) == 0:
             ids: dict[str, int] = {}
@@ -89,9 +115,12 @@ def seed_if_empty():
                 parent_id = ids.get(parent)
                 c = Concept(
                     name=name, aliases=aliases, definition=definition,
+                    description=definition or f"概念 {name}",
                     parent_id=parent_id, status="approved",
                     created_by="admin", reviewed_by="admin",
                 )
+                from .services import assign_local_code
+                assign_local_code(db, c)
                 db.add(c)
                 db.flush()
                 if parent_id is not None:
@@ -99,12 +128,17 @@ def seed_if_empty():
                                          is_primary=True, position=0))
                     db.flush()
                 ids[name] = c.id
+            from .services import sync_operator_inputs
             for name, subject, params, return_type in DEMO_OPERATORS:
-                db.add(Operator(
+                op = Operator(
                     name=name, subject_concept_id=ids[subject], owner_concept_id=None,
                     param_types=params, return_type=return_type,
+                    description=f"算子 {name}：{subject} → {return_type}",
                     status="approved", created_by="admin",
-                ))
+                )
+                db.add(op)
+                db.flush()
+                sync_operator_inputs(db, op, params)
             for cname, cnt in DEMO_USAGE:
                 db.add(UsageStat(
                     concept_id=ids[cname], ke_count=cnt,

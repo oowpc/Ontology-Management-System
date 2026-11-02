@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}数据生成 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="datamaker-page">
+  <div class="page-head">
+    <div>
+      <div class="dm-eyebrow">DATAMAKER · KE 数据生成</div>
+      <h1>数据生成</h1>
+      <span class="page-sub">{{ library.name }} · 从 SQLite/OMS 本体生成候选 KE，完成后自动建草稿标注批次</span>
+    </div>
+    <div class="page-head-actions"><a class="btn" href="/libraries">切换本体库</a></div>
+  </div>
+
+  <div class="dm-stats">
+    <div class="dm-stat"><small>任务总数</small><strong>{{ stats.total }}</strong></div>
+    <div class="dm-stat"><small>成功 / 失败</small><strong>{{ stats.succeeded }} / {{ stats.failed }}</strong></div>
+    <div class="dm-stat"><small>生成条数</small><strong>{{ stats.generated }}</strong></div>
+    <div class="dm-stat"><small>已导入</small><strong>{{ stats.imported }}</strong></div>
+    <div class="dm-stat"><small>任务成功率</small><strong>{{ stats.success_rate }}%</strong></div>
+  </div>
+  <div class="dm-layout">
+    <section class="panel dm-start">
+      <div class="dm-panel-head">
+        <div><h2>新建生成任务</h2><p class="muted">任务在后台运行，关闭页面不影响执行</p></div>
+      </div>
+      {% if user.role in ('reviewer','admin') %}
+      <form id="dm-form" class="form dm-form">
+        <div class="dm-form-grid">
+          <label>数据库
+            <select id="dm-db" required>
+              {% for d in databases %}
+              <option value="{{ d.db_id }}">{{ d.db_id }} · SQLite</option>
+              {% else %}
+              <option value="__ontology__">Ontology-only（无 SQLite）</option>
+              {% endfor %}
+              {% if databases %}<option value="__ontology__">Ontology-only（无 SQLite）</option>{% endif %}
+            </select>
+          </label>
+          <label>模型
+            <select id="dm-model" required>
+              {% for m in models %}<option value="{{ m }}" {{ 'selected' if m == default_model else '' }}>{{ m }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>任务模式
+            <select id="dm-mode">
+              {% for m in modes %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>题量
+            <input id="dm-n" type="number" min="1" max="100" value="5" required>
+          </label>
+          <label>并发
+            <input id="dm-workers" type="number" min="1" max="8" value="1" required>
+          </label>
+          <label>NL 来源
+            <select id="dm-nl-source">
+              {% for n in nl_sources %}<option value="{{ n }}">{{ n }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>超时（秒）
+            <input id="dm-timeout" type="number" min="60" max="86400" value="{{ timeout }}">
+          </label>
+        </div>
+        <label>KE2SQL 服务
+          <input id="dm-service-url" value="{{ service_url }}" placeholder="http://127.0.0.1:8081">
+        </label>
+        <label class="inline"><input id="dm-cross-check" type="checkbox"> cross_check</label>
+        <label>KE 类型（可选）
+          <input id="dm-ke-types" placeholder="例如 group_having,topn;留空使用 datamaker 默认 10 类">
+        </label>
+        <label class="inline"><input id="dm-resume" type="checkbox"> 断点续跑</label>
+        <div class="dm-note">同一本体库最多 {{ max_active }} 个运行中任务。生成结果是候选数据，不会直接写入正式 GOLD。</div>
+        <div class="actions">
+          <button class="btn primary" id="dm-start" type="submit">开始生成</button>
+          <span id="dm-msg" class="muted"></span>
+        </div>
+      </form>
+      {% else %}
+      <div class="flash err">只有 reviewer / admin 可以启动 DataMaker 任务。</div>
+      {% endif %}
+    </section>
+
+    <aside class="panel dm-history">
+      <div class="dm-panel-head">
+        <div><h2>生成记录</h2><p class="muted">最近 50 个任务</p></div>
+      </div>
+      <div id="dm-jobs" class="dm-job-list">
+        {% for j in jobs %}
+        <a class="dm-job-row" href="/datamaker/jobs/{{ j.id }}">
+          <div class="dm-job-main">
+            <div class="dm-job-title"><strong>#{{ j.id }} · {{ j.db_id }}</strong><span class="badge {{ 'passed' if j.status == 'succeeded' else ('failed' if j.status in ('failed','interrupted','cancelled') else '') }}">{{ j.status }}</span></div>
+            <small>{{ j.model }} · {{ j.mode }} · {{ j.imported_count }}/{{ j.n }} 条 · {{ (j.created_at or '')[:16] }}</small>
+            <div class="dm-progress"><span style="width:{{ [100, (j.progress * 100 // j.n) if j.n else 0]|min }}%"></span></div>
+          </div>
+          <span class="dm-job-arrow">→</span>
+        </a>
+        {% else %}
+        <div class="dm-empty">还没有生成任务。</div>
+        {% endfor %}
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const dmCsrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+const dmForm = document.getElementById('dm-form');
+if (dmForm) {
+  dmForm.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const btn = document.getElementById('dm-start');
+    btn.disabled = true;
+    document.getElementById('dm-msg').textContent = '任务提交中…';
+    try {
+      const r = await fetch('/api/datamaker/jobs', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': dmCsrf},
+        body: JSON.stringify({
+          db_id: document.getElementById('dm-db').value,
+          model: document.getElementById('dm-model').value,
+          n: parseInt(document.getElementById('dm-n').value, 10) || 1,
+          workers: parseInt(document.getElementById('dm-workers').value, 10) || 1,
+          ke_types: document.getElementById('dm-ke-types').value.trim(),
+          resume: document.getElementById('dm-resume').checked,
+          mode: document.getElementById('dm-mode').value,
+          nl_source: document.getElementById('dm-nl-source').value,
+          cross_check: document.getElementById('dm-cross-check').checked,
+          service_url: document.getElementById('dm-service-url').value.trim(),
+          timeout_s: parseInt(document.getElementById('dm-timeout').value, 10) || 7200,
+        })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || r.statusText);
+      location.href = '/datamaker/jobs/' + d.id;
+    } catch (e) {
+      document.getElementById('dm-msg').innerHTML = '<span class="badge failed">失败</span> ' + String(e.message);
+      btn.disabled = false;
+    }
+  });
+}
+</script>
+{% endblock %}

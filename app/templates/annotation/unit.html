@@ -12,9 +12,33 @@
   </div>
 </div>
 
+{% set nk = unit.source_payload if unit.source_payload and unit.source_payload.nl2ke_run_id else none %}
 {% if not can_view_data %}
 <div class="panel empty">当前阶段不展示该单元的双盲明细；交叉检查开始后再查看。</div>
 {% else %}
+
+{% if nk %}
+<div class="panel">
+  <h2>NL2KE 生成
+    <span class="badge {{ 'passed' if nk.nl2ke_status == 'accepted' else ('failed' if nk.nl2ke_status == 'rejected' else '') }}">
+      {{ {'accepted':'已接受','rejected':'已拒绝','pending':'待审核'}.get(nk.nl2ke_status or 'pending', nk.nl2ke_status or '待审核') }}
+    </span>
+  </h2>
+  <table class="kv">
+    <tr><th>数据库</th><td>{{ nk.db_id }}</td></tr>
+    <tr><th>运行 ID</th><td>#{{ nk.nl2ke_run_id }}</td></tr>
+    <tr><th>问题</th><td>{{ nk.question }}</td></tr>
+    <tr><th>verify</th><td>{{ nk.verify_passed }}</td></tr>
+  </table>
+  <h3>KE</h3><pre>{{ nk.ke }}</pre>
+  {% if nk.params %}<details><summary>模型参数</summary><pre>{{ nk.params|tojson(indent=2) }}</pre></details>{% endif %}
+  {% if nk.steps %}<details><summary>生成步骤 / 每一步产出</summary>{% for st in nk.steps %}<details><summary>{{ loop.index }}. {{ st.label }}</summary><pre>{{ st.output|tojson(indent=2) }}</pre></details>{% endfor %}</details>{% endif %}
+  {% if nk.nl2ke_status not in ('accepted','rejected') %}
+  <form class="inline" method="post" action="/annotation/units/{{ unit.id }}/nl2ke/accept"><button class="btn primary" type="submit">接受 NL2KE 结果</button></form>
+  <form class="inline" method="post" action="/annotation/units/{{ unit.id }}/nl2ke/reject"><button class="btn ghost" type="submit">拒绝</button></form>
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="ann-grid">
   <div class="panel">
@@ -30,7 +54,7 @@
     <h2>原文 / 译文</h2>
     <p><strong>原文</strong></p><pre>{{ unit.raw_text or '—' }}</pre>
     <p><strong>译文</strong></p><pre>{{ unit.translation_text or '—' }}</pre>
-    {% if unit.source_payload %}<p><strong>Schema / 环境快照</strong></p><pre>{{ unit.source_payload|tojson(indent=2) }}</pre>{% endif %}
+    {% if unit.source_payload and not nk %}<p><strong>Schema / 环境快照</strong></p><pre>{{ unit.source_payload|tojson(indent=2) }}</pre>{% endif %}
   </div>
 </div>
 
@@ -178,7 +202,7 @@
   <h3>提交我的 {{ my_side }} 侧 KE</h3>
   <form class="form" method="post" action="/annotation/units/{{ unit.id }}/ke">
     <input type="hidden" name="side" value="{{ my_side }}">
-    <label>KE 内容<textarea name="content" rows="6" required>{{ myke.content if myke else '' }}</textarea></label>
+    <label>KE 内容<textarea name="content" rows="6" required>{{ myke.content if myke else (nk.ke if nk and nk.nl2ke_status == 'accepted' else '') }}</textarea></label>
     <div class="form-row">
       <label>执行/编译结果 JSON<textarea name="execution" rows="3">{{ (exec_val|tojson(indent=2)) if exec_val is mapping else (exec_val or '') }}</textarea></label>
       <label>自检 JSON<textarea name="self_check" rows="3">{{ (myke.self_check|tojson(indent=2)) if myke and myke.self_check is mapping else (myke.self_check if myke and myke.self_check else '') }}</textarea></label>

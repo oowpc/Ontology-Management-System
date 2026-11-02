@@ -6,7 +6,7 @@
   <a class="btn" href="/annotation">← 标注批次</a>
 </div>
 <table class="data">
-  <thead><tr><th>版本</th><th>批次</th><th>状态</th><th>概念/算子</th><th>校验</th><th>创建</th><th>操作</th></tr></thead>
+  <thead><tr><th>版本</th><th>批次</th><th>状态</th><th>概念/算子/规则/个体</th><th>校验</th><th>创建</th><th>操作</th></tr></thead>
   <tbody>
   {% for r in rows %}
   {% set v = r.version %}
@@ -14,10 +14,11 @@
     <td><strong>{{ v.label }}</strong><div class="muted">{{ v.note }}</div></td>
     <td>{% if r.batch %}<a href="/annotation/batches/{{ r.batch.id }}">{{ r.batch.batch_id }}</a>{% else %}—{% endif %}</td>
     <td>{{ v.status }}</td>
-    <td>{{ (v.counts or {}).get('concepts', 0) }} / {{ (v.counts or {}).get('operators', 0) }}</td>
+    <td>{{ (v.counts or {}).get('concepts', 0) }} / {{ (v.counts or {}).get('operators', 0) }} / {{ (v.counts or {}).get('rules', 0) }} / {{ (v.counts or {}).get('individuals', 0) }}</td>
     <td>{% if v.validation %}{{ '通过' if v.validation.get('ok') else '未通过' }}{% else %}—{% endif %}</td>
     <td class="muted">{{ v.created_by }} · {{ v.created_at|dt }}</td>
     <td>
+      {% if v.parent_version_id %}<a href="/annotation/versions/{{ v.id }}/diff">差异</a>{% endif %}
       {% if r.can_manage and v.status == 'draft' %}
       <form class="inline" method="post" action="/annotation/versions/{{ v.id }}/freeze"><button class="link" type="submit">冻结</button></form>
       {% endif %}

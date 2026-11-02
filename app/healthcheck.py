@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import settings
+from .library_context import library_scope
 from .models import Concept, ConceptParent, GoldItem, HealthReport, Operator, UsageStat
 from .similarity import score_against
 
@@ -110,7 +111,10 @@ def check_gold_validation(db: Session) -> list[dict]:
     return out
 
 
-def run_health(db: Session, trigger_type: str) -> HealthReport:
+def run_health(db: Session, trigger_type: str, *, library_id: int | None = None) -> HealthReport:
+    if library_id is not None:
+        with library_scope(library_id):
+            return run_health(db, trigger_type)
     similar = check_similar_pairs(db)
     details = {
         "unused": check_unused(db),

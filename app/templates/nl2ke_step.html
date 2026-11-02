@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}{{ step_label }} · NL2KE #{{ run.id }} · 本体管理系统{% endblock %}
+{% block content %}
+<div class="nl2ke-step-page">
+  <div class="page-head">
+    <div>
+      <div class="nl2ke-eyebrow">NL2KE · RUN #{{ run.id }} · STEP {{ '%02d'|format(step_index) }}</div>
+      <h1>{{ step_label }}</h1>
+      <span class="page-sub">{{ run.db_id }} · {{ run.question }}</span>
+    </div>
+    <div class="page-head-actions">
+      <a class="btn" href="/nl2ke/runs/{{ run.id }}">运行概览</a>
+      <a class="btn" href="/nl2ke">返回 NL2KE</a>
+    </div>
+  </div>
+
+  <div class="nl2ke-step-layout">
+    <aside class="panel nl2ke-step-nav">
+      <div class="nl2ke-panel-head">
+        <div><h2>内部步骤</h2><p class="muted">共 7 步</p></div>
+      </div>
+      <nav class="nl2ke-step-links">
+        {% for s in steps %}
+        <a class="nl2ke-step-link {{ 'active' if s.key == step else '' }}"
+           href="/nl2ke/runs/{{ run.id }}/steps/{{ s.key }}">
+          <span class="nl2ke-step-num">{{ '%02d'|format(loop.index) }}</span>
+          <span>{{ s.label }}</span>
+        </a>
+        {% endfor %}
+      </nav>
+    </aside>
+
+    <main class="nl2ke-step-main">
+      {% if not trace_available %}
+      <section class="panel nl2ke-empty">
+        <div class="nl2ke-empty-icon">∅</div>
+        <h2>没有内部 trace</h2>
+        <p class="muted">这条运行生成于 trace 启用之前，无法展示「{{ step_label }}」。</p>
+      </section>
+      {% elif step == 'attempts' %}
+      <section class="panel">
+        <div class="nl2ke-panel-head">
+          <div><h2>生成与校验</h2><p class="muted">每次尝试的 KE、规则校验和语义校验</p></div>
+          <span class="badge">{{ data.attempts or 0 }} 次尝试</span>
+        </div>
+        {% for h in data.history or [] %}
+        <article class="nl2ke-attempt">
+          <div class="nl2ke-attempt-head">
+            <h3>Attempt {{ h.attempt }}</h3>
+            <span class="badge {{ 'passed' if h.verify_passed else 'failed' }}">{{ '通过' if h.verify_passed else '未通过' }}</span>
+          </div>
+          <div class="nl2ke-field">
+            <h4>KE</h4>
+            <pre class="nl2ke-code">{{ h.ke or '' }}</pre>
+          </div>
+          <div class="nl2ke-field">
+            <h4>本体规则校验</h4>
+            <pre class="nl2ke-json">{{ (h.get('ontology_check') or {}) | tojson(indent=2) }}</pre>
+          </div>
+          <div class="nl2ke-two-col">
+            <div class="nl2ke-field">
+              <h4>反构自然语言</h4>
+              <pre class="nl2ke-code">{{ h.reconstructed_nl or '—' }}</pre>
+            </div>
+            <div class="nl2ke-field">
+              <h4>失败原因</h4>
+              <pre class="nl2ke-code">{{ h.mismatch_reason or '—' }}</pre>
+            </div>
+          </div>
+        </article>
+        {% else %}
+        <div class="nl2ke-empty"><p class="muted">没有 attempt 记录。</p></div>
+        {% endfor %}
+      </section>
+      {% elif step == 'schema' %}
+      <section class="panel">
+        <div class="nl2ke-panel-head">
+          <div><h2>Schema</h2><p class="muted">DDL、表名和字段信息</p></div>
+          <span class="badge">{{ data.table_count or 0 }} 张表</span>
+        </div>
+        <div class="nl2ke-chip-row">
+          {% for name in data.table_names or [] %}<span class="chip">{{ name }}</span>{% endfor %}
+        </div>
+        {% if data.text %}<pre class="nl2ke-code">{{ data.text }}</pre>{% else %}<p class="muted">没有 schema 文本。</p>{% endif %}
+        <details class="nl2ke-raw"><summary>查看原始 JSON</summary><pre class="nl2ke-json">{{ data | tojson(indent=2) }}</pre></details>
+      </section>
+      {% elif step == 'timings' %}
+      <section class="panel">
+        <div class="nl2ke-panel-head"><div><h2>分阶段耗时</h2><p class="muted">NL2KE 内部阶段耗时（毫秒）</p></div></div>
+        <table class="kv nl2ke-timing-table">
+          {% for k, v in data.items() %}
+          <tr><th>{{ k }}</th><td><strong>{{ v }}</strong> ms</td></tr>
+          {% else %}
+          <tr><td class="muted">没有耗时数据。</td></tr>
+          {% endfor %}
+        </table>
+      </section>
+      {% elif step == 'prompt' %}
+      <section class="panel">
+        <div class="nl2ke-panel-head">
+          <div><h2>初始 Prompt</h2><p class="muted">发送给 KE 生成模型的完整提示词</p></div>
+          <span class="badge">{{ data.prompt_chars or (data.prompt|length) }} 字符</span>
+        </div>
+        <pre class="nl2ke-code nl2ke-prompt">{{ data.prompt or '—' }}</pre>
+      </section>
+      {% else %}
+      <section class="panel">
+        <div class="nl2ke-panel-head">
+          <div><h2>{{ step_label }}</h2><p class="muted">{{ step_desc }}</p></div>
+        </div>
+        {% if data %}
+        <pre class="nl2ke-json">{{ data | tojson(indent=2) }}</pre>
+        {% else %}
+        <p class="muted">该步骤没有数据。</p>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      <div class="nl2ke-step-pager">
+        {% if prev_step %}<a class="btn" href="/nl2ke/runs/{{ run.id }}/steps/{{ prev_step[0] }}">← {{ prev_step[1] }}</a>{% else %}<span></span>{% endif %}
+        {% if next_step %}<a class="btn primary" href="/nl2ke/runs/{{ run.id }}/steps/{{ next_step[0] }}">{{ next_step[1] }} →</a>{% endif %}
+      </div>
+    </main>
+  </div>
+</div>
+{% endblock %}

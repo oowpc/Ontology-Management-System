@@ -40,6 +40,8 @@ def test_manifest(client):
     assert any("/api/submissions" in e for e in flat)
     assert any("/api/gold/articles" in e for e in flat)
     assert d["endpoint_count"] == len(flat)
+    assert all(e.split(" ", 1)[1].startswith("/api/") for e in flat)
+    assert not any("/api/api/" in e or "/api/annotation/api/" in e for e in flat)
     # 工作流与不变量
     assert len(d["workflows"]) >= 4
     assert "Bearer" in d["invariants"]["auth"]
@@ -66,7 +68,13 @@ def test_mcp_tools_registered():
     names = {t.name for t in tools}
     assert len(tools) >= 25
     assert {"whoami", "get_manifest", "list_concepts", "submit_concept",
-            "review_submission", "backfill_text", "gold_stats"} <= names
+            "review_submission", "backfill_text", "gold_stats",
+            "list_annotation_batches", "create_annotation_batch",
+            "submit_annotation_co", "list_rules", "create_rule",
+            "create_individual", "list_ontology_suggestions",
+            "approve_ontology_suggestion", "search_ontology",
+            "get_annotation_version_payload", "diff_annotation_versions",
+            "export_portable_ontology", "ops_summary"} <= names
 
 
 def test_mcp_core_flow(mcp):
@@ -107,3 +115,14 @@ def test_mcp_gold_and_health(mcp):
     assert mcp.set_issue_status(issue["id"], "resolved", "已结论")["status"] == "resolved"
     assert mcp.run_health()["summary"]
     assert mcp.get_health_latest()["report"]
+
+
+def test_mcp_annotation_and_library_tools(mcp):
+    batches = mcp.list_annotation_batches()
+    assert "items" in batches and "total" in batches
+    assert "items" in mcp.list_rules()
+    assert "items" in mcp.list_individuals()
+    manifest = mcp.get_manifest()
+    flat = [e for v in manifest["endpoints"].values() for e in v]
+    assert any("/api/annotation/batches" in e for e in flat)
+    assert any("/api/rules" in e for e in flat)

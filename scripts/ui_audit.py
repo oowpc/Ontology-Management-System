@@ -83,6 +83,9 @@ def main() -> int:
         except Exception:
             pass
         check("login", "/login" not in page.url, page.url)
+        page.goto(args.base_url + "/library/switch?key=fibo-cmns&next=/concepts",
+                  wait_until="networkidle")
+        check("library switch", "fibo-cmns" in page.content(), page.url)
         flush("login")
 
         def api_get(path: str, **params):
@@ -93,8 +96,8 @@ def main() -> int:
         tid = next((i["id"] for i in found if i["name"] == "ExplicitTimePeriod"), None)
         ti = api_get("/api/concepts", q="TimeInterval", size=5).get("items", [])
         time_interval = next((i["id"] for i in ti if i["name"] == "TimeInterval"), None)
-        parent = api_get("/api/concepts", q="机构", size=5).get("items", [])
-        parent_id = next((i["id"] for i in parent if i["name"] == "机构"), None)
+        # 审计整体在 fibo-cmns 参考库；提交/审核也使用该库的概念作为父类
+        parent_id = tid
         check("fixtures", all([tid, time_interval, parent_id]), f"tid={tid} ti={time_interval} parent={parent_id}")
 
         # 详情页：重复 ID / 溢出 / 父类链接
@@ -197,7 +200,7 @@ def main() -> int:
         goto("/submit")
         page_issues("submit")
         page.locator("#picker-suggested-primary .picker-input").click()
-        page.locator("#picker-suggested-primary .picker-input").fill("机构")
+        page.locator("#picker-suggested-primary .picker-input").fill("ExplicitTimePeriod")
         page.wait_for_selector("#picker-suggested-primary .picker-result", timeout=8000)
         page.locator("#picker-suggested-primary .picker-result").first.click()
         check("submit primary picker", bool(page.locator('input[name="suggested_parent_id"]').input_value()))
@@ -222,7 +225,7 @@ def main() -> int:
             check("review merge picker present", merge.count() == 1)
             if merge.count():
                 merge.locator(".picker-input").click()
-                merge.locator(".picker-input").fill("机构")
+                merge.locator(".picker-input").fill("ExplicitTimePeriod")
                 page.wait_for_selector('.picker[data-name="merge_target_id"] .picker-result', timeout=8000)
                 merge.locator(".picker-result").first.click()
                 check("review merge picker writes hidden",
@@ -230,7 +233,7 @@ def main() -> int:
 
         # 导航链接 HTTP 状态
         goto("/concepts")
-        nav = page.evaluate("""() => [...new Set([...document.querySelectorAll('.topbar nav a[href^="/"]')]
+        nav = page.evaluate("""() => [...new Set([...document.querySelectorAll('.sidebar a[href^="/"]')]
             .map(a => a.getAttribute('href')))]""")
         bad_nav = []
         for href in nav:

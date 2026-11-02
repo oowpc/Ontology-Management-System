@@ -19,12 +19,16 @@
          data-selected='{{ selected_owner|tojson }}'
          data-placeholder="搜索所属概念…"></div>
   </div>
-  <label>参数类型列表（逗号 / 换行分隔）
-    <textarea name="param_types" rows="3" placeholder="行政区划&#10;人">{{ ((o.param_types or [])|join('，')) if o else '' }}</textarea>
+  <label>输入参数（主体自动作为第一个输入；其余用逗号 / 换行分隔，可填概念名或类型）
+    <textarea name="param_types" rows="3" placeholder="人&#10;行政区划">{{ ((o.param_types or [])|join('，')) if o else '' }}</textarea>
   </label>
-  <label>返回类型 *
-    <input name="return_type" value="{{ o.return_type if o else '' }}" placeholder="概念名 或 String / Number / Set[...]" required>
+  <label>输出类型 *
+    <input name="return_type" value="{{ o.return_type if o else '' }}" placeholder="概念名，或 Bool / String / Number / Set[...]" required>
   </label>
+  <label>说明 / 来源
+    <textarea name="description" rows="3" placeholder="例：Archer PROPERTY；字段 name；数据库 aan_1">{{ o.description if o else '' }}</textarea>
+  </label>
+  <p class="muted">示例：主体选「机构」，输入参数填「人」，输出填「Bool」→ <code>op 某算子(机构, 人)：布尔</code></p>
   <div class="actions">
     <button class="btn primary" type="submit">保存</button>
     <a class="btn" href="/operators">取消</a>

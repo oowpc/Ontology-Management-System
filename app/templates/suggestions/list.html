@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}本体建议 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="breadcrumbs"><a href="/">工作台</a><span>/</span><span>标注与审核</span><span>/</span><strong>本体建议</strong></div>
+<div class="page-head">
+  <div>
+    <h1>本体建议</h1>
+    <span class="page-sub">KEOL / agent 提交的待审本体包 · 当前待审 {{ pending }} 条</span>
+  </div>
+  <div class="page-head-actions">
+    <a class="btn" href="/api/keol/suggestions" target="_blank">API 列表</a>
+  </div>
+</div>
+<form class="filters" method="get" action="/suggestions">
+  <div class="filter-item"><span>状态</span>
+    <select name="status">
+      <option value="">全部</option>
+      {% for k, v in [('pending','待审'),('approved','已通过'),('rejected','已驳回'),('failed','应用失败')] %}
+      <option value="{{ k }}" {{ 'selected' if status == k }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button class="btn primary" type="submit">过滤</button>
+</form>
+<div class="table-meta"><span>共 <strong>{{ items|length }}</strong> 条</span><span>审批后才会写入全局本体</span></div>
+<div class="table-wrap">
+<table class="data">
+  <thead><tr><th>ID</th><th>标题</th><th>来源</th><th>状态</th><th>内容</th><th>创建</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for s in items %}
+  <tr>
+    <td class="muted">{{ s.id }}</td>
+    <td><a href="/suggestions/{{ s.id }}"><strong>{{ s.title or ('建议 #' ~ s.id) }}</strong></a></td>
+    <td><span class="chip">{{ s.origin }}</span></td>
+    <td><span class="badge {{ s.status }}">{{ {'pending':'待审','approved':'已通过','rejected':'已驳回','failed':'应用失败'}.get(s.status, s.status) }}</span></td>
+    <td class="muted">概念 {{ (s.summary or {}).get('concepts',0) }} · 算子 {{ (s.summary or {}).get('operators',0) }} · 规则 {{ (s.summary or {}).get('rules',0) }} · 个体 {{ (s.summary or {}).get('individuals',0) }}</td>
+    <td class="muted">{{ s.created_by }} · {{ s.created_at|dt }}</td>
+    <td><a class="btn" href="/suggestions/{{ s.id }}">查看</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="empty">暂无建议</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

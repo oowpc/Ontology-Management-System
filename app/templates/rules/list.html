@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}规则 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>全局规则</h1>
+  {% if user.role in ['reviewer','admin'] %}<a class="btn primary" href="/rules/new">+ 新建规则</a>{% endif %}
+</div>
+<form class="filters" method="get" action="/rules">
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="规则名 / 描述">
+  <input type="text" name="domain" value="{{ domain or '' }}" placeholder="域" style="width:8rem">
+  <select name="status">
+    <option value="">全部状态</option>
+    {% for k, v in status_labels.items() %}<option value="{{ k }}" {{ 'selected' if status == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <button class="btn" type="submit">过滤</button>
+</form>
+<p class="muted">共 {{ total }} 条 · body=NULL 表示事实</p>
+<div class="table-wrap">
+<table class="data">
+  <thead><tr><th>ID</th><th>名称</th><th>域</th><th>类型</th><th>状态</th><th>描述</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for r in items %}
+  <tr>
+    <td>{{ r.id }}</td>
+    <td><a href="/rules/{{ r.id }}">{{ r.name }}</a></td>
+    <td>{{ r.domain }}</td>
+    <td>{% if r.body is none %}事实{% else %}规则{% endif %}</td>
+    <td><span class="badge {{ r.status }}">{{ status_labels.get(r.status, r.status) }}</span></td>
+    <td class="muted">{{ r.description|truncate(60) }}</td>
+    <td class="ops">
+      {% if user.role in ['reviewer','admin'] %}<a href="/rules/{{ r.id }}/edit">编辑</a>{% endif %}
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="empty">暂无规则；KEOL 加工台“推送”可把规则同步进来</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="btn" href="?page={{ page - 1 }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if domain %}&domain={{ domain|urlencode }}{% endif %}{% if status %}&status={{ status }}{% endif %}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ pages }} 页</span>
+  {% if page < pages %}<a class="btn" href="?page={{ page + 1 }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if domain %}&domain={{ domain|urlencode }}{% endif %}{% if status %}&status={{ status }}{% endif %}">下一页</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

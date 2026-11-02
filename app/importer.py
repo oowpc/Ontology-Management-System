@@ -14,9 +14,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .audit import concept_snapshot, log_change, snapshot
-from .models import Concept, ConceptParent, ImportBatch, Operator
+from .models import (Concept, ConceptParent, ImportBatch, OntologyIndividual,
+                      OntologyRule, Operator, OperatorInput)
 
-CONCEPT_FIELDS = ["name", "domain", "aliases", "definition", "parent", "parents",
+CONCEPT_FIELDS = ["name", "domain", "aliases", "definition", "description", "parent", "parents",
                   "source_uri", "ontology_module", "status", "merged_into"]
 OPERATOR_FIELDS = ["name", "subject", "owner", "param_types", "return_type",
                    "source_uri", "ontology_module", "status"]
@@ -38,7 +39,8 @@ def parse_field_map(raw: str | None) -> dict:
 
 # ---------------- 导出 ----------------
 
-def export_payload(db: Session, field_map: dict | None = None) -> dict:
+def export_payload(db: Session, field_map: dict | None = None,
+                   include_ids: bool = False) -> dict:
     fm = field_map or {}
     k = lambda key: fm.get(key, key)  # noqa: E731
     concepts = db.scalars(select(Concept).order_by(Concept.id)).all()
@@ -53,10 +55,12 @@ def export_payload(db: Session, field_map: dict | None = None) -> dict:
     for link, parent in rows:
         parents_by.setdefault(link.concept_id, []).append(parent.name)
     out_c = [{
+        **({"id": c.id} if include_ids else {}),
         k("name"): c.name,
         k("domain"): c.domain or DEFAULT_DOMAIN,
         k("aliases"): c.aliases or [],
         k("definition"): c.definition or "",
+        k("description"): c.description or "",
         k("parent"): names.get(c.parent_id),
         k("parents"): parents_by.get(c.id, []),
         k("source_uri"): c.source_uri or "",
@@ -65,18 +69,57 @@ def export_payload(db: Session, field_map: dict | None = None) -> dict:
         k("merged_into"): names.get(c.merged_into_id),
     } for c in concepts]
     ops = db.scalars(select(Operator).order_by(Operator.id)).all()
+    input_rows = db.execute(
+        select(OperatorInput, Concept)
+        .outerjoin(Concept, Concept.id == OperatorInput.concept_id)
+        .order_by(OperatorInput.operator_id, OperatorInput.position)
+    ).all()
+    inputs_by: dict[int, list[str]] = {}
+    for item, concept in input_rows:
+        inputs_by.setdefault(item.operator_id, []).append(
+            concept.name if concept else item.type_name)
+    # 兼容直接建 Operator / 种子数据：没有输入行时，主体就是第一输入
+    for o in ops:
+        if o.id not in inputs_by and names.get(o.subject_concept_id):
+            inputs_by[o.id] = [names[o.subject_concept_id]]
     out_o = [{
+        **({"id": o.id} if include_ids else {}),
         k("name"): o.name,
         k("subject"): names.get(o.subject_concept_id),
         k("owner"): names.get(o.owner_concept_id),
         k("param_types"): o.param_types or [],
+        k("inputs"): inputs_by.get(o.id, []),
         k("return_type"): o.return_type,
+        k("description"): o.description or "",
+        k("output_concept"): names.get(o.output_concept_id),
         k("source_uri"): o.source_uri or "",
         k("ontology_module"): o.ontology_module or "",
         k("status"): o.status,
     } for o in ops]
+    rules = db.scalars(select(OntologyRule).order_by(OntologyRule.id)).all()
+    out_r = [{
+        "id": r.id, "name": r.name, "canonical_name": r.name,
+        "domain": r.domain or DEFAULT_DOMAIN, "description": r.description or "",
+        "body": r.body, "head": r.head or [], "sources": r.sources or [],
+        "supply": r.supply or {}, "status": r.status,
+        "source_uri": r.source_uri or "", "ontology_module": r.ontology_module or "",
+        "created_at": r.created_at.isoformat(timespec="seconds") if r.created_at else None,
+        "updated_at": r.updated_at.isoformat(timespec="seconds") if r.updated_at else None,
+    } for r in rules]
+    individuals = db.scalars(select(OntologyIndividual)
+                             .order_by(OntologyIndividual.id)).all()
+    out_i = [{
+        "id": i.id, "name": i.name, "canonical_name": i.name,
+        "concept": names.get(i.concept_id), "concept_id": i.concept_id,
+        "domain": i.domain or DEFAULT_DOMAIN, "description": i.description or "",
+        "sources": i.sources or [], "supply": i.supply or {}, "status": i.status,
+        "source_uri": i.source_uri or "", "ontology_module": i.ontology_module or "",
+        "created_at": i.created_at.isoformat(timespec="seconds") if i.created_at else None,
+        "updated_at": i.updated_at.isoformat(timespec="seconds") if i.updated_at else None,
+    } for i in individuals]
     return {"version": 1, "exported_at": datetime.now().isoformat(timespec="seconds"),
-            "concepts": out_c, "operators": out_o}
+            "concepts": out_c, "operators": out_o,
+            "rules": out_r, "individuals": out_i}
 
 
 def _to_csv(header: list[str], rows: list[list]) -> str:
@@ -93,7 +136,7 @@ def export_csv(db: Session, kind: str, field_map: dict | None = None) -> str:
         fields = CONCEPT_FIELDS
         k = lambda key: (field_map or {}).get(key, key)  # noqa: E731
         rows = [[r[k("name")], r[k("domain")] or DEFAULT_DOMAIN, "|".join(r[k("aliases")]), r[k("definition")],
-                 r[k("parent")] or "", "|".join(r[k("parents")] or []),
+                 r[k("description")] or "", r[k("parent")] or "", "|".join(r[k("parents")] or []),
                  r[k("source_uri")] or "", r[k("ontology_module")] or "",
                  r[k("status")], r[k("merged_into")] or ""]
                 for r in payload["concepts"]]
@@ -128,9 +171,9 @@ def csv_to_payload(text: str, kind: str, field_map: dict | None = None) -> dict:
     reader = csv.DictReader(io.StringIO((text or "").lstrip("﻿")))
     rows = [dict(r) for r in reader]
     if kind == "concepts":
-        return {"concepts": rows, "operators": []}
+        return {"concepts": rows, "operators": [], "rules": [], "individuals": []}
     if kind == "operators":
-        return {"concepts": [], "operators": rows}
+        return {"concepts": [], "operators": rows, "rules": [], "individuals": []}
     raise HTTPException(400, "kind 取值：concepts / operators")
 
 
@@ -139,8 +182,13 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
                    files: list | None = None) -> dict:
     rows_c = [_canon(r, field_map) for r in (payload.get("concepts") or [])]
     rows_o = [_canon(r, field_map) for r in (payload.get("operators") or [])]
+    rows_r = [_canon(r, field_map) for r in (payload.get("rules") or [])]
+    rows_i = [_canon(r, field_map) for r in (payload.get("individuals") or [])]
     stats = {"concepts_created": 0, "concepts_updated": 0, "concepts_unchanged": 0,
-             "operators_created": 0, "operators_updated": 0, "operators_unchanged": 0}
+             "operators_created": 0, "operators_updated": 0, "operators_unchanged": 0,
+             "rules_created": 0, "rules_updated": 0, "rules_unchanged": 0,
+             "individuals_created": 0, "individuals_updated": 0,
+             "individuals_unchanged": 0}
     if batch_id and db.scalar(select(ImportBatch).where(ImportBatch.batch_id == batch_id)):
         raise HTTPException(400, f"导入批次「{batch_id}」已存在")
     created_concept_ids: list[int] = []
@@ -179,13 +227,21 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
         domain = str(row.get("domain") or DEFAULT_DOMAIN).strip() or DEFAULT_DOMAIN
         aliases = _split_list(row.get("aliases"))
         definition = str(row.get("definition") or "")
+        description = row.get("description")
+        if description is None:
+            description = definition or f"概念 {name}"
+        else:
+            description = str(description)
         source_uri = str(row.get("source_uri") or "").strip() or None
         ontology_module = str(row.get("ontology_module") or "").strip() or None
         c = existing.get(name)
         if c is None:
             c = Concept(name=name, domain=domain, aliases=aliases, definition=definition,
+                        description=description,
                         source_uri=source_uri, ontology_module=ontology_module,
                         status=status, created_by=actor, reviewed_by=actor)
+            from .services import assign_local_code
+            assign_local_code(db, c)
             db.add(c)
             db.flush()
             existing[name] = c
@@ -263,7 +319,14 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
         if owner_name and not owner:
             raise HTTPException(400, f"算子「{name}」的所属概念「{owner_name}」不存在")
         param_types = _split_list(row.get("param_types"))
+        input_names = _split_list(row.get("inputs"))
+        if input_names:
+            if input_names[0] == subject_name:
+                param_types = input_names[1:]
+            else:
+                param_types = input_names
         return_type = str(row.get("return_type") or "").strip()
+        description = str(row.get("description") or "")
         source_uri = str(row.get("source_uri") or "").strip() or None
         ontology_module = str(row.get("ontology_module") or "").strip() or None
         if not return_type:
@@ -276,9 +339,13 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
             o = Operator(name=name, subject_concept_id=subj.id,
                          owner_concept_id=owner.id if owner else None,
                          param_types=param_types, return_type=return_type,
+                         description=description,
                          source_uri=source_uri, ontology_module=ontology_module,
                          status=status, created_by=actor)
             db.add(o)
+            db.flush()
+            from .services import sync_operator_inputs
+            sync_operator_inputs(db, o, param_types)
             db.flush()
             log_change(db, "operator", o.id, "create", None, snapshot(o), actor)
             created_operator_ids.append(o.id)
@@ -291,6 +358,9 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
                 changed = True
             if o.return_type != return_type:
                 o.return_type = return_type
+                changed = True
+            if (o.description or "") != description:
+                o.description = description
                 changed = True
             if o.status != status:
                 o.status = status
@@ -307,12 +377,134 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
                 changed = True
             if changed:
                 db.flush()
+                from .services import sync_operator_inputs
+                sync_operator_inputs(db, o, o.param_types or [])
+                db.flush()
                 log_change(db, "operator", o.id, "import", before, snapshot(o), actor)
                 updated_operator_ids.append(o.id)
                 ops_touched += 1
             else:
                 stats["operators_unchanged"] += 1
     stats["operators_updated"] = ops_touched
+
+    # 全局规则：按 name upsert（body/head 存 spec_v1 JSON）
+    existing_rules = {r.name: r for r in db.scalars(select(OntologyRule)).all()}
+    for row in rows_r:
+        name = str(row.get("name") or row.get("canonical_name") or "").strip()
+        if not name:
+            raise HTTPException(400, "存在缺名称的规则行")
+        body = row.get("body")
+        if body is not None and not isinstance(body, dict):
+            raise HTTPException(400, f"规则「{name}」的 body 必须是 JSON 对象或 null")
+        head = row.get("head")
+        if head is None:
+            head = []
+        if not isinstance(head, list):
+            raise HTTPException(400, f"规则「{name}」的 head 必须是 JSON 数组")
+        sources = row.get("sources") or []
+        if not isinstance(sources, list):
+            raise HTTPException(400, f"规则「{name}」的 sources 必须是数组")
+        supply = row.get("supply") or {}
+        if not isinstance(supply, dict):
+            raise HTTPException(400, f"规则「{name}」的 supply 必须是对象")
+        status = str(row.get("status") or "approved").strip()
+        if status not in VALID_STATUS:
+            status = "approved"
+        domain = str(row.get("domain") or DEFAULT_DOMAIN).strip() or DEFAULT_DOMAIN
+        description = str(row.get("description") or "")
+        source_uri = str(row.get("source_uri") or "").strip() or None
+        ontology_module = str(row.get("ontology_module") or "").strip() or None
+        r = existing_rules.get(name)
+        if r is None:
+            r = OntologyRule(name=name, domain=domain, description=description,
+                             body=body, head=head, sources=sources, supply=supply,
+                             status=status, source_uri=source_uri,
+                             ontology_module=ontology_module,
+                             created_by=actor, reviewed_by=actor)
+            db.add(r)
+            db.flush()
+            existing_rules[name] = r
+            log_change(db, "rule", r.id, "create", None, snapshot(r), actor)
+            stats["rules_created"] += 1
+        else:
+            before = snapshot(r)
+            changed = False
+            for attr, new in (("domain", domain), ("description", description),
+                              ("body", body), ("head", head), ("sources", sources),
+                              ("supply", supply), ("status", status),
+                              ("source_uri", source_uri),
+                              ("ontology_module", ontology_module)):
+                if getattr(r, attr) != new:
+                    setattr(r, attr, new)
+                    changed = True
+            if changed:
+                db.flush()
+                log_change(db, "rule", r.id, "import", before, snapshot(r), actor)
+                stats["rules_updated"] += 1
+            else:
+                stats["rules_unchanged"] += 1
+
+    # 全局个体：按 (concept_id, name) upsert
+    existing_ind = {(i.concept_id, i.name): i
+                    for i in db.scalars(select(OntologyIndividual)).all()}
+    for row in rows_i:
+        name = str(row.get("name") or row.get("canonical_name") or "").strip()
+        if not name:
+            raise HTTPException(400, "存在缺名称的个体行")
+        concept_name = str(row.get("concept") or row.get("concept_name") or "").strip()
+        concept_id = row.get("concept_id")
+        if isinstance(concept_id, str) and concept_id.isdigit():
+            concept_id = int(concept_id)
+        c = db.get(Concept, concept_id) if isinstance(concept_id, int) else None
+        if c is None and concept_name:
+            c = existing.get(concept_name)
+        if c is None:
+            raise HTTPException(400, f"个体「{name}」的所属概念不存在：{concept_name or concept_id}")
+        sources = row.get("sources") or []
+        if not isinstance(sources, list):
+            raise HTTPException(400, f"个体「{name}」的 sources 必须是数组")
+        supply = row.get("supply") or {}
+        if not isinstance(supply, dict):
+            raise HTTPException(400, f"个体「{name}」的 supply 必须是对象")
+        status = str(row.get("status") or "approved").strip()
+        if status not in VALID_STATUS:
+            status = "approved"
+        domain = str(row.get("domain") or DEFAULT_DOMAIN).strip() or DEFAULT_DOMAIN
+        description = str(row.get("description") or "")
+        source_uri = str(row.get("source_uri") or "").strip() or None
+        ontology_module = str(row.get("ontology_module") or "").strip() or None
+        key = (c.id, name)
+        ind = existing_ind.get(key)
+        if ind is None:
+            ind = OntologyIndividual(name=name, concept_id=c.id, domain=domain,
+                                     description=description, sources=sources,
+                                     supply=supply, status=status,
+                                     source_uri=source_uri,
+                                     ontology_module=ontology_module,
+                                     created_by=actor, reviewed_by=actor)
+            db.add(ind)
+            db.flush()
+            existing_ind[key] = ind
+            log_change(db, "individual", ind.id, "create", None, snapshot(ind), actor)
+            stats["individuals_created"] += 1
+        else:
+            before = snapshot(ind)
+            changed = False
+            for attr, new in (("domain", domain), ("description", description),
+                              ("sources", sources), ("supply", supply),
+                              ("status", status), ("source_uri", source_uri),
+                              ("ontology_module", ontology_module)):
+                if getattr(ind, attr) != new:
+                    setattr(ind, attr, new)
+                    changed = True
+            if changed:
+                db.flush()
+                log_change(db, "individual", ind.id, "import", before,
+                           snapshot(ind), actor)
+                stats["individuals_updated"] += 1
+            else:
+                stats["individuals_unchanged"] += 1
+
     if batch_id:
         db.add(ImportBatch(
             batch_id=batch_id, source=source or "", actor=actor, status="completed",

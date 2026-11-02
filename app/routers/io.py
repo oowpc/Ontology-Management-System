@@ -30,6 +30,16 @@ def export_json_ep(field_map: str | None = None, pretty: int = 0,
     )
 
 
+@router.get("/export/portable")
+def export_portable_ep(db: Session = Depends(get_db),
+                       user: dict = Depends(require_role("admin"))):
+    """带概念/算子 ID 的完整导出，用于规则跨实例 remap。"""
+    payload = export_payload(db, include_ids=True)
+    return Response(json.dumps(payload, ensure_ascii=False, indent=2),
+                    media_type="application/json; charset=utf-8",
+                    headers=_attachment("ontology-portable.json"))
+
+
 @router.get("/export/csv")
 def export_csv_ep(kind: str = "concepts", field_map: str | None = None,
                   db: Session = Depends(get_db), user: dict = Depends(require_role("admin"))):
@@ -48,7 +58,7 @@ async def import_json_ep(request: Request, field_map: str | None = None,
     except json.JSONDecodeError as e:
         raise HTTPException(400, f"JSON 解析失败：{e}")
     if not isinstance(payload, dict):
-        raise HTTPException(400, "导入内容应为 {concepts: [...], operators: [...]}")
+        raise HTTPException(400, "导入内容应为 {concepts: [...], operators: [...], rules: [...], individuals: [...]}")
     fm = parse_field_map(field_map)
     return import_payload(db, payload, user["username"], fm)
 

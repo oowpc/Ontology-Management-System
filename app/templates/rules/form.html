@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑规则' if rid else '新建规则' }}{% endblock %}
+{% block content %}
+<h1>{{ '编辑规则' if rid else '新建规则' }}</h1>
+{% if error %}<div class="flash err">{{ error }}</div>{% endif %}
+<p class="muted">body/head 使用 KEOL spec_v1 节点 JSON；规则结构引用写 OMS ID（如 <code>oms-c-12</code>、<code>oms-op-34</code>），桥接会自动转换。body 留空表示事实。</p>
+<form class="form" method="post">
+  <label>名称 *
+    <input name="name" value="{{ r.name }}" required>
+  </label>
+  <label>域
+    <input name="domain" value="{{ r.domain }}" placeholder="通用 / KEOL">
+  </label>
+  <label>描述
+    <textarea name="description" rows="2">{{ r.description }}</textarea>
+  </label>
+  <label>body（前提；JSON 对象，留空=事实）
+    <textarea name="body_text" data-json rows="10" class="mono" placeholder='{"lhs": {"operator": "oms-op-12", "arguments": ["x"]}, "rhs": null}'>{{ r.body_text }}</textarea>
+  </label>
+  <label>head（结论；JSON 数组）
+    <textarea name="head_text" data-json rows="8" class="mono">{{ r.head_text }}</textarea>
+  </label>
+  <label>sources（逗号 / 换行分隔）
+    <textarea name="sources_text" rows="3">{{ r.sources_text }}</textarea>
+  </label>
+  <label>supply（JSON 对象）
+    <textarea name="supply_text" data-json rows="4" class="mono">{{ r.supply_text }}</textarea>
+  </label>
+  <label>状态
+    <select name="status">
+      {% for k, v in [('draft','草稿'),('pending','待审'),('approved','已通过'),('disabled','停用')] %}
+      <option value="{{ k }}" {{ 'selected' if r.status == k }}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions">
+    <button class="btn" type="button" data-json-format>格式化 JSON</button>
+    <button class="btn primary" type="submit">保存</button>
+    <a class="btn" href="{{ '/rules/' ~ rid if rid else '/rules' }}">取消</a>
+  </div>
+</form>
+<script>
+document.querySelectorAll("[data-json-format]").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    btn.closest("form").querySelectorAll("textarea[data-json]").forEach(function (el) {
+      try { el.value = JSON.stringify(JSON.parse(el.value), null, 2); el.dispatchEvent(new Event("input")); } catch (e) {}
+    });
+  });
+});
+document.querySelectorAll("textarea[data-json]").forEach(function (el) {
+  function check() {
+    if (!el.value.trim()) { el.classList.remove("json-invalid", "json-valid"); el.title = ""; return; }
+    try { JSON.parse(el.value); el.classList.remove("json-invalid"); el.classList.add("json-valid"); el.title = "JSON 合法"; }
+    catch (e) { el.classList.remove("json-valid"); el.classList.add("json-invalid"); el.title = "JSON 错误：" + e.message; }
+  }
+  el.addEventListener("input", check); check();
+});
+</script>
+{% endblock %}

@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 def main() -> int:
     ap = argparse.ArgumentParser(description="按批次回滚 KEOL 导入")
     ap.add_argument("--batch-id", required=True)
+    ap.add_argument("--library", default="fibo-cmns", help="本体库 key（默认 fibo-cmns，历史导入批次在参考库）")
     ap.add_argument("--force", action="store_true",
                     help="允许清理外部父类链接/外部算子引用（业务数据仍会阻止）")
     ap.add_argument("--dry-run", action="store_true")
@@ -24,12 +25,23 @@ def main() -> int:
 
     from app.batches import rollback_batch
     from app.db import SessionLocal, init_db
+    from app.library_context import library_scope
+    from app.libraries import get_library
     init_db()
-    db = SessionLocal()
+    probe = SessionLocal()
     try:
-        result = rollback_batch(db, args.batch_id, force=args.force, dry_run=args.dry_run)
+        lib = get_library(probe, args.library)
     finally:
-        db.close()
+        probe.close()
+    if not lib:
+        print(f"本体库不存在：{args.library}")
+        return 1
+    with library_scope(lib.id):
+        db = SessionLocal()
+        try:
+            result = rollback_batch(db, args.batch_id, force=args.force, dry_run=args.dry_run)
+        finally:
+            db.close()
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("status") in ("rolled_back", "dry_run", "already_rolled_back") else 1
 

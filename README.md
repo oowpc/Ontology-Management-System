@@ -11,8 +11,19 @@ python -m uvicorn app.main:app --reload
 
 打开 http://127.0.0.1:8000 ，种子账号：`admin` / `reviewer` / `annotator`（密码同用户名）；M7 演示组账号 `annotator2`（二组）/ `annotator3`（三组）。
 
+当前系统工作流（As-Is）见 [`docs/oms-workflow.md`](docs/oms-workflow.md)，业务规则见 [`docs/co-ke-annotation-sop.md`](docs/co-ke-annotation-sop.md)，生产本体基线见 [`docs/ontology-baseline.md`](docs/ontology-baseline.md)。
+
+规则跨实例迁移见 [`docs/rule-portability.md`](docs/rule-portability.md)。算子输入/输出与 KEOL 风格签名见 [`docs/oms-workflow.md`](docs/oms-workflow.md)。
+
+生产入口：OMS `https://192.168.120.3:8443/`（内部 CA）；KEOL `https://192.168.120.3:8444/`（内部 CA）。
+
+Pilot 源文与批次：`docs/pilots/2026-10-28-育儿补贴制度实施方案.md`；采用完整原文的 v1 批次 `PILOT-20261028-01`（18 单元，CO/对齐已完成，当前 active，归属 `pilot-yuer`）；v2 原子切分保留为返工审计。
+
+当前采用**多本体库隔离**（M44/M48）：`fibo-cmns` 参考库 3150/3385，`co-baseline` 业务基线 20/5，`pilot-yuer` 试点库只放 Pilot，`archer` 参考库 839 概念（639 原始 + 199 数据库分组 + 1 根）/4622 算子。详见 [`docs/ontology-libraries.md`](docs/ontology-libraries.md) 和 [`docs/archer-import.md`](docs/archer-import.md)。
+
 - 数据库默认 `data/ontology.db`（SQLite）；切 PostgreSQL 设 `DB_URL`（见 `.env.example`）
-- 首次启动自动建表 + 写入种子账号与演示概念（取自《中国政府本体 CO v0.8》）；`SEED_DEMO=0` 只建账号
+- 首次启动自动建表 + 写入种子账号与 CO v0.8 业务基线概念（`SEED_DEMO=0` 只建账号）；生产基线标记与测试清理见 `docs/ontology-baseline.md`
+- API 写操作带 `X-Ontology-Library: <key>`（默认读 `co-baseline`）；详见 `docs/ontology-libraries.md`
 - API 文档：http://127.0.0.1:8000/docs
 
 ## 模块进度
@@ -31,8 +42,8 @@ python -m uvicorn app.main:app --reload
 | M9 | GOLD 成品库：CSV 上传自动入草稿（篇编号+KE内容列）· 定稿锁定与版本 · 全留痕可回滚 · CSV/JSON 导出 · API 全覆盖 | ✅ 本次交付 |
 | M10 | KE 逐条复核：待复核队列 · 逐条/批量打标 · 写回任务（一致→完成 / 不一致→退回+标签）· 系统结论上传重放 · 留痕可查 | ✅ 本次交付 |
 | M11 | 通用化：CSV 列名映射（KE_COLUMN_MAP）· 状态词表映射（KE_STATUS_MAP）· GOLD 阶段/泳道词表配置 · 用户与组管理页（/admin/users） | ✅ 本次交付 |
-| 接入 | Agent 全开放：Bearer Token（`/api/tokens` 自助签发）· 页面动作均有对应 API（32/32 审计通过）· 幂等键统一 · `AGENTS.md` 手册 | ✅ |
-| M12 | Agent 可发现性：`GET /api/agent/manifest`（活路由表+工况词表+工作流配方，永不缺漏）· MCP server（`scripts/mcp_server.py`，47 个工具） | ✅ 本次交付 |
+| 接入 | Agent 全开放：Bearer Token（`/api/tokens` 自助签发）· 概念/算子/标注/规则/个体/GOLD/KE/Issue 均有 JSON API · MCP 83 工具 · `AGENTS.md` §3 | ✅ |
+| M12 | Agent 可发现性：`GET /api/agent/manifest`（活 API 路由表+工况词表+工作流配方）· MCP server（`scripts/mcp_server.py`，83 个工具） | ✅ 本次交付 |
 | M13 | 概念继承图：服务端 tidy-tree 布局 + 原生 SVG（零依赖、内网可用）· 缩放/拖拽/点击进详情 · 按根/状态过滤 · `/api/graph` 结构+布局数据 | ✅ |
 | M14 | 领域分组：Concept.domain（默认通用，存量自动迁移）· 列表/图/导入导出/提交审核带领域 · 体检新增「跨领域近义对」（验收自洽口径） | ✅ 本次交付 |
 | M15 | 粘贴识别：粘贴 KEOL 文本 → 自动识别 concept/op/const/KE 事实 → 报告（新/已存在/相似/无效+行级原因）→ 勾选导入（概念算子进本体库·可选领域，事实入成品库） | ✅ 本次交付 |
@@ -51,11 +62,41 @@ python -m uvicorn app.main:app --reload
 | M28 | P1 结构性改进：Alembic 迁移（`migrations/`，baseline + 既有库自动 stamp 引导，手工 `_NEW_COLUMNS` 登记下线）· Token 最小权限 scopes（read/write；Bearer 优先于并存 session 防提权）· `last_used_at` 节流（`TOKEN_LAST_USED_THROTTLE`=300s）· 依赖锁 `requirements-lock.txt`（pip-compile，61 项钉死；补登记 mcp/alembic/psycopg/pytest-cov） | ✅ 本次交付 |
 | M29 | P2 工程化补强：CI `.github/workflows/test.yml`（SQLite lane 必过 + PG lane advisory，`TEST_DB_URL` 切换）· SQLite WAL + busy_timeout · 覆盖率接线（`--cov=app` floor 80%，当前 85%）+ 查重阈值边界用例 · 备份 `scripts/backup_db.py`（在线备份+轮换 `BACKUP_KEEP`）· conftest 加固（env 模块级就位，杜绝测试写穿真实库） | ✅ 本次交付 |
 | M30 | 前端任务化：角色工作台落地页（`/`：我的组今日上传/我的题目/待办队列/系统概况按角色分屏）· 导航按任务分组+按角色隐藏无权限项（修 GOLD 重复链接）· session 一次性 flash（19 处主流程迁出 `?ok=` URL 拼接，刷新不重现；旧写法兼容）· 页面 403/404/500 友好错误页（`/api/` 保持 JSON 契约）· KE 复核键盘流（J/K 移动、1 一致、2 不一致、X 勾选）· 窄屏表格横滚 | ✅ 本次交付 |
+| M34 | 全局规则/个体：OMS 新增 `ontology_rules`/`ontology_individuals`（KEOL spec_v1 对齐）· `/rules` / `/individuals` 页面 · JSON 导入导出 · 标注版本计数/校验纳入 · KEOL 桥双阶段推送（先概念/算子，再按 OMS ID 写规则/个体） | ✅ 本次交付 |
+| M35 | Agent 完整 API：`/api/annotation/*`（批次/单元/CO/对齐/KE/GOLD/状态/版本/归档）· `/api/rules`、`/api/individuals` CRUD · manifest/MCP 扩展 | ✅ 本次交付 |
+| M36 | 前端壳改版：左侧栏分组导航（本体/标注审核/题库成果/KEOL/系统）+ 顶栏全局搜索 + 移动端抽屉 · 概念列表/详情、标注空态/批次 Tab、工作台层级重构 | ✅ 本次交付 |
+| M37 | P0 治理底座：版本完整快照 + KEOL 按版本钉取 · evidence/pending/交叉检查组硬门槛 · 版本 diff/回滚草稿 · Token 过期/限流/IP + token_name 审计 · 恢复演练文档 | ✅ 本次交付 |
+| M38 | P0 KEOL 建议闭环：`ontology_suggestions` 建议箱 + 审批应用 · KEOL 推送默认提交建议，admin 应急直写 · 建议箱 UI/API/MCP | ✅ 本次交付 |
+| M39 | P0 访问与运维：KEOL 8321 OMS 账号登录 + Session + 按角色/服务 Token 限制拉取推送 · OMS `/api/auth/login` 服务间校验 · socat TLS（8443/8444，内部 CA 签发） | ✅ 本次交付 |
+| M40 | P1 规则/个体治理：`/api/export/portable` 带 ID 导出 · `scripts/remap_rule_refs.py` 跨实例 remap · 规则/个体 JSON 编辑校验 | ✅ 本次交付 |
+| M41 | P2-A Agent/UI 收尾：`/api/search` 跨实体搜索 · 标注单元 JSON/CSV 导出 + 草稿批量删除 · 规则/个体 JSON 格式化/校验 · MCP 83 工具 | ✅ 本次交付 |
+| M42 | P2-B 运营：内部 CA TLS · `/api/ops/summary` + `/ops` 运行状态 · 每日备份 timer + integrity_check · 证书/Token/备份监控 | ✅ 本次交付 |
+| M43 | P1 Pilot：中国政府网《育儿补贴制度实施方案》完整原文 v1（18 单元，批次 `PILOT-20261028-01`，CO/对齐完成）；v2 原子切分转返工审计 | ✅ 已就绪 |
+| M44 | 多本体库隔离：`ontology_libraries` + 全表 `library_id`；FIBO/CMNS 参考库、CO 业务基线、Pilot 库分离；顶栏切库；API `X-Ontology-Library`；v1/v2 归入 Pilot；KEOL 拉取/推送/政策导入按库 | ✅ 本次交付 |
+| M45 | 算子输入/输出：`operator_inputs`（按顺序、可关联概念）+ `output_concept_id`；支持 `op 名称(输入1, 输入2)：输出` 签名展示（`Bool` 显示为「布尔」）；API/导入导出/版本/KEOL 桥往返 | ✅ 本次交付 |
+| M46 | 库级权限：`library_members`（owner/reviewer/annotator）；有效角色=库角色与账号角色取低；无成员不可见/不可访问；库成员管理页 `/libraries`；Pilot 只给批次参与者 | ✅ 本次交付 |
+| M47 | 标注运营看板 `/annotation/dashboard`：跨批次 CO/对齐/KE/GOLD、证据覆盖、Issue、LLM 审核状态、阻塞单元；单 Issue 与批次 Issue Markdown 导出 | ✅ 本次交付 |
+| M48 | Archer 数据：新 reference 库 `archer`，导入 639 概念 / 4622 算子（3696 PROPERTY + 926 LINK）；保留 note/path 描述；来源与限制见 `docs/archer-import.md` | ✅ 本次交付 |
+| M49 | 概念库内编号：`local_code`；Archer 显示 `ARCH-0001`，FIBO `FIBO-*`，CO `CO-*`，Pilot `PILOT-*`；列表/详情/API/搜索显示；新建自动编号 | ✅ 本次交付 |
+| M50 | 概念 description：全量 4009 概念、8012 算子均有描述；Archer 概念按来源库/字段生成，算子保留 Archer note；API/UI/JSON/CSV/版本支持 | ✅ 本次交付 |
+| M51 | OMS × NL2KE：`/nl2ke` 页面单条/批量生成 KE；每步产出可见、模型参数可调，结果可接受为 GOLD 草稿或加入标注批次（单元页可复核/预填 KE）；Archer source schema/来源已结构化进 OMS；服务端 Bearer；见 `docs/nl2ke-integration.md` | ✅ 本次交付 |
+
+## 全局规则 / 个体（M34）
+
+OMS 现在不仅管概念/算子，也管 KEOL spec_v1 的全局层：
+
+- **规则**：`/rules`；`body`（Formula/Assertion/null=事实）+ `head`（Assertion 数组）存 spec_v1 JSON；结构引用写 OMS ID（`oms-c-*` / `oms-op-*`），避免同名算子歧义。
+- **个体**：`/individuals`；身份 = 所属概念 + 名称，对应 KEOL 的 `(concept, canonical_name)`。
+- **导入导出**：`/api/export/json` 与 `/api/import/json` 的载荷增加 `rules` / `individuals`；导入按规则名、个体 `(concept_id, name)` 幂等 upsert。
+- **版本/标注**：本体版本 `counts`/`snapshot` 纳入规则/个体，校验会检查个体所属概念、规则节点形状与 OMS ID 引用。
+- **KEOL 桥**：推送分两批——概念/算子先入库，再按 OMS ID 写规则/个体；拉取把 OMS ID 映射回 `oms-c-*`/`oms-op-*`，规则结构引用可直接回 KEOL。
 
 ## M12 · Agent 可操控性补全
 
+> M12 的“页面/API 对等”是当时历史页面的审计结果；M35 已补标注工作流与全局规则/个体的 JSON API，当前开放度矩阵见 `AGENTS.md` §3。
+
 - **活清单**：`GET /api/agent/manifest`（Bearer 认证）——运行时内省全部 API 路由（新版 Starlette 懒加载路由已展开）、当前工况词表（GOLD 阶段/泳道/组别/目标、KE 状态与列名映射、查重阈值、LLM 是否可用）、4 条常用工作流配方、幂等键与错误约定。agent 首次接入调它即可自举，无需人工文档
-- **MCP server**：`scripts/mcp_server.py`（官方 `mcp` SDK，stdio）。47 个工具覆盖：概念/算子/查重/提交审核/TMP 回填/GOLDKE 篇级与泳道/issue/KE 上传/成品校验与指纹/抽检闭环/体检/迁移/变更日志/LLM 台账
+- **MCP server**：`scripts/mcp_server.py`（官方 `mcp` SDK，stdio）。83 个工具覆盖：概念/算子/查重/提交审核/TMP 回填/GOLDKE 篇级与泳道/issue/KE 上传/成品校验与指纹/抽检闭环/体检/迁移/变更日志/LLM 台账，以及标注批次全流程、全局规则/个体 CRUD、建议箱审批、全局搜索/版本快照/可移植导出
 
 ```jsonc
 // .mcp.json 接入示例

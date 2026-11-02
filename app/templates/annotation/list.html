@@ -1,69 +1,98 @@
 {% extends "base.html" %}
 {% block title %}标注批次 · 本体管理系统{% endblock %}
 {% block content %}
+<div class="breadcrumbs"><a href="/">工作台</a><span>/</span><span>标注与审核</span><span>/</span><strong>标注批次</strong></div>
 <div class="page-head">
   <div>
     <h1>标注批次</h1>
-    <span class="muted">CO 双盲 → 逐题对齐 → 本体合并 → KE → GOLD → 交叉检查</span>
+    <span class="page-sub">CO 双盲 → 逐题对齐 → 本体合并 → KE → GOLD → 交叉检查</span>
   </div>
-  <a class="btn" href="/annotation/versions">本体版本</a>
+  <div class="page-head-actions">
+    <a class="btn" href="/annotation/dashboard">运营看板</a>
+    <a class="btn" href="/annotation/versions">本体版本</a>
+    {% if can_create %}<button class="btn primary" type="button" data-open-create>+ 新建批次</button>{% endif %}
+  </div>
 </div>
 
+{% if not batches %}
+<div class="empty-state">
+  <div class="empty-icon">CO</div>
+  <h2>还没有标注批次</h2>
+  <p>从冻结数据集开始，建立一条可追溯、双盲、可交叉检查的标注流水线。所有中间结果和版本都会留痕。</p>
+  {% if can_create %}<button class="btn primary" type="button" data-open-create>+ 新建第一个批次</button>{% endif %}
+  <ol class="steps">
+    <li><strong>1</strong> 新建批次</li>
+    <li><strong>2</strong> 导入标注单元</li>
+    <li><strong>3</strong> 冻结数据集</li>
+    <li><strong>4</strong> 开始 CO 双盲</li>
+  </ol>
+</div>
+{% endif %}
+
 {% if can_create %}
-<details class="panel">
-  <summary><strong>+ 新建标注批次</strong></summary>
+<details class="create-panel" id="create-batch">
+  <summary>新建标注批次</summary>
   <form class="form wide" method="post" action="/annotation/batches">
-    <div class="form-row">
-      <label>批次名称 *<input name="name" required placeholder="如 篇1-育儿"></label>
-      <label>批次号<input name="batch_id" placeholder="留空自动生成"></label>
-      <label>来源类型
-        <select name="source_type">
-          <option value="policy">政策/业务</option>
-          <option value="query">CO/KE Query</option>
-          <option value="sql">SQL</option>
-          <option value="lean">LEAN</option>
-          <option value="sparql">SPARQL</option>
-          <option value="other">其他</option>
-        </select>
-      </label>
+    <div class="form-section">
+      <h3>基本信息</h3>
+      <div class="form-row">
+        <label>批次名称 *<input name="name" required placeholder="如 育儿补贴-篇1"></label>
+        <label>批次号<input name="batch_id" placeholder="留空自动生成"></label>
+        <label>来源类型
+          <select name="source_type">
+            <option value="policy">政策/业务</option>
+            <option value="query">CO/KE Query</option>
+            <option value="sql">SQL</option>
+            <option value="lean">LEAN</option>
+            <option value="sparql">SPARQL</option>
+            <option value="other">其他</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-row">
+        <label>来源名称<input name="source_name" placeholder="数据集/文章/题目集"></label>
+        <label>来源版本/commit<input name="source_version"></label>
+        <label>本体领域<input name="domain" value="通用" placeholder="业务基线 / 金融 / 政务…"></label>
+      </div>
+      <div class="form-row">
+        <label>校验和 sha256<input name="source_checksum"></label>
+        <label>指南版本<input name="guide_version" placeholder="如 v0.4"></label>
+        <label>统计单位<input name="statistical_unit" value="标注单元"></label>
+        <label>验收门槛<input name="acceptance_threshold" placeholder="如 100% 结构校验通过"></label>
+      </div>
     </div>
-    <div class="form-row">
-      <label>来源名称<input name="source_name" placeholder="数据集/文章/题目集"></label>
-      <label>来源版本/commit<input name="source_version"></label>
-      <label>本体领域<input name="domain" value="通用" placeholder="金融 / 政务 / 数学…"></label>
-    </div>
-    <div class="form-row">
-      <label>校验和 sha256<input name="source_checksum"></label>
-      <label>指南版本<input name="guide_version" placeholder="如 v0.4"></label>
-      <label>统计单位<input name="statistical_unit" value="标注单元"></label>
-      <label>验收门槛<input name="acceptance_threshold" placeholder="如 100% 结构校验通过"></label>
-    </div>
-    <div class="form-row">
-      <label>标注者 A *<input name="annotator_a" list="user-list" placeholder="用户名"></label>
-      <label>标注者 B *<input name="annotator_b" list="user-list" placeholder="用户名"></label>
-      <label>组长（留空=创建人）<input name="lead" list="user-list"></label>
-    </div>
-    <div class="form-row">
-      <label>裁决人<input name="arbiter" list="user-list"></label>
-      <label>项目负责人<input name="project_owner" list="user-list"></label>
-      <label>交叉检查组（逗号分隔）<input name="cross_checkers" list="user-list" placeholder="user1,user2"></label>
+    <div class="form-section">
+      <h3>成员与责任</h3>
+      <div class="form-row">
+        <label>标注者 A *<input name="annotator_a" list="user-list" placeholder="用户名"></label>
+        <label>标注者 B *<input name="annotator_b" list="user-list" placeholder="用户名"></label>
+        <label>组长（留空=创建人）<input name="lead" list="user-list"></label>
+      </div>
+      <div class="form-row">
+        <label>裁决人<input name="arbiter" list="user-list"></label>
+        <label>项目负责人<input name="project_owner" list="user-list"></label>
+        <label>交叉检查组（逗号分隔）<input name="cross_checkers" list="user-list" placeholder="user1,user2"></label>
+      </div>
     </div>
     <label>备注<textarea name="note" rows="2"></textarea></label>
-    <div class="actions"><button class="btn primary" type="submit">创建批次</button></div>
+    <div class="actions"><button class="btn primary" type="submit">创建批次</button><button class="btn ghost" type="button" data-close-create>取消</button></div>
   </form>
 </details>
 <datalist id="user-list">{% for u in usernames %}<option value="{{ u }}">{% endfor %}</datalist>
 {% endif %}
 
+{% if batches %}
+<div class="table-meta"><span>共 <strong>{{ batches|length }}</strong> 个批次</span><span>进入批次后可查看单元、成员、版本与交叉检查</span></div>
+<div class="table-wrap">
 <table class="data">
-  <thead><tr><th>批次</th><th>来源</th><th>状态</th><th>单元/进度</th><th>A / B</th><th>组长</th><th>操作</th></tr></thead>
+  <thead><tr><th>批次</th><th>来源</th><th>状态</th><th>单元 / 进度</th><th>A / B</th><th>组长</th><th>操作</th></tr></thead>
   <tbody>
   {% for s in batches %}
   <tr>
     <td><a href="/annotation/batches/{{ s.batch.id }}"><strong>{{ s.batch.batch_id }}</strong></a>
       <div class="muted">{{ s.batch.name }}</div></td>
     <td>{{ s.batch.source_name or '—' }}<div class="muted">{{ s.batch.source_version or '' }}</div></td>
-    <td><span class="badge approved">{{ STATE_LABELS.get(s.batch.state, s.batch.state) }}</span></td>
+    <td><span class="badge state-{{ s.batch.state }}">{{ STATE_LABELS.get(s.batch.state, s.batch.state) }}</span></td>
     <td>{{ s.stats.units }}
       <div class="muted">CO {{ s.stats.co_a }}/{{ s.stats.co_b }} · 对齐 {{ s.stats.aligned }} · KE {{ s.stats.ke_a }}/{{ s.stats.ke_b }} · GOLD {{ s.stats.gold }}</div>
     </td>
@@ -71,9 +100,31 @@
     <td>{{ s.lead or '—' }}</td>
     <td><a class="btn" href="/annotation/batches/{{ s.batch.id }}">进入</a></td>
   </tr>
-  {% else %}
-  <tr><td colspan="7" class="empty">暂无标注批次</td></tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll("[data-open-create]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    var d = document.getElementById("create-batch");
+    if (!d) return;
+    d.open = true;
+    d.scrollIntoView({behavior: "smooth", block: "start"});
+  });
+});
+document.querySelectorAll("[data-close-create]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    var d = document.getElementById("create-batch");
+    if (d) d.open = false;
+  });
+});
+if (location.hash === "#create-batch") {
+  var d = document.getElementById("create-batch");
+  if (d) d.open = true;
+}
+</script>
 {% endblock %}

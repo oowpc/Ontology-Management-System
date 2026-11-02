@@ -19,13 +19,15 @@ class TokenIn(BaseModel):
     name: str = Field(default="default", max_length=64)
     username: str | None = None  # 缺省=自己；代他人签发需 admin
     scopes: list[str] | None = None  # 缺省=["read","write"]；["read"]=只读（agent 最小权限）
+    expires_in_days: int | None = 30  # 0=不过期；缺省 30 天
 
 
 def _dict(db: Session, r: ApiToken) -> dict:
     u = db.get(User, r.user_id)
     return {"id": r.id, "name": r.name, "username": u.username if u else "?",
             "scopes": r.scopes or ["read", "write"],
-            "created_at": r.created_at, "last_used_at": r.last_used_at,
+            "created_at": r.created_at, "expires_at": r.expires_at,
+            "last_used_at": r.last_used_at, "last_used_ip": r.last_used_ip,
             "revoked": r.revoked_at is not None}
 
 
@@ -41,8 +43,9 @@ def mint(data: TokenIn, db: Session = Depends(get_db), user: dict = Depends(requ
     bad = [s for s in scopes if s not in TOKEN_SCOPES]
     if bad or not scopes:
         raise HTTPException(400, f"scopes 只能是 {list(TOKEN_SCOPES)} 的非空子集，收到：{scopes}")
-    token = mint_token(db, u, data.name, scopes)
+    token = mint_token(db, u, data.name, scopes, expires_in_days=data.expires_in_days)
     return {"token": token, "username": target, "name": data.name, "scopes": scopes,
+            "expires_in_days": data.expires_in_days,
             "note": "Token 仅此一次返回，请妥善保存。用法：请求头 Authorization: Bearer <token>"}
 
 

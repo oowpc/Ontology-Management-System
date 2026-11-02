@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}运行状态 · 本体管理系统{% endblock %}
+{% block content %}
+<div class="breadcrumbs"><a href="/">工作台</a><span>/</span><strong>运行状态</strong></div>
+<div class="page-head">
+  <div><h1>运行状态</h1><span class="page-sub">{{ s.time }}</span></div>
+  <div class="page-head-actions"><a class="btn" href="/api/ops/summary" target="_blank">JSON</a></div>
+</div>
+<div class="wgrid">
+  <div class="wcard"><h2>本体</h2><div class="wstats">
+    <div class="wstat"><div class="n">{{ s.counts.concepts }}</div><div class="l">概念</div></div>
+    <div class="wstat"><div class="n">{{ s.counts.operators }}</div><div class="l">算子</div></div>
+    <div class="wstat"><div class="n">{{ s.counts.rules }}</div><div class="l">规则</div></div>
+    <div class="wstat"><div class="n">{{ s.counts.individuals }}</div><div class="l">个体</div></div>
+  </div></div>
+  <div class="wcard"><h2>标注 / 建议</h2><div class="wstats">
+    <div class="wstat"><div class="n">{{ s.annotations.total }}</div><div class="l">批次</div></div>
+    <div class="wstat"><div class="n">{{ s.counts.suggestions_pending }}</div><div class="l">待审建议</div></div>
+    <div class="wstat"><div class="n">{{ s.counts.versions }}</div><div class="l">版本</div></div>
+  </div></div>
+  <div class="wcard"><h2>数据库</h2><div class="wstats">
+    <div class="wstat"><div class="n">{{ s.db.size_mb or '—' }}</div><div class="l">MB</div></div>
+    <div class="wstat"><div class="n">{{ s.db.disk_free_gb }}</div><div class="l">磁盘剩余 GB</div></div>
+  </div><p class="muted" style="word-break:break-all">{{ s.db.path }}</p></div>
+  <div class="wcard"><h2>备份</h2><div class="wstats">
+    <div class="wstat"><div class="n">{{ s.backup.count }}</div><div class="l">份</div></div>
+    <div class="wstat"><div class="n">{{ s.backup.age_hours if s.backup.age_hours is not none else '—' }}</div><div class="l">最近小时前</div></div>
+  </div><p class="muted">{{ s.backup.latest or '暂无备份' }}</p></div>
+  <div class="wcard"><h2>Token</h2><div class="wstats">
+    <div class="wstat"><div class="n">{{ s.tokens.active }}</div><div class="l">有效</div></div>
+    <div class="wstat"><div class="n">{{ s.tokens.expiring_7d }}</div><div class="l">7 天内过期</div></div>
+    <div class="wstat"><div class="n">{{ s.tokens.no_expiry }}</div><div class="l">无过期</div></div>
+  </div></div>
+  <div class="wcard"><h2>证书</h2>
+    {% if s.certificate %}
+    <p>到期：<strong>{{ s.certificate.not_after }}</strong><br><span class="muted">剩余 {{ s.certificate.days_left }} 天</span></p>
+    {% else %}<p class="muted">未找到证书</p>{% endif %}
+  </div>
+</div>
+<div class="panel">
+  <div class="section-head"><h2>服务端口</h2></div>
+  <div class="wstats">
+    {% for k, v in s.services.items() %}
+    <div class="wstat"><div class="n"><span class="badge {{ 'approved' if v else 'disabled' }}">{{ 'UP' if v else 'DOWN' }}</span></div><div class="l">{{ k }}</div></div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

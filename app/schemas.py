@@ -9,6 +9,7 @@ class ConceptCreate(BaseModel):
     domain: str = "通用"
     aliases: list[str] = []
     definition: str = ""
+    description: str = ""
     source_uri: str | None = None
     ontology_module: str | None = None
     parent_id: int | None = None
@@ -21,6 +22,7 @@ class ConceptUpdate(BaseModel):
     domain: str | None = None
     aliases: list[str] | None = None
     definition: str | None = None
+    description: str | None = None
     source_uri: str | None = None
     ontology_module: str | None = None
     parent_id: int | None = None
@@ -33,6 +35,7 @@ class OperatorCreate(BaseModel):
     owner_concept_id: int | None = None  # 缺省 = 主体概念
     param_types: list[str] = []
     return_type: str = Field(min_length=1, max_length=256)
+    description: str = ""
     source_uri: str | None = None
     ontology_module: str | None = None
 
@@ -43,6 +46,7 @@ class OperatorUpdate(BaseModel):
     owner_concept_id: int | None = None
     param_types: list[str] | None = None
     return_type: str | None = None
+    description: str | None = None
     source_uri: str | None = None
     ontology_module: str | None = None
 

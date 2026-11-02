@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ i.name }} · 个体{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ i.name }}</h1>
+  {% if user.role in ['reviewer','admin'] %}<a class="btn" href="/individuals/{{ i.id }}/edit">编辑</a>{% endif %}
+</div>
+<div class="meta-grid">
+  <div><span class="muted">ID</span><br>{{ i.id }}</div>
+  <div><span class="muted">所属概念</span><br>{% if concept %}<a href="/concepts/{{ concept.id }}">{{ concept.name }}</a>{% else %}—{% endif %}</div>
+  <div><span class="muted">域</span><br>{{ i.domain }}</div>
+  <div><span class="muted">状态</span><br><span class="badge {{ i.status }}">{{ status_labels.get(i.status, i.status) }}</span></div>
+  <div><span class="muted">创建</span><br>{{ i.created_by }} · {{ i.created_at|dt }}</div>
+  <div><span class="muted">修改</span><br>{{ i.updated_at|dt }}</div>
+</div>
+<p>{{ i.description or '—' }}</p>
+<h2>sources</h2>
+<p>{{ (i.sources or [])|join('、') or '—' }}</p>
+<h2>supply</h2>
+<pre class="json">{{ supply_text }}</pre>
+{% endblock %}

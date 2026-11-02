@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from .audit import concept_snapshot, log_change, snapshot
 from .config import settings
-from .models import Concept, ConceptParent, Operator, UsageStat
+from .library_context import DEFAULT_LIBRARY_ID, current_library_id, library_scoped
+from .models import Concept, ConceptParent, OntologyLibrary, Operator, OperatorInput, UsageStat
 from .similarity import SimilarityBlock, find_similar
 
 VALID_STATUS = {"draft", "pending", "approved", "disabled"}
@@ -18,6 +19,7 @@ VALID_STATUS = {"draft", "pending", "approved", "disabled"}
 
 # ---------- 查询辅助 ----------
 
+@library_scoped
 def get_concept_or_404(db: Session, cid: int) -> Concept:
     c = db.get(Concept, cid)
     if not c:
@@ -25,6 +27,7 @@ def get_concept_or_404(db: Session, cid: int) -> Concept:
     return c
 
 
+@library_scoped
 def get_operator_or_404(db: Session, oid: int) -> Operator:
     o = db.get(Operator, oid)
     if not o:
@@ -32,6 +35,7 @@ def get_operator_or_404(db: Session, oid: int) -> Operator:
     return o
 
 
+@library_scoped
 def concept_parents_map(db: Session, concept_ids) -> dict[int, list[dict]]:
     """concept_id -> [{id, name}]，主父类在前、其余按声明序。"""
     ids = [i for i in concept_ids if i]
@@ -50,6 +54,7 @@ def concept_parents_map(db: Session, concept_ids) -> dict[int, list[dict]]:
     return out
 
 
+@library_scoped
 def would_create_cycle(db: Session, concept_id: int | None, new_parent_ids) -> bool:
     """按 concept_parents 全图判断：把 new_parent_ids 挂到 concept_id 上是否成环。"""
     if new_parent_ids is None:
@@ -78,6 +83,7 @@ def would_create_cycle(db: Session, concept_id: int | None, new_parent_ids) -> b
     return False
 
 
+@library_scoped
 def set_concept_parents(db: Session, c: Concept, parent_ids) -> bool:
     """整体替换概念父类集合；第一个为主父类，同步 legacy parent_id。"""
     ids: list[int] = []
@@ -119,6 +125,7 @@ def set_concept_parents(db: Session, c: Concept, parent_ids) -> bool:
     return True
 
 
+@library_scoped
 def query_concepts(db: Session, *, status=None, parent_id=None, q=None, domain=None, page=1, size=50):
     stmt = select(Concept)
     if status:
@@ -137,6 +144,7 @@ def query_concepts(db: Session, *, status=None, parent_id=None, q=None, domain=N
             Concept.name.like(like)
             | cast(Concept.aliases, SAString).like(like)
             | Concept.definition.like(like)
+            | Concept.local_code.like(like)
         )
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     items = db.scalars(stmt.order_by(Concept.id).offset((page - 1) * size).limit(size)).all()
@@ -150,11 +158,101 @@ def usage_map(db: Session, ids) -> dict[int, UsageStat]:
     return {s.concept_id: s for s in db.scalars(select(UsageStat).where(UsageStat.concept_id.in_(ids)))}
 
 
+LIBRARY_CODE_PREFIX = {"fibo-cmns": "FIBO", "co-baseline": "CO",
+                       "pilot-yuer": "PILOT", "archer": "ARCH"}
+
+
+def _code_prefix(lib: OntologyLibrary | None) -> str:
+    if lib is None:
+        return "LOC"
+    return LIBRARY_CODE_PREFIX.get(lib.key, (lib.key.upper().replace("-", "")[:6] or "LOC"))
+
+
+def next_local_code(db: Session, library_id: int) -> str:
+    lib = db.get(OntologyLibrary, library_id)
+    prefix = _code_prefix(lib)
+    codes = db.scalars(select(Concept.local_code).where(
+        Concept.library_id == library_id,
+        Concept.local_code.like(f"{prefix}-%"))).all()
+    highest = 0
+    for code in codes:
+        tail = str(code or "").rsplit("-", 1)[-1]
+        if tail.isdigit():
+            highest = max(highest, int(tail))
+    return f"{prefix}-{highest + 1:04d}"
+
+
+def assign_local_code(db: Session, c: Concept) -> None:
+    if c.local_code:
+        return
+    lib_id = c.library_id or current_library_id.get() or DEFAULT_LIBRARY_ID
+    c.local_code = next_local_code(db, lib_id)
+
+
+@library_scoped
 def name_map(db: Session, ids) -> dict[int, str]:
     ids = [i for i in ids if i]
     if not ids:
         return {}
     return {c.id: c.name for c in db.scalars(select(Concept).where(Concept.id.in_(ids)))}
+
+
+@library_scoped
+def operator_inputs_map(db: Session, operator_ids) -> dict[int, list[dict]]:
+    ids = [i for i in operator_ids if i]
+    if not ids:
+        return {}
+    rows = db.execute(
+        select(OperatorInput, Concept)
+        .outerjoin(Concept, Concept.id == OperatorInput.concept_id)
+        .where(OperatorInput.operator_id.in_(ids))
+        .order_by(OperatorInput.operator_id, OperatorInput.position, OperatorInput.id)
+    ).all()
+    out: dict[int, list[dict]] = defaultdict(list)
+    for item, concept in rows:
+        out[item.operator_id].append({
+            "concept_id": item.concept_id,
+            "name": concept.name if concept else item.type_name,
+            "type_name": item.type_name,
+            "position": item.position,
+        })
+    return out
+
+
+BUILTIN_LABELS = {"String": "字符串", "Number": "数字", "Bool": "布尔",
+                  "Date": "日期", "TimeInterval": "时间区间", "Real": "实数",
+                  "Name": "名称", "Concept": "概念"}
+
+
+def operator_signature(o: Operator, inputs: list[dict] | None = None) -> str:
+    names = [str(x.get("name") or "").strip() for x in (inputs or []) if x.get("name")]
+    if not names:
+        names = [str(x).strip() for x in (o.param_types or []) if str(x).strip()]
+    ret = BUILTIN_LABELS.get(o.return_type, o.return_type)
+    return f"op {o.name}({', '.join(names)})：{ret}"
+
+
+@library_scoped
+def sync_operator_inputs(db: Session, o: Operator, param_types=None) -> None:
+    """以 subject + param_types 重建输入行；仅在同库概念存在时写 concept_id。"""
+    subject = get_concept_or_404(db, o.subject_concept_id)
+    types = list(o.param_types or []) if param_types is None else list(param_types or [])
+    names: list[str] = [subject.name]
+    for raw in types:
+        name = str(raw or "").strip()
+        if name and name not in names:
+            names.append(name)
+    for row in db.scalars(select(OperatorInput).where(
+            OperatorInput.operator_id == o.id)).all():
+        db.delete(row)
+    db.flush()
+    for pos, name in enumerate(names):
+        c = db.scalar(select(Concept).where(Concept.name == name))
+        db.add(OperatorInput(operator_id=o.id, concept_id=c.id if c else None,
+                             type_name=name, position=pos))
+    out = db.scalar(select(Concept).where(Concept.name == o.return_type))
+    o.output_concept_id = out.id if out else None
+    db.flush()
 
 
 # ---------- 序列化 ----------
@@ -166,10 +264,13 @@ def concept_dict(c: Concept, *, parents=None, stats=None, parent_details=None) -
         parent_details = [{"id": c.parent_id, "name": parent_name}] if c.parent_id else []
     return {
         "id": c.id,
+        "code": c.local_code or f"#{c.id}",
+        "local_code": c.local_code,
         "name": c.name,
         "domain": c.domain or "通用",
         "aliases": c.aliases or [],
         "definition": c.definition or "",
+        "description": c.description or "",
         "source_uri": c.source_uri or "",
         "ontology_module": c.ontology_module or "",
         "parent_id": c.parent_id,
@@ -187,9 +288,14 @@ def concept_dict(c: Concept, *, parents=None, stats=None, parent_details=None) -
     }
 
 
-def operator_dict(o: Operator, *, names=None) -> dict:
+def operator_dict(o: Operator, *, names=None, inputs=None) -> dict:
     names = names or {}
     owner_id = o.owner_concept_id or o.subject_concept_id  # NULL 所属 = 同主体
+    inputs = list(inputs or [])
+    if not inputs and names.get(o.subject_concept_id):
+        inputs = [{"concept_id": o.subject_concept_id,
+                   "name": names[o.subject_concept_id],
+                   "type_name": names[o.subject_concept_id], "position": 0}]
     return {
         "id": o.id,
         "name": o.name,
@@ -199,6 +305,11 @@ def operator_dict(o: Operator, *, names=None) -> dict:
         "owner_name": names.get(owner_id),
         "param_types": o.param_types or [],
         "return_type": o.return_type,
+        "description": o.description or "",
+        "output_concept_id": o.output_concept_id,
+        "output_name": names.get(o.output_concept_id),
+        "inputs": inputs,
+        "signature": operator_signature(o, inputs),
         "source_uri": o.source_uri or "",
         "ontology_module": o.ontology_module or "",
         "status": o.status,
@@ -210,11 +321,13 @@ def operator_dict(o: Operator, *, names=None) -> dict:
 
 # ---------- 概念写操作 ----------
 
+@library_scoped
 def create_concept(db: Session, *, name, aliases, definition, parent_id, status, actor,
                    check_similar: bool = False, domain: str = "通用",
                    parents: list[int] | None = None,
                    source_uri: str | None = None,
-                   ontology_module: str | None = None) -> Concept:
+                   ontology_module: str | None = None,
+                   description: str = "") -> Concept:
     name = (name or "").strip()
     if not name:
         raise HTTPException(400, "名称不能为空")
@@ -234,9 +347,11 @@ def create_concept(db: Session, *, name, aliases, definition, parent_id, status,
     c = Concept(
         name=name, domain=(domain or "通用").strip() or "通用",
         aliases=list(aliases or []), definition=definition or "",
+        description=description or definition or f"概念 {name}",
         source_uri=(source_uri or None), ontology_module=(ontology_module or None),
         parent_id=primary_parent, status=status, created_by=actor, reviewed_by=actor,
     )
+    assign_local_code(db, c)
     db.add(c)
     db.flush()
     set_concept_parents(db, c, parent_ids)
@@ -247,6 +362,7 @@ def create_concept(db: Session, *, name, aliases, definition, parent_id, status,
     return c
 
 
+@library_scoped
 def update_concept(db: Session, c: Concept, changes: dict, actor: str) -> Concept:
     before = concept_snapshot(db, c)
     if "name" in changes:
@@ -261,6 +377,8 @@ def update_concept(db: Session, c: Concept, changes: dict, actor: str) -> Concep
         c.aliases = list(changes["aliases"])
     if "definition" in changes and changes["definition"] is not None:
         c.definition = changes["definition"]
+    if "description" in changes and changes["description"] is not None:
+        c.description = changes["description"]
     if "domain" in changes and changes["domain"] is not None:
         d = changes["domain"].strip()
         if not d:
@@ -285,6 +403,7 @@ def update_concept(db: Session, c: Concept, changes: dict, actor: str) -> Concep
     return c
 
 
+@library_scoped
 def set_concept_status(db: Session, c: Concept, status: str, actor: str,
                        action: str = "status", merged_into_id=None) -> Concept:
     """停用/恢复/合并等状态迁移的统一入口（留审计快照）。"""
@@ -309,8 +428,10 @@ def _check_operator_dup(db: Session, name: str, subject_id: int, exclude_id: int
         raise HTTPException(409, "同一主体概念下算子名重复")
 
 
+@library_scoped
 def create_operator(db: Session, *, name, subject_concept_id, owner_concept_id,
                     param_types, return_type, actor,
+                    description: str = "",
                     source_uri: str | None = None,
                     ontology_module: str | None = None) -> Operator:
     name = (name or "").strip()
@@ -324,10 +445,16 @@ def create_operator(db: Session, *, name, subject_concept_id, owner_concept_id,
     o = Operator(
         name=name, subject_concept_id=subject_concept_id, owner_concept_id=owner_concept_id,
         param_types=list(param_types or []), return_type=return_type,
+        description=description or "",
         source_uri=(source_uri or None), ontology_module=(ontology_module or None),
         status="approved", created_by=actor,
     )
     db.add(o)
+    db.flush()
+    sync_operator_inputs(db, o, param_types)
+    if not o.description:
+        subject = get_concept_or_404(db, o.subject_concept_id)
+        o.description = f"算子 {o.name}：{subject.name} → {o.return_type}"
     db.flush()
     log_change(db, "operator", o.id, "create", None, snapshot(o), actor)
     db.commit()
@@ -335,6 +462,7 @@ def create_operator(db: Session, *, name, subject_concept_id, owner_concept_id,
     return o
 
 
+@library_scoped
 def update_operator(db: Session, o: Operator, changes: dict, actor: str) -> Operator:
     before = snapshot(o)
     new_name = o.name
@@ -365,6 +493,10 @@ def update_operator(db: Session, o: Operator, changes: dict, actor: str) -> Oper
         o.source_uri = (changes["source_uri"] or None)
     if "ontology_module" in changes:
         o.ontology_module = (changes["ontology_module"] or None)
+    if "description" in changes and changes["description"] is not None:
+        o.description = changes["description"]
+    db.flush()
+    sync_operator_inputs(db, o, o.param_types or [])
     db.flush()
     log_change(db, "operator", o.id, "update", before, snapshot(o), actor)
     db.commit()
@@ -372,6 +504,7 @@ def update_operator(db: Session, o: Operator, changes: dict, actor: str) -> Oper
     return o
 
 
+@library_scoped
 def set_operator_status(db: Session, o: Operator, status: str, actor: str) -> Operator:
     before = snapshot(o)
     o.status = status
