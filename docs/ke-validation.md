@@ -42,3 +42,14 @@ OMS 统一使用 SQLke，不再兼容中文标识符、`var`、`--` 等旧方言
 ## 降级
 
 外部仓库或 `lark` 不可用时，`syntax_engine` 回退为 `internal`，仍保留原 OMS 校验。
+
+## CI 真实校验器
+
+CI 默认在外部校验器缺失时走 `internal` 降级。配置 GitHub Actions secret：
+
+```text
+SYNTACTIC_REPO_TOKEN
+```
+
+后，CI 会从 `git.kclab.cloud` 检出 `Syntastic_and_Lexical-Verifier`，SQLite 和 PostgreSQL
+两个 lane 都会使用真实 Syntastic 执行严格校验。
