@@ -133,6 +133,7 @@ def rollback_batch(db: Session, batch_id: str, *, force: bool = False,
     if created_o:
         for o in db.scalars(select(Operator).where(Operator.id.in_(created_o))).all():
             db.delete(o)
+        db.flush()
     if created_c:
         for link in db.scalars(select(ConceptParent).where(
                 (ConceptParent.concept_id.in_(created_c)) |

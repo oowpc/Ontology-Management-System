@@ -28,17 +28,24 @@ def test_export_import_idempotent(client):
 
     # 直接清库（模拟导入到空环境）
     from app.db import SessionLocal
-    from app.models import (Concept, ConceptParent, OntologyIndividual,
-                            OntologyRule, Operator, UsageStat)
-    db = SessionLocal()
-    db.query(UsageStat).delete()
-    db.query(OntologyIndividual).delete()
-    db.query(OntologyRule).delete()
-    db.query(Operator).delete()
-    db.query(ConceptParent).delete()
-    db.query(Concept).delete()
-    db.commit()
-    db.close()
+    from app.library_context import library_scope
+    from app.models import (BackfillRecord, Concept, ConceptParent,
+                            OntologyIndividual, OntologyRule, Operator,
+                            QuestionConcept, Submission, TmpMapping, UsageStat)
+    with library_scope(None):
+        db = SessionLocal()
+        db.query(UsageStat).delete()
+        db.query(BackfillRecord).delete()
+        db.query(QuestionConcept).delete()
+        db.query(TmpMapping).delete()
+        db.query(OntologyIndividual).delete()
+        db.query(OntologyRule).delete()
+        db.query(Operator).delete()
+        db.query(Submission).delete()
+        db.query(ConceptParent).delete()
+        db.query(Concept).delete()
+        db.commit()
+        db.close()
 
     # 导入回全部内容
     r = client.post("/api/import/json", content=json.dumps(export1, ensure_ascii=False),
