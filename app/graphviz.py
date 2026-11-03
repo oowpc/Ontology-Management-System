@@ -40,14 +40,41 @@ def _label(n: dict) -> str:
     return n["name"] + (f"（{len(n['child_ids'])}）" if n["child_ids"] else "")
 
 
-def layout(nodes: dict, root_id: int | None = None) -> dict:
+def _root_ids(nodes: dict) -> list[int]:
+    """无任何父类（主父类或次父类）的可见节点。"""
+    return sorted([
+        nid for nid, n in nodes.items()
+        if n.get("parent_id") not in nodes
+        and not any(pid in nodes for pid in n.get("extra_parent_ids", []))
+    ], key=lambda i: nodes[i]["name"])
+
+
+def layout(nodes: dict, root_id: int | None = None, roots_only: bool = False) -> dict:
     """返回 {nodes:[{id,name,status,x,y,w,child_count,aliases,definition}], edges:[{d}],
     width, height, total, truncated, roots:[{id,name}]}。"""
     if root_id is not None:
         nodes = _subtree(nodes, root_id)
     total = len(nodes)
-    roots_all = [n["id"] for n in nodes.values() if n["parent_id"] not in nodes]
-    roots_all.sort(key=lambda i: nodes[i]["name"])
+    roots_all = _root_ids(nodes)
+    if roots_only:
+        widths = {nid: len(_label(nodes[nid])) * CHAR_W + PAD_X * 2 for nid in roots_all}
+        col_w = max(widths.values(), default=120)
+        cols = 1 if len(roots_all) <= 6 else (2 if len(roots_all) <= 18 else 3)
+        out = []
+        for i, nid in enumerate(roots_all):
+            n = nodes[nid]
+            col, row = i % cols, i // cols
+            out.append({
+                "id": nid, "name": n["name"], "status": n["status"],
+                "aliases": n["aliases"], "definition": n["definition"],
+                "child_count": len(n["child_ids"]),
+                "x": round(8 + col * (col_w + GAP_X), 1),
+                "y": row * DY + 8, "w": round(widths[nid], 1),
+            })
+        return {"nodes": out, "edges": [], "width": round(cols * col_w + (cols - 1) * GAP_X + 16, 1),
+                "height": round(max(1, (len(out) + cols - 1) // cols) * DY + 16, 1),
+                "total": total, "root_count": len(roots_all), "truncated": False,
+                "roots": roots_all, "layout": "tree", "roots_only": True}
     truncated = total > MAX_NODES
 
     next_y = [0.0]
@@ -131,8 +158,8 @@ def layout(nodes: dict, root_id: int | None = None) -> dict:
         "edges": edges,
         "width": round(depth_x[max_depth + 1] - GAP_X + PAD_X, 1),
         "height": round((max(y_of.values()) + 1) * DY + 16, 1),
-        "total": total, "truncated": truncated, "roots": roots_all,
-        "layout": "tree",
+        "total": total, "root_count": len(roots_all),
+        "truncated": truncated, "roots": roots_all, "layout": "tree",
     }
 
 
@@ -157,7 +184,7 @@ def _subtree(nodes: dict, root_id: int) -> dict:
             for i, n in nodes.items() if i in keep}
 
 
-def layout_dag(nodes: dict, root_id: int | None = None) -> dict:
+def layout_dag(nodes: dict, root_id: int | None = None, roots_only: bool = False) -> dict:
     """分层 DAG 布局：所有父类（主 + 次）都作为边；层=最长父链。"""
     if root_id is not None:
         nodes = _subtree(nodes, root_id)
@@ -165,6 +192,26 @@ def layout_dag(nodes: dict, root_id: int | None = None) -> dict:
         return {"nodes": [], "edges": [], "width": 0, "height": 0,
                 "total": 0, "truncated": False, "roots": [], "layout": "dag"}
     total = len(nodes)
+    roots_all = _root_ids(nodes)
+    if roots_only:
+        widths = {nid: len(_label(nodes[nid])) * CHAR_W + PAD_X * 2 for nid in roots_all}
+        col_w = max(widths.values(), default=120)
+        cols = 1 if len(roots_all) <= 6 else (2 if len(roots_all) <= 18 else 3)
+        out = []
+        for i, nid in enumerate(roots_all):
+            n = nodes[nid]
+            col, row = i % cols, i // cols
+            out.append({
+                "id": nid, "name": n["name"], "status": n["status"],
+                "aliases": n["aliases"], "definition": n["definition"],
+                "child_count": len(n["child_ids"]),
+                "x": round(8 + col * (col_w + GAP_X), 1),
+                "y": row * DY + 8, "w": round(widths[nid], 1),
+            })
+        return {"nodes": out, "edges": [], "width": round(cols * col_w + (cols - 1) * GAP_X + 16, 1),
+                "height": round(max(1, (len(out) + cols - 1) // cols) * DY + 16, 1),
+                "total": total, "root_count": len(roots_all), "truncated": False,
+                "roots": roots_all, "layout": "dag", "roots_only": True}
     truncated = total > MAX_NODES
     parents: dict[int, list[int]] = {}
     for nid, n in nodes.items():
@@ -246,6 +293,6 @@ def layout_dag(nodes: dict, root_id: int | None = None) -> dict:
         "nodes": sorted(out_nodes, key=lambda n: (n["x"], n["y"])),
         "edges": edges,
         "width": round(width, 1), "height": round(height, 1),
-        "total": total, "truncated": truncated, "roots": roots,
-        "layout": "dag",
+        "total": total, "root_count": len(roots),
+        "truncated": truncated, "roots": roots, "layout": "dag",
     }

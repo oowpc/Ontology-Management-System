@@ -2,8 +2,9 @@
 {% block title %}概念图 · 本体管理系统{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>概念继承图（{{ g.total }} 个节点）</h1>
+  <h1>概念继承图{% if roots_only %}（{{ g.root_count }} 个根节点 / 共 {{ total_all }}）{% else %}（{{ g.total }} 个节点）{% endif %}</h1>
   <div class="graph-toolbar">
+    {% if not roots_only %}<a class="btn" href="/graph?layout={{ layout }}">根节点总览</a>{% endif %}
     <button class="btn" onclick="graphZoom(0.8)">放大</button>
     <button class="btn" onclick="graphZoom(1.25)">缩小</button>
     <button class="btn" onclick="graphReset()">复位</button>
@@ -11,7 +12,7 @@
 </div>
 <form class="filters" method="get" action="/graph">
   <select name="root_id">
-    <option value="">整片森林</option>
+    <option value="">根节点总览</option>
     {% for r in roots %}
     <option value="{{ r.id }}" {{ 'selected' if root_id == r.id }}>{{ r.name }}（子树）</option>
     {% endfor %}
@@ -37,17 +38,23 @@
 {% if g.truncated %}
 <div class="flash err">节点超过 500 个（{{ g.total }}），建议先按根/状态过滤查看子树。</div>
 {% endif %}
+{% if roots_only %}
+<div class="panel graph-hint">当前只显示根节点。点击任意根节点进入它的子树；也可以用上方筛选缩小范围。</div>
+{% endif %}
 {% if not g.nodes %}
 <div class="panel empty">没有可显示的概念</div>
 {% else %}
 <div class="panel graph-wrap" id="graph-wrap">
-  <svg id="concept-graph" width="100%" height="620" viewBox="0 0 {{ g.width }} {{ g.height }}"
-       data-width="{{ g.width }}" data-height="{{ g.height}}" data-layout="{{ g.layout }}" role="img" aria-label="概念继承图">
+  <svg id="concept-graph" width="100%" height="{% if roots_only %}{{ [g.height + 30, 560]|max }}{% else %}620{% endif %}" viewBox="0 0 {{ g.width }} {{ g.height }}"
+       data-width="{{ g.width }}" data-height="{{ g.height}}" data-layout="{{ g.layout }}"
+       data-roots-only="{{ '1' if roots_only else '0' }}" role="img" aria-label="概念继承图">
     {% for e in g.edges %}
     <path class="edge{% if e.extra %} extra{% endif %}" d="{{ e.d }}"/>
     {% endfor %}
     {% for n in g.nodes %}
-    <g class="node st-{{ n.status }}" onclick="location.href='/concepts/{{ n.id }}'" style="cursor:pointer">
+    <g class="node st-{{ n.status }}{% if roots_only %} root{% endif %}"
+       onclick="location.href='{% if roots_only %}/graph?root_id={{ n.id }}&layout={{ layout }}{% else %}/concepts/{{ n.id }}{% endif %}'"
+       style="cursor:pointer">
       <title>{{ n.name }}{% if n.aliases %}（别名：{{ n.aliases|join('、') }}）{% endif %} — {{ STATUS_LABELS.get(n.status, n.status) }}
 {{ n.definition }}</title>
       <rect x="{{ n.x }}" y="{{ n.y }}" width="{{ n.w }}" height="26" rx="7"/>
@@ -57,7 +64,7 @@
   </svg>
 </div>
 <p class="graph-legend"><span class="line"></span>主父类 <span class="line extra"></span>次父类（虚线）</p>
-<p class="muted">点击节点进入概念详情；滚轮缩放、拖拽平移。颜色：<span class="badge approved">已入库</span> <span class="badge pending">待审</span> <span class="badge draft">草稿</span> <span class="badge disabled">停用</span></p>
+<p class="muted">{% if roots_only %}点击根节点展开子树；{% else %}点击节点进入概念详情；{% endif %}滚轮缩放、拖拽平移。颜色：<span class="badge approved">已入库</span> <span class="badge pending">待审</span> <span class="badge draft">草稿</span> <span class="badge disabled">停用</span></p>
 {% endif %}
 {% endblock %}
 {% block scripts %}

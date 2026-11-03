@@ -15,7 +15,8 @@ router = APIRouter(tags=["graph"])
 
 
 def _graph_data(db: Session, root_id: int | None, status: str | None = None,
-                domain: str | None = None, layout_mode: str = "tree"):
+                domain: str | None = None, layout_mode: str = "tree",
+                roots_only: bool = False):
     stmt = select(Concept).order_by(Concept.id)
     if status:
         stmt = stmt.where(Concept.status == status)
@@ -29,7 +30,7 @@ def _graph_data(db: Session, root_id: int | None, status: str | None = None,
             parent_map.setdefault(link.concept_id, []).append(link.parent_id)
     forest = build_forest(concepts, parent_map)
     fn = layout_dag if layout_mode == "dag" else layout
-    return fn(forest, root_id=root_id), forest
+    return fn(forest, root_id=root_id, roots_only=roots_only), forest
 
 
 @router.get("/api/graph")
@@ -61,7 +62,8 @@ def graph_page(request: Request, root_id: str | None = None, status: str | None 
     # 空字符串（“整片森林”）不能直接传给 int 参数，否则 422
     rid = int(root_id) if root_id and str(root_id).isdigit() else None
     layout_mode = "dag" if layout == "dag" else "tree"
-    data, forest = _graph_data(db, rid, status, domain, layout_mode)
+    roots_only = rid is None
+    data, forest = _graph_data(db, rid, status, domain, layout_mode, roots_only)
     all_concepts = db.scalars(select(Concept).order_by(Concept.id)).all()
     roots = [c for c in all_concepts if c.parent_id is None]
     if rid is not None and all(c.id != rid for c in roots):
@@ -73,4 +75,5 @@ def graph_page(request: Request, root_id: str | None = None, status: str | None 
         "request": request, "user": user, "g": data,
         "root_id": rid, "status": status, "roots": roots,
         "domain": domain, "domains": domains, "layout": layout_mode,
+        "roots_only": roots_only, "total_all": len(all_concepts),
     })

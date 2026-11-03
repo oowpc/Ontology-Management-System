@@ -606,3 +606,9 @@ textarea.json-valid{border-color:#16a34a}
 .dm-chip-row .chip{background:#eff6ff;border-color:#dbeafe;color:#1d4ed8}
 @media (max-width:1080px){.dm-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.dm-quality{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:680px){.dm-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.dm-quality{grid-template-columns:1fr}}
+
+/* 概念图：根节点总览 */
+.graph-hint{margin:0 0 12px;background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8;font-size:12px}
+#concept-graph .node.root rect{fill:#eff6ff;stroke:#2563eb;stroke-width:1.6}
+#concept-graph .node.root text{font-weight:650;fill:#1d4ed8}
+#concept-graph .node.root:hover rect{fill:#dbeafe}
