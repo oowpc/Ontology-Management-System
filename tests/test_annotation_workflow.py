@@ -179,6 +179,11 @@ def test_annotation_core_workflow(client):
     }, follow_redirects=False)
     assert r.status_code == 303
 
+    docs = client.get("/api/ke/documents", params={"source_type": "annotation"}).json()["items"]
+    assert len(docs) >= 3
+    assert any(x["ke_text"] == "GOLD_KE = True" for x in docs)
+    assert all(x["ontology_version_id"] for x in docs)
+
     login(client, "admin")
     _ok(client.post(f"/annotation/batches/{bid}/state",
                        data={"action": "start_cross"}, follow_redirects=False))

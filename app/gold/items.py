@@ -23,6 +23,8 @@ from ..config import settings
 from ..db import get_db
 from ..ke import ke_validate
 from ..models import GoldItem
+from ..validation import run as validate
+from ..ke_docs import sync_gold_document
 from ..security import current_user, require_role
 from ..templating import flash, templates
 from .service import list_groups
@@ -100,7 +102,8 @@ def create_item(db: Session, *, article_code, ke_id, group_name, ke_text, concep
                   created_by=actor, updated_by=actor)
     db.add(it)
     db.flush()
-    ke_validate.validate_item(db, it)           # M20：入库即校验（结果随条目缓存）
+    validate(db, "gold_item", it, stage="create", actor=actor, enforce=False)  # 统一校验并留痕
+    sync_gold_document(db, it, actor=actor, reason="gold create")
     log_change(db, "gold_item", it.id, "create", None, snapshot(it), actor)
     db.commit()
     db.refresh(it)
@@ -118,7 +121,8 @@ def update_item(db: Session, it: GoldItem, changes: dict, actor: str) -> GoldIte
         it.concepts = list(changes["concepts"])
     it.updated_by = actor
     db.flush()
-    ke_validate.validate_item(db, it)           # M20：内容/引用变更后重校
+    validate(db, "gold_item", it, stage="update", actor=actor, enforce=False)  # 统一校验并留痕
+    sync_gold_document(db, it, actor=actor, reason="gold update")
     log_change(db, "gold_item", it.id, "update", before, snapshot(it), actor)
     db.commit()
     db.refresh(it)
@@ -131,17 +135,18 @@ def set_status(db: Session, it: GoldItem, status: str, actor: str) -> GoldItem:
     if status == "gold" and settings.gold_finalize_validate:
         # M20 定稿门槛（对应 NL2KE「规则校验失败不得冻结」）：结构错误一律不得定稿，
         # 词表 warning 不阻断（标注先行、本体后补是正常流程，warning 留缓存可见）
-        res = ke_validate.validate_item(db, it)
-        if not res["ok"]:
-            first = res["errors"][0] if res["errors"] else {}
+        res = validate(db, "gold_item", it, stage="finalize", actor=actor, enforce=False)
+        if not res.ok:
+            first = res.errors[0] if res.errors else {}
             raise HTTPException(
-                422, f"定稿校验未通过：{res['error_count']} 个结构错误"
+                422, f"定稿校验未通过：{len(res.errors)} 个结构错误"
                 f"（第 {first.get('line', '?')} 行：{first.get('message', '')}）。"
                 "修正 KE 内容后再定稿；明细见 POST /api/gold/items/{id}/validate")
     before = snapshot(it)
     it.status = status
     it.updated_by = actor
     db.flush()
+    sync_gold_document(db, it, actor=actor, reason=f"status {status}")
     log_change(db, "gold_item", it.id, "status", before, snapshot(it), actor)
     db.commit()
     db.refresh(it)
@@ -172,14 +177,14 @@ def ingest_rows(db: Session, group: str, rows, uploader: str) -> dict:
                           created_by=uploader, updated_by=uploader)
             db.add(it)
             db.flush()
-            ke_validate.validate_item(db, it)   # M20：上传入库即校验
+            validate(db, "gold_item", it, stage="upload", actor=uploader, enforce=False)
             stats["created"] += 1
         elif it.status == "draft":
             if it.ke_text != content:
                 it.ke_text = content
                 it.version += 1
                 it.updated_by = uploader
-                ke_validate.validate_item(db, it)
+                validate(db, "gold_item", it, stage="upload", actor=uploader, enforce=False)
                 stats["updated"] += 1
         else:
             stats["protected"] += 1
@@ -219,6 +224,23 @@ class ItemPatch(BaseModel):
 
 class StatusIn(BaseModel):
     status: str
+
+
+class ReviewBulkIn(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=200)
+    action: str
+
+
+def review_source(it: GoldItem) -> dict:
+    if it.article_code.startswith("DM-"):
+        jid = it.article_code[3:]
+        return {"kind": "datamaker", "label": "DataMaker",
+                "url": f"/datamaker/jobs/{jid}" if jid.isdigit() else ""}
+    if it.ke_id.startswith("NL2KE-"):
+        rid = it.ke_id[6:]
+        return {"kind": "nl2ke", "label": "NL2KE",
+                "url": f"/nl2ke/runs/{rid}" if rid.isdigit() else ""}
+    return {"kind": "manual", "label": "手工/上传", "url": ""}
 
 
 @router.get("/api/gold/items")
@@ -298,6 +320,33 @@ def api_export_manifest(article_code: str | None = None, status: str | None = No
             "digest": chain.hexdigest(), "fingerprints": fps}
 
 
+@router.post("/api/gold/review/bulk")
+def api_review_bulk(data: ReviewBulkIn, db: Session = Depends(get_db),
+                    user: dict = Depends(require_role(*EDIT_ROLES))):
+    if data.action not in {"reviewed", "draft", "delete"}:
+        raise HTTPException(400, "action 取值：reviewed / draft / delete")
+    done, skipped = [], []
+    for iid in data.ids:
+        it = db.get(GoldItem, iid)
+        if it is None:
+            skipped.append({"id": iid, "reason": "当前库不存在"})
+            continue
+        if data.action == "delete":
+            delete_item(db, it, user["username"])
+            done.append(iid)
+            continue
+        if data.action == "reviewed":
+            res = validate(db, "gold_item", it, stage="review", actor=user["username"],
+                           enforce=False)
+            if not res.ok:
+                skipped.append({"id": iid, "reason": f"校验错误 {len(res.errors)} 个"})
+                continue
+        set_status(db, it, data.action, user["username"])
+        done.append(iid)
+    return {"action": data.action, "done": done, "skipped": skipped,
+            "done_count": len(done), "skipped_count": len(skipped)}
+
+
 @router.get("/api/gold/items/{iid}")
 def api_item(iid: int, db: Session = Depends(get_db), user: dict = Depends(require_role())):
     return item_dict(get_item_or_404(db, iid))
@@ -308,9 +357,9 @@ def api_item_validate(iid: int, db: Session = Depends(get_db),
                       user: dict = Depends(require_role())):
     """M20：重校单条并返回完整问题清单（errors 阻断定稿；warnings 不阻断）。"""
     it = get_item_or_404(db, iid)
-    result = ke_validate.validate_item(db, it)
+    validate(db, "gold_item", it, stage="api", actor=user["username"], enforce=False)
     db.commit()
-    return {"id": it.id, "article_code": it.article_code, "ke_id": it.ke_id, **result}
+    return {"id": it.id, "article_code": it.article_code, "ke_id": it.ke_id, **(it.validation or {})}
 
 
 @router.patch("/api/gold/items/{iid}")
@@ -346,6 +395,52 @@ def _qs(article_code, status, group_name, q) -> str:
     from urllib.parse import urlencode
     return urlencode({k: v for k, v in {"article_code": article_code, "status": status,
                                         "group_name": group_name, "q": q}.items() if v})
+
+
+@router.get("/gold/review")
+def review_page(request: Request, source: str | None = None,
+                ok: str | None = None, q: str | None = None,
+                db: Session = Depends(get_db), user: dict = Depends(current_user)):
+    stmt = select(GoldItem).where(GoldItem.status == "draft")
+    if source == "datamaker":
+        stmt = stmt.where(GoldItem.article_code.like("DM-%"))
+    elif source == "nl2ke":
+        stmt = stmt.where(GoldItem.ke_id.like("NL2KE-%"))
+    elif source == "manual":
+        stmt = stmt.where(~GoldItem.article_code.like("DM-%"),
+                          ~GoldItem.ke_id.like("NL2KE-%"))
+    if q:
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(GoldItem.ke_text.like(like) | GoldItem.ke_id.like(like))
+    rows = list(db.scalars(stmt.order_by(GoldItem.updated_at.desc()).limit(300)).all())
+    if ok == "1":
+        rows = [x for x in rows if (x.validation or {}).get("ok")]
+    elif ok == "0":
+        rows = [x for x in rows if not (x.validation or {}).get("ok")]
+    labels = {"datamaker": "DataMaker", "nl2ke": "NL2KE", "manual": "手工/上传"}
+    return templates.TemplateResponse(request=request, name="gold/review.html", context={
+        "request": request, "user": user, "rows": rows, "source": source,
+        "ok": ok, "q": q, "source_labels": labels,
+        "status_labels": ITEM_STATUS_LABELS,
+        "edit_roles": EDIT_ROLES,
+        "sources": {x.id: review_source(x) for x in rows},
+    })
+
+
+@router.post("/gold/review/bulk")
+async def review_bulk_page(request: Request, db: Session = Depends(get_db),
+                           user: dict = Depends(current_user)):
+    from ..templating import flash
+    form = await request.form()
+    ids = [int(x) for x in form.getlist("ids") if str(x).isdigit()]
+    action = str(form.get("action") or "")
+    try:
+        body = ReviewBulkIn(ids=ids, action=action)
+        res = api_review_bulk(body, db, user)
+        flash(request, f"批量{action}完成：{res['done_count']} 条，跳过 {res['skipped_count']} 条")
+    except HTTPException as e:
+        flash(request, str(e.detail), "err")
+    return RedirectResponse("/gold/review", status_code=303)
 
 
 @router.get("/gold/items")

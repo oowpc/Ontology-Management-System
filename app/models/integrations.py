@@ -38,6 +38,7 @@ class Nl2keRun(Base):
     sql_payload: Mapped[Optional[dict]] = mapped_column(JSON)
     error: Mapped[str] = mapped_column(Text, default="")
     gold_item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("gold_items.id"))
+    ke_document_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ke_documents.id"), index=True)
     annotation_batch_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("annotation_batches.id"), index=True)
     annotation_unit_id: Mapped[Optional[int]] = mapped_column(
@@ -67,6 +68,9 @@ class DatamakerJob(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0)
     result_count: Mapped[int] = mapped_column(Integer, default=0)
     imported_count: Mapped[int] = mapped_column(Integer, default=0)
+    gold_count: Mapped[int] = mapped_column(Integer, default=0)
+    gold_gate: Mapped[Optional[dict]] = mapped_column(JSON)
+    native_job_id: Mapped[Optional[str]] = mapped_column(String(64), index=True)
     annotation_batch_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("annotation_batches.id"), index=True)
     error: Mapped[str] = mapped_column(Text, default="")
@@ -146,3 +150,43 @@ class OntologyIndividual(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+
+
+class KeolSyncRun(Base):
+    """KEOL 本体源检查记录：源 hash、目标库计数与差异快照。"""
+    __tablename__ = "keol_sync_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
+    source_path: Mapped[str] = mapped_column(String(512), default="")
+    source_hash: Mapped[str] = mapped_column(String(128), default="", index=True)
+    status: Mapped[str] = mapped_column(String(16), default="checked")
+    counts: Mapped[Optional[dict]] = mapped_column(JSON)
+    diff: Mapped[Optional[dict]] = mapped_column(JSON)
+    error: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="system")
+    checked_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+class MonitorEvent(Base):
+    """DataAgent Monitor 事件收件箱；全局外部信号，转换 Issue 时归属当前库。"""
+    __tablename__ = "monitor_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_event_id: Mapped[str] = mapped_column(String(128), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    product_id: Mapped[str] = mapped_column(String(128), index=True)
+    source_id: Mapped[str] = mapped_column(String(128), index=True)
+    severity: Mapped[str] = mapped_column(String(16), default="medium", index=True)
+    category: Mapped[str] = mapped_column(String(32), default="content", index=True)
+    field: Mapped[str] = mapped_column(String(64), default="")
+    analysis_status: Mapped[str] = mapped_column(String(32), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    before_preview: Mapped[str] = mapped_column(Text, default="")
+    after_preview: Mapped[str] = mapped_column(Text, default="")
+    official_url: Mapped[str] = mapped_column(String(1024), default="")
+    payload: Mapped[Optional[dict]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(16), default="new", index=True)
+    issue_id: Mapped[Optional[int]] = mapped_column(ForeignKey("issues.id"), index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())

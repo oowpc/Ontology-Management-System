@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}规则一致性 · OMS{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>规则一致性 <span class="muted">（{{ report.rules }} 条）</span></h1>
+  <a class="btn" href="/rules">返回规则</a>
+</div>
+{% if report.ok %}<div class="flash ok">未发现结构/依赖错误</div>{% else %}<div class="flash err">发现 {{ report.errors|length }} 个错误</div>{% endif %}
+<div class="dm-quality">
+  <div class="dm-quality-item"><small>规则</small><strong>{{ report.rules }}</strong><span>当前库</span></div>
+  <div class="dm-quality-item"><small>错误</small><strong>{{ report.errors|length }}</strong><span>结构 / 环</span></div>
+  <div class="dm-quality-item"><small>警告</small><strong>{{ report.warnings|length }}</strong><span>重复 / 引用</span></div>
+  <div class="dm-quality-item"><small>依赖环</small><strong>{{ report.cycles|length }}</strong><span>算子级</span></div>
+</div>
+<h2>问题</h2>
+<table class="data">
+  <thead><tr><th>级别</th><th>规则</th><th>类型</th><th>说明</th></tr></thead>
+  <tbody>
+  {% for x in report.errors %}<tr><td><span class="badge disabled">错误</span></td><td>{% if x.rule_id %}<a href="/rules/{{ x.rule_id }}">{{ x.rule }}</a>{% else %}—{% endif %}</td><td>{{ x.kind }}</td><td>{{ x.message }}</td></tr>{% endfor %}
+  {% for x in report.warnings %}<tr><td><span class="badge pending">警告</span></td><td>{% if x.rule_id %}<a href="/rules/{{ x.rule_id }}">{{ x.rule }}</a>{% else %}—{% endif %}</td><td>{{ x.kind }}</td><td>{{ x.message }}</td></tr>{% endfor %}
+  {% if not report.errors and not report.warnings %}<tr><td colspan="4" class="empty">无问题</td></tr>{% endif %}
+  </tbody>
+</table>
+<h2>规则依赖</h2>
+<table class="data">
+  <thead><tr><th>规则</th><th>body 算子</th><th>head 算子</th><th>未解析引用</th></tr></thead>
+  <tbody>
+  {% for d in report.details %}<tr><td><a href="/rules/{{ d.id }}">{{ d.name }}</a></td><td>{{ d.body_ops|join(', ') or '—' }}</td><td>{{ d.head_ops|join(', ') or '—' }}</td><td>{{ d.unknown_refs|join(', ') or '—' }}</td></tr>
+  {% else %}<tr><td colspan="4" class="empty">暂无规则</td></tr>{% endfor %}
+  </tbody>
+</table>
+<p class="muted">当前为静态一致性检查：结构、引用、重复、算子级依赖环；不执行规则推理。</p>
+{% endblock %}

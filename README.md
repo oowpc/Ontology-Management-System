@@ -80,6 +80,15 @@ Pilot 源文与批次：`docs/pilots/2026-10-28-育儿补贴制度实施方案.m
 | M49 | 概念库内编号：`local_code`；Archer 显示 `ARCH-0001`，FIBO `FIBO-*`，CO `CO-*`，Pilot `PILOT-*`；列表/详情/API/搜索显示；新建自动编号 | ✅ 本次交付 |
 | M50 | 概念 description：全量 4009 概念、8012 算子均有描述；Archer 概念按来源库/字段生成，算子保留 Archer note；API/UI/JSON/CSV/版本支持 | ✅ 本次交付 |
 | M51 | OMS × NL2KE：`/nl2ke` 页面单条/批量生成 KE；每步产出可见、模型参数可调，结果可接受为 GOLD 草稿或加入标注批次（单元页可复核/预填 KE）；Archer source schema/来源已结构化进 OMS；服务端 Bearer；见 `docs/nl2ke-integration.md` | ✅ 本次交付 |
+| M52 | 统一校验：rule / operator / GOLD KE 全部经 `app.validation.run()`，结果落 `validation_results`；提供 `/api/validation/*`、批量重校和历史回填脚本；`VALIDATION_ENFORCE=0` 只记录、`=1` 才阻断；见 `docs/validation.md` | ✅ 本次交付 |
+| M53 | 3→5 整合：KEOL 16 条规则推送 `keol-yuer` 并纳入冻结版本 `KEOL-R1`；DataMaker 成功任务自动生成 GOLD 草稿（`gold_count`，只 draft）；KE-matcher 新增 `POST /judge/batch` 与 NL2KE 多候选批量等价 API；见 `docs/keol-rule-import.md`、`docs/datamaker-integration.md`、`docs/nl2ke-integration.md` | ✅ 本次交付 |
+| M54 | P0/P1：GOLD 草稿审查 `/gold/review` + 批量复核；GOLD/题库/Issue/KeTask 全量库隔离；KEOL 源 hash/差异页 `/keol/sync` + 可选 cron；校验运营 `/validation`；规则一致性 `/rules/consistency`（依赖图/环/重复/引用，静态）；见 `docs/ontology-libraries.md`、`docs/validation.md`、`docs/keol-rule-import.md` | ✅ 本次交付 |
+| M55 | DataAgent Monitor 接入：OMS 新增 `/monitor`，只读代理独立监控服务 dashboard；显示来源健康、事件、运行和总量；不可用时降级；见 `docs/monitor-integration.md` | ✅ 本次交付 |
+| M56 | DataAgent Monitor 事件闭环：Webhook 入站 `POST /api/monitor/events` + 幂等收件箱；`/monitor` 支持分诊、转 Issue、忽略/已处理；dashboard 事件可补拉；见 `docs/monitor-integration.md` | ✅ 本次交付 |
+| M57 | DataMaker 门禁与成本：`gold_eval.json` 质量门禁自动阻断 OMS 自动 GOLD（`DATAMAKER_GOLD_GATE_MODE`）；任务页汇总 LLM 调用/token/费用；`gold_gate` 快照落库 | ✅ 本次交付 |
+| M58 | DataMaker 原生 API：OMS 可切换到 DataMaker `datamaker-api` + 多 worker（`DATAMAKER_NATIVE_API_URL`）；worker stale recovery；systemd 模板已实装并启用 | ✅ 本次交付 |
+| M59 | 统一 KE 文档：`ke_documents` / `ke_document_versions`；GOLD/NL2KE/DataMaker/标注写入与回填；`/ke/documents` 与 API；见 `docs/ke-storage.md` | ✅ 本次交付 |
+| M60 | KE 文档写穿：`ke_annotations` / `gold_kes` 关联 `ke_document_id`；标注批次与本体版本关联 `ontology_version_id`；GOLD/NL2KE/DataMaker/标注共用统一文档索引 | ✅ 本次交付 |
 
 ## 全局规则 / 个体（M34）
 

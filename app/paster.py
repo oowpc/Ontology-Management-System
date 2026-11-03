@@ -284,6 +284,8 @@ def import_parsed(db: Session, parsed: dict, *, domain: str, actor: str,
                 existing_ops.add((item["name"], sid))
                 stats["operators_created"] += 1
             except Exception as e:  # noqa: BLE001
+                if getattr(e, "status_code", None) == 422:
+                    raise  # 统一校验阻断时整批回滚，不能把坏算子继续 commit
                 stats["problems"].append(f"op {item['name']}: {getattr(e, 'detail', e)}")
 
     if import_facts and article_code:
@@ -299,6 +301,9 @@ def import_parsed(db: Session, parsed: dict, *, domain: str, actor: str,
                          concepts=[item["operator"], *refs],
                          status="draft", created_by=actor, updated_by=actor)
             db.add(g)
+            db.flush()
+            from .validation import run as validate
+            validate(db, "gold_item", g, stage="paste", actor=actor, enforce=False)
             existing_items.add((article_code, ke_id))
             stats["facts_created"] += 1
         db.commit()

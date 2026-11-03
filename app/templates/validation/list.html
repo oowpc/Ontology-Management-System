@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}校验运营 · OMS{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>校验运营</h1>
+  <form class="inline" method="post" action="/validation/revalidate">
+    <select name="object_type">
+      <option value="">全部对象</option>
+      <option value="rule">规则</option>
+      <option value="operator">算子</option>
+      <option value="gold_item">GOLD</option>
+    </select>
+    <button class="btn" type="submit">批量重校（最多 500）</button>
+  </form>
+</div>
+<div class="dm-quality">
+  {% for kind, label in [('rule','规则'),('operator','算子'),('gold_item','GOLD')] %}
+  {% set s = summary.get(kind, {'ok':0,'error':0}) %}
+  <div class="dm-quality-item"><small>{{ label }}</small><strong>{{ s.ok }} ✓ / {{ s.error }} ✗</strong><span>历史校验记录</span></div>
+  {% endfor %}
+</div>
+<form class="filters" method="get" action="/validation">
+  <select name="object_type">
+    <option value="">全部类型</option>
+    {% for k, v in [('rule','规则'),('operator','算子'),('gold_item','GOLD')] %}
+    <option value="{{ k }}" {{ 'selected' if object_type == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <select name="ok">
+    <option value="">全部结果</option>
+    <option value="true" {{ 'selected' if ok == true }}>通过</option>
+    <option value="false" {{ 'selected' if ok == false }}>错误</option>
+  </select>
+  <button class="btn" type="submit">过滤</button>
+</form>
+<table class="data">
+  <thead><tr><th>时间</th><th>对象</th><th>Key</th><th>阶段</th><th>结果</th><th>错误 / 警告</th><th>引擎</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.checked_at|dt }}</td>
+    <td>{{ {'rule':'规则','operator':'算子','gold_item':'GOLD'}.get(r.object_type, r.object_type) }}</td>
+    <td>{% if r.object_type == 'rule' %}<a href="/rules/{{ r.object_id }}">{{ r.object_key }}</a>
+        {% elif r.object_type == 'operator' %}<a href="/operators/{{ r.object_id }}">{{ r.object_key }}</a>
+        {% elif r.object_type == 'gold_item' %}<a href="/gold/items/{{ r.object_id }}">{{ r.object_key }}</a>
+        {% else %}{{ r.object_key }}{% endif %}</td>
+    <td>{{ r.stage }}</td>
+    <td>{% if r.ok %}<span class="badge approved">✓</span>{% else %}<span class="badge disabled">✗</span>{% endif %}</td>
+    <td>{{ r.error_count }} / {{ r.warning_count }}</td>
+    <td class="muted">{{ r.engine }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="empty">暂无校验记录</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="btn" href="?page={{ page-1 }}{% if object_type %}&object_type={{ object_type }}{% endif %}{% if ok is not none %}&ok={{ ok|lower }}{% endif %}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ pages }} 页</span>
+  {% if page < pages %}<a class="btn" href="?page={{ page+1 }}{% if object_type %}&object_type={{ object_type }}{% endif %}{% if ok is not none %}&ok={{ ok|lower }}{% endif %}">下一页</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

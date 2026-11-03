@@ -26,6 +26,7 @@
         {{ side_link('/concepts', '概念', '/concepts') }}
         {{ side_link('/operators', '算子', '/operators') }}
         {{ side_link('/rules', '规则', '/rules') }}
+        {{ side_link('/rules/consistency', '规则一致性') }}
         {{ side_link('/individuals', '个体', '/individuals') }}
         {{ side_link('/graph', '概念图') }}
         {{ side_link('/submit', '提交概念') }}
@@ -47,12 +48,15 @@
         <div class="nav-group-title">题库与成果</div>
         {{ side_link('/questions', '题目') }}
         {{ side_link('/ke/upload', 'KE 上传') }}
+        {{ side_link('/ke/documents', 'KE 文档') }}
         {{ side_link('/ke/dashboard', 'KE 看板') }}
         {{ side_link('/paste', '粘贴识别') }}
         {{ side_link('/tmp', 'TMP 回填') }}
         {{ side_link('/gold/items', '成品库') }}
+        {{ side_link('/gold/review', 'GOLD 审查') }}
         {{ side_link('/gold', 'GOLD 看板') }}
         {{ side_link('/datamaker', '数据生成') }}
+        {{ side_link('/monitor', '外部产品监控') }}
       </div>
       <div class="nav-group">
         <div class="nav-group-title">NL2KE</div>
@@ -61,11 +65,13 @@
       <div class="nav-group">
         <div class="nav-group-title">KEOL</div>
         {{ side_link('/keol', 'KEOL 实例库') }}
+        {{ side_link('/keol/sync', 'KEOL 同步') }}
         <a class="side-link" href="{{ KEOL_CONSOLE_URL }}" target="_blank" rel="noopener">KEOL 加工台 <span class="nav-ext">外</span></a>
       </div>
       <div class="nav-group">
         <div class="nav-group-title">系统</div>
         {{ side_link('/libraries', '本体库与权限') }}
+        {{ side_link('/validation', '校验运营') }}
         {{ side_link('/history', '变更日志') }}
         {% if user.role in ['reviewer','admin'] %}
         {{ side_link('/health', '本体体检') }}

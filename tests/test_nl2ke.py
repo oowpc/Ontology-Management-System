@@ -96,8 +96,12 @@ def test_nl2ke_page_and_mocked_run(client, monkeypatch, archer_src):
 
     r = client.post(f"/api/nl2ke/runs/{body['id']}/accept")
     assert r.status_code == 200, r.text
-    assert r.json()["gold_item_id"]
+    gid = r.json()["gold_item_id"]
+    assert gid
     assert client.get("/api/nl2ke/runs").json()["items"][0]["status"] == "accepted"
+    vr = client.get("/api/validation/results", params={
+        "object_type": "gold_item", "object_id": gid}).json()
+    assert vr["total"] >= 1 and vr["items"][0]["stage"] == "accept"
 
     r = client.post(f"/api/nl2ke/runs/{body['id']}/to-batch")
     assert r.status_code == 200, r.text
@@ -157,6 +161,18 @@ def test_nl2ke_equivalence_api(client, monkeypatch):
     item = next(x for x in client.get("/api/nl2ke/runs").json()["items"]
                 if x["id"] == rid)
     assert item["equivalence"]["status"] == "proved_equal"
+
+    def fake_many(reference_ke, candidates, **kw):
+        assert len(candidates) == 2
+        return {"ok": True, "count": 2, "passed": 2, "failed": 0,
+                "results": [{"index": 0, "ok": True, "status": "equal"},
+                            {"index": 1, "ok": True, "status": "different"}]}
+
+    monkeypatch.setattr(nl2ke_router.ke_matcher, "judge_many", fake_many)
+    r = client.post(f"/api/nl2ke/runs/{rid}/equivalence/batch", json={
+        "candidates": ["output = Count({x | x: Singer});", "output = 1;"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["batch"]["count"] == 2
 
     def broken_judge(reference_ke, candidate_ke, **kw):
         raise RuntimeError("matcher down")

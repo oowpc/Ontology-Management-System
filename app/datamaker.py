@@ -20,7 +20,7 @@ from . import nl2ke as bridge
 from .db import SessionLocal
 from .library_context import library_scope
 from .models import (AnnotationBatch, AnnotationMember, AnnotationUnit, Concept,
-                     DatamakerJob, Operator, OperatorInput, OntologyLibrary,
+                     DatamakerJob, GoldItem, Operator, OperatorInput, OntologyLibrary,
                      OntologySource)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +43,12 @@ MODES = ("gen-ke", "roundtrip", "tri")
 NL_SOURCES = ("ke", "sql")
 MAX_ACTIVE = max(1, int(os.environ.get("DATAMAKER_MAX_ACTIVE", "1")))
 TIMEOUT = max(60, int(os.environ.get("DATAMAKER_TIMEOUT", "7200")))
+AUTO_GOLD = os.environ.get("DATAMAKER_AUTO_GOLD", "1") == "1"
+NATIVE_API_URL = os.environ.get("DATAMAKER_NATIVE_API_URL", "").strip().rstrip("/")
+NATIVE_API_TOKEN = os.environ.get("DATAMAKER_NATIVE_API_TOKEN", "").strip()
+NATIVE_API_TIMEOUT = float(os.environ.get("DATAMAKER_NATIVE_API_TIMEOUT", "10"))
+GOLD_GATE_FILE = os.environ.get("DATAMAKER_GOLD_GATE_FILE", "gold_eval.json")
+GOLD_GATE_MODE = os.environ.get("DATAMAKER_GOLD_GATE_MODE", "auto")
 
 _active: set[int] = set()
 _lock = threading.Lock()
@@ -63,7 +69,8 @@ def job_dict(j: DatamakerJob) -> dict:
         "mode": (j.params or {}).get("mode", "gen-ke"),
         "n": j.n, "workers": j.workers, "ke_types": j.ke_types,
         "progress": j.progress, "result_count": j.result_count,
-        "imported_count": j.imported_count, "pid": j.pid,
+        "imported_count": j.imported_count, "gold_count": j.gold_count,
+        "gold_gate": j.gold_gate, "native_job_id": j.native_job_id, "pid": j.pid,
         "annotation_batch_id": j.annotation_batch_id,
         "error": j.error or "", "created_by": j.created_by,
         "created_at": j.created_at.isoformat(timespec="seconds") if j.created_at else None,
@@ -204,7 +211,8 @@ def claim_next_job(worker_id: str) -> tuple[int, int] | None:
         db = SessionLocal()
         try:
             job = db.scalar(select(DatamakerJob).where(
-                DatamakerJob.status == "queued").order_by(DatamakerJob.id).limit(1))
+                DatamakerJob.status == "queued",
+                DatamakerJob.native_job_id.is_(None)).order_by(DatamakerJob.id).limit(1))
             if job is None:
                 return None
             now = _now()
@@ -218,6 +226,57 @@ def claim_next_job(worker_id: str) -> tuple[int, int] | None:
             return (job.id, job.library_id) if result.rowcount else None
         finally:
             db.close()
+
+
+def _native_headers() -> dict:
+    return {"Authorization": f"Bearer {NATIVE_API_TOKEN}"} if NATIVE_API_TOKEN else {}
+
+
+def _native_call(method: str, path: str, body: dict | None = None) -> dict:
+    import httpx
+    with httpx.Client(base_url=NATIVE_API_URL, headers=_native_headers(),
+                      timeout=NATIVE_API_TIMEOUT) as c:
+        r = c.request(method, path, json=body)
+    if r.status_code >= 400:
+        raise RuntimeError(f"DataMaker API {r.status_code}: {r.text[:300]}")
+    data = r.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("DataMaker API returned non-object")
+    return data
+
+
+def sync_native_jobs(db: Session, library_id: int) -> None:
+    if not NATIVE_API_URL:
+        return
+    rows = db.scalars(select(DatamakerJob).where(
+        DatamakerJob.library_id == library_id,
+        DatamakerJob.native_job_id.is_not(None),
+        DatamakerJob.status.in_(("queued", "running")))).all()
+    for job in rows:
+        try:
+            remote = _native_call("GET", f"/jobs/{job.native_job_id}")
+        except Exception:
+            continue
+        remote_status = str(remote.get("status") or job.status)
+        job.progress = int(remote.get("progress") or 0)
+        job.result_count = int(remote.get("result_count") or 0)
+        job.error = str(remote.get("error") or "")
+        mapped = {"queued": "queued", "running": "running", "succeeded": "succeeded",
+                  "failed": "failed", "cancelled": "cancelled"}.get(remote_status, job.status)
+        if mapped == "succeeded" and job.status != "succeeded":
+            try:
+                _import_results(db, job)
+            except Exception as e:  # noqa: BLE001
+                job.status = "failed"
+                job.error = f"native import failed: {e}"[:4000]
+                job.finished_at = _now()
+                db.commit()
+                continue
+        job.status = mapped
+        job.heartbeat_at = _now()
+        if mapped in {"succeeded", "failed", "cancelled"}:
+            job.finished_at = _now()
+        db.commit()
 
 
 def start_job(db: Session, *, library, db_id: str, model: str, n: int,
@@ -271,6 +330,31 @@ def start_job(db: Session, *, library, db_id: str, model: str, n: int,
     job.log_path = str(log_path)
     db.commit()
     db.refresh(job)
+    if NATIVE_API_URL:
+        try:
+            remote = _native_call("POST", "/jobs", {
+                "db": str(db_path) if db_path else "",
+                "ontology": str(workdir / "registry.json"), "workdir": str(workdir),
+                "n": n, "workers": workers, "mode": mode, "model": model,
+                "ke_types": ke_types, "resume": bool(resume),
+                "service_url": service_url or SERVICE_URL,
+                "timeout_s": int(timeout_s or TIMEOUT),
+            })
+            native_id = str(remote.get("id") or "")
+            if not native_id:
+                raise RuntimeError("DataMaker API 未返回 job id")
+            job.native_job_id = native_id
+            job.status = str(remote.get("status") or "queued")
+            job.params = {**(job.params or {}), "native_api": True}
+            db.commit()
+            db.refresh(job)
+            return job
+        except Exception as e:  # noqa: BLE001
+            job.status = "failed"
+            job.error = f"native API 启动失败：{e}"[:4000]
+            job.finished_at = _now()
+            db.commit()
+            raise ValueError(job.error) from e
     # 任务只入队；真实执行由独立 datamaker worker 完成。
     return job
 
@@ -456,6 +540,7 @@ def _import_results(db: Session, job: DatamakerJob) -> None:
     row_job.result_count = len(rows)
     if not rows:
         row_job.imported_count = 0
+        row_job.gold_count = 0
         db.commit()
         return
     code = f"DM-{row_job.id}"
@@ -494,7 +579,63 @@ def _import_results(db: Session, job: DatamakerJob) -> None:
         ))
     row_job.annotation_batch_id = batch.id
     row_job.imported_count = len(rows)
+    row_job.gold_count = _import_gold(db, row_job, rows)
     db.commit()
+
+
+def _gold_gate(job: DatamakerJob) -> dict | None:
+    """读取 workdir 的 eval_gold 结果；auto 模式下没有报告不阻断。"""
+    if GOLD_GATE_MODE == "off":
+        return None
+    path = Path(job.workdir or "") / GOLD_GATE_FILE
+    if not path.exists():
+        if GOLD_GATE_MODE == "require":
+            return {"checked": False, "passed": False, "reason": f"缺少 {GOLD_GATE_FILE}"}
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return {"checked": False, "passed": False, "reason": f"质量报告不可读：{e}"}
+    gate = data.get("gate") if isinstance(data, dict) else None
+    if not isinstance(gate, dict):
+        gate = {"passed": False, "reason": "质量报告缺少 gate"}
+    return {"checked": True, "passed": bool(gate.get("passed")),
+            "execution_rate": gate.get("execution_rate", data.get("execution_rate")),
+            "execution_accuracy": gate.get("execution_accuracy", data.get("execution_accuracy")),
+            "reason": gate.get("reason", "")}
+
+
+def _import_gold(db: Session, job: DatamakerJob, rows: list[dict]) -> int:
+    """把 DataMaker 生成结果自动落成 GOLD 草稿；只建 draft，不越过人工审查。"""
+    if not AUTO_GOLD:
+        return 0
+    gate = _gold_gate(job)
+    job.gold_gate = gate
+    if gate is not None and not gate.get("passed"):
+        return 0
+    from .validation import run as validate
+    from .ke_docs import sync_gold_document
+    article = f"DM-{job.id}"
+    count = 0
+    for i, row in enumerate(rows, 1):
+        ke_id = f"DM-{job.id}-{i:04d}"
+        item = db.scalar(select(GoldItem).where(GoldItem.article_code == article,
+                                                GoldItem.ke_id == ke_id))
+        if item is None:
+            item = GoldItem(
+                article_code=article, ke_id=ke_id, group_name="DataMaker",
+                ke_text=row.get("ke") or "", concepts=row.get("concepts") or [],
+                status="draft", version=1, created_by=job.created_by,
+                updated_by=job.created_by,
+            )
+            db.add(item)
+            db.flush()
+            validate(db, "gold_item", item, stage="datamaker",
+                     actor=job.created_by, enforce=False)
+            sync_gold_document(db, item, question=row.get("question"),
+                               actor=job.created_by, reason="datamaker import")
+        count += 1
+    return count
 
 
 def quality(job: DatamakerJob) -> dict:
@@ -533,7 +674,8 @@ def quality(job: DatamakerJob) -> dict:
             continue
     return {
         "requested": requested, "generated": generated,
-        "imported": job.imported_count,
+        "imported": job.imported_count, "gold": getattr(job, "gold_count", 0),
+        "gold_gate": getattr(job, "gold_gate", None),
         "mode": (getattr(job, "params", None) or {}).get("mode", "gen-ke"),
         "completion_rate": round(generated * 100 / requested, 1) if requested else 0,
         "types": dict(types), "domains": dict(domains),
@@ -553,6 +695,19 @@ def quality(job: DatamakerJob) -> dict:
     }
 
 
+def _cost(job: DatamakerJob) -> dict:
+    root = Path(getattr(job, "workdir", "") or "")
+    for name in ("report.json", "report_tri.json"):
+        try:
+            data = json.loads((root / name).read_text(encoding="utf-8"))
+            cost = data.get("cost") or {}
+            if isinstance(cost, dict):
+                return cost
+        except (OSError, ValueError):
+            continue
+    return {}
+
+
 def aggregate(jobs: list[DatamakerJob]) -> dict:
     total = len(jobs)
     done = [j for j in jobs if j.status == "succeeded"]
@@ -563,6 +718,11 @@ def aggregate(jobs: list[DatamakerJob]) -> dict:
         "total": total, "succeeded": len(done), "failed": len(failed),
         "running": sum(1 for j in jobs if j.status in ("queued", "running")),
         "generated": generated, "imported": imported,
+        "gold": sum(getattr(j, "gold_count", 0) for j in done),
+        "llm_calls": sum(int(_cost(j).get("calls", 0) or 0) for j in done),
+        "prompt_tokens": sum(int(_cost(j).get("prompt_tokens", 0) or 0) for j in done),
+        "completion_tokens": sum(int(_cost(j).get("completion_tokens", 0) or 0) for j in done),
+        "cost_usd": round(sum(float(_cost(j).get("usd", 0) or 0) for j in done), 6),
         "success_rate": round(len(done) * 100 / total, 1) if total else 0,
     }
 
@@ -586,6 +746,11 @@ def retry_job(db: Session, *, library, job: DatamakerJob, actor: str) -> Datamak
 def cancel_job(db: Session, job: DatamakerJob) -> DatamakerJob:
     if job.status not in ("queued", "running"):
         return job
+    if job.native_job_id and NATIVE_API_URL:
+        try:
+            _native_call("POST", f"/jobs/{job.native_job_id}/cancel", {})
+        except Exception as e:  # noqa: BLE001
+            job.error = f"native cancel failed: {e}"[:4000]
     pid = job.pid
     job.status = "cancelled"
     job.finished_at = _now()
@@ -600,6 +765,7 @@ def recover_stale(db: Session, *, timeout_s: int = 300) -> None:
     cutoff = _now() - timedelta(seconds=max(1, timeout_s))
     rows = db.scalars(select(DatamakerJob).where(
         DatamakerJob.status == "running",
+        DatamakerJob.native_job_id.is_(None),
         (DatamakerJob.heartbeat_at.is_(None)) | (DatamakerJob.heartbeat_at < cutoff)
     )).all()
     for job in rows:

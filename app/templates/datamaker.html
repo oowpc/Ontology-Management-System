@@ -17,6 +17,7 @@
     <div class="dm-stat"><small>生成条数</small><strong>{{ stats.generated }}</strong></div>
     <div class="dm-stat"><small>已导入</small><strong>{{ stats.imported }}</strong></div>
     <div class="dm-stat"><small>任务成功率</small><strong>{{ stats.success_rate }}%</strong></div>
+    <div class="dm-stat"><small>LLM 调用 / tokens</small><strong>{{ stats.llm_calls }} / {{ stats.prompt_tokens + stats.completion_tokens }}</strong><span>${{ stats.cost_usd }}</span></div>
   </div>
   <div class="dm-layout">
     <section class="panel dm-start">

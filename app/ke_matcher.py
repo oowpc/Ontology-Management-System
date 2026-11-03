@@ -46,3 +46,19 @@ def judge(reference_ke: str, candidate_ke: str, *,
         },
         "request_timeout_s": max(1.0, min(float(request_timeout_s), 120.0)),
     })
+
+
+def judge_many(reference_ke: str, candidates: list[str], *,
+               request_timeout_s: float = 60) -> dict:
+    """批量多候选：以同一参考 KE 对多个候选逐项判定（服务端有界并发）。"""
+    items = [str(x) for x in (candidates or []) if str(x).strip()]
+    if not items:
+        raise ValueError("candidates 不能为空")
+    if len(items) > 20:
+        raise ValueError("candidates 最多 20 条")
+    return _request("/judge/batch", {
+        "ke_a": reference_ke,
+        "candidates": items,
+        "layers": {"s1": True, "keval_path": KEVAL_PATH},
+        "request_timeout_s": max(1.0, min(float(request_timeout_s), 120.0)),
+    })

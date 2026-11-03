@@ -27,7 +27,7 @@ from .questions.router import router as questions_router
 from .routers import (agent, auth, concepts, datamaker, graph, health, io, keol,
                       libraries, library, library_api, llm, nl2ke, operators, ops,
                       pages, paste, search, similarity, submissions, suggestions,
-                      tmp, tokens, users)
+                      tmp, tokens, users, validation, monitor, ke_docs)
 from .security import LoginRequired
 from .seed import seed_if_empty
 from .templating import templates
@@ -54,6 +54,26 @@ def _scheduled_health():
                 "scheduled health failed for library %s", library_id)
 
 
+def _scheduled_keol_sync():
+    """定时检查 KEOL 源 hash 与差异；只记录，不自动审批。"""
+    import logging
+    from sqlalchemy import select
+    from .keol_sync import check, record
+    from .models import OntologyLibrary
+    try:
+        with library_session(None) as db:
+            lib = db.scalar(select(OntologyLibrary).where(
+                OntologyLibrary.key == settings.keol_sync_library))
+            lib_id = lib.id if lib else None
+        if lib_id is None:
+            return
+        with library_session(lib_id) as db:
+            data = check(db)
+            record(db, data, "scheduler")
+    except Exception:
+        logging.getLogger("app").exception("scheduled KEOL sync check failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _scheduler
@@ -66,6 +86,10 @@ async def lifespan(app: FastAPI):
         _scheduler = BackgroundScheduler()
         _scheduler.add_job(_scheduled_health, CronTrigger.from_crontab(settings.health_cron),
                            id="health", replace_existing=True)
+        if settings.keol_sync_cron:
+            _scheduler.add_job(_scheduled_keol_sync,
+                               CronTrigger.from_crontab(settings.keol_sync_cron),
+                               id="keol_sync", replace_existing=True)
         _scheduler.start()
     except Exception:
         _scheduler = None  # 定时任务不可用不阻断启动
@@ -150,5 +174,9 @@ app.include_router(annotation_router)
 app.include_router(annotation_api_router)
 app.include_router(search.router)
 app.include_router(ops.router)
+app.include_router(validation.router)
+app.include_router(validation.page_router)
+app.include_router(monitor.router)
+app.include_router(ke_docs.router)
 app.include_router(pages.router)
 

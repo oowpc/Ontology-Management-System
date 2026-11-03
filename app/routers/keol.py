@@ -5,15 +5,22 @@
 """
 from __future__ import annotations
 
+import json
+import urllib.error
+import urllib.request
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..db import get_db
+from ..keol_sync import check, latest, record
 from ..keolsync import mirror_status
-from ..models import KeolEntity, KeolFact
+from ..models import KeolEntity, KeolFact, KeolSyncRun
 from ..security import current_user, require_role
-from ..templating import templates
+from ..templating import flash, templates
 
 router = APIRouter(tags=["keol"])
 MAX_LIMIT = 500
@@ -92,7 +99,89 @@ def keol_facts(pred: str = "", subj: str = "", value: str = "", key: str = "",
     return {"count": total, "items": [_fact_dict(f) for f in rows]}
 
 
+@router.get("/api/keol/sync/status")
+def keol_sync_status(db: Session = Depends(get_db),
+                     user: dict = Depends(require_role())):
+    row = latest(db)
+    if row is None:
+        return {"checked": False}
+    return {"checked": True, "id": row.id, "status": row.status,
+            "source_hash": row.source_hash,
+            "checked_at": row.checked_at.isoformat(timespec="seconds") if row.checked_at else None,
+            "counts": row.counts or {}, "diff": row.diff or {}, "error": row.error}
+
+
+@router.post("/api/keol/sync/check")
+def keol_sync_check(db: Session = Depends(get_db),
+                    user: dict = Depends(current_user)):
+    try:
+        data = check(db)
+        row = record(db, data, user["username"])
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, str(e)[:1000]) from e
+    return {"id": row.id, **data}
+
+
+@router.post("/api/keol/sync/apply")
+def keol_sync_apply(request: Request, db: Session = Depends(get_db),
+                    user: dict = Depends(require_role("reviewer", "admin"))):
+    lib = getattr(request.state, "library", None)
+    if lib is None:
+        raise HTTPException(400, "没有当前本体库")
+    if not settings.keol_console_token:
+        raise HTTPException(400, "未配置 KEOL_CONSOLE_TOKEN，无法向 KEOL 发起推送")
+    body = json.dumps({"mode": "suggest", "confirm": True,
+                       "library": lib.key, "domain": "KEOL"}, ensure_ascii=False).encode()
+    req = urllib.request.Request(
+        settings.keol_console_url.rstrip("/") + "/api/oms/push", data=body,
+        headers={"Authorization": "Bearer " + settings.keol_console_token,
+                 "Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            out = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        raise HTTPException(502, f"KEOL push {e.code}: {e.read().decode('utf-8', 'replace')[:500]}") from e
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"KEOL push 失败：{e}") from e
+    return {"library": lib.key, "push": out}
+
+
 # ================= 页面 =================
+
+@router.get("/keol/sync")
+def keol_sync_page(request: Request, db: Session = Depends(get_db),
+                   user: dict = Depends(current_user)):
+    row = latest(db)
+    return templates.TemplateResponse(request=request, name="keol_sync.html", context={
+        "request": request, "user": user, "row": row,
+        "can_apply": bool(settings.keol_console_token),
+    })
+
+
+@router.post("/keol/sync/check")
+def keol_sync_check_page(request: Request, db: Session = Depends(get_db),
+                         user: dict = Depends(current_user)):
+    try:
+        data = check(db)
+        row = record(db, data, user["username"])
+        flash(request, f"检查完成：source {row.source_hash[:12]}，changed={data['changed']}")
+    except Exception as e:  # noqa: BLE001
+        flash(request, f"检查失败：{e}", "err")
+    return RedirectResponse("/keol/sync", status_code=303)
+
+
+@router.post("/keol/sync/apply")
+def keol_sync_apply_page(request: Request, db: Session = Depends(get_db),
+                         user: dict = Depends(current_user)):
+    if user.get("role") not in {"reviewer", "admin"}:
+        raise HTTPException(403, "提交建议推送需审核员/管理员")
+    try:
+        res = keol_sync_apply(request, db, user)
+        flash(request, f"已向 KEOL 提交建议推送：{res.get('push', {}).get('suggestion', {}).get('id', '已提交')}")
+    except HTTPException as e:
+        flash(request, str(e.detail), "err")
+    return RedirectResponse("/keol/sync", status_code=303)
+
 
 @router.get("/keol")
 def keol_page(request: Request, q: str = "", type: str = "", pred: str = "",

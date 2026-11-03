@@ -10,6 +10,7 @@ OMS 从「单一全局本体库」改为**多本体库隔离**。所有概念、
 | `co-baseline` | CO v0.8 业务基线 | business | 20 概念 / 5 算子；新业务默认库 |
 | `pilot-yuer` | 育儿补贴 Pilot | pilot | v1/v2 批次；按库 apply，不影响其他库 |
 | `archer` | Archer Benchmark | reference | 639 概念 / 4622 算子；见 `docs/archer-import.md` |
+| `keol-yuer` | KEOL 育儿补贴参考本体 | reference | 322 概念 / 224 算子 / 16 规则；KEOL 推送镜像，见 `docs/keol-rule-import.md` |
 
 ## 页面
 
@@ -17,7 +18,9 @@ OMS 从「单一全局本体库」改为**多本体库隔离**。所有概念、
 
 - 概念/算子/规则/个体、概念图、全局搜索、导入导出、体检、标注批次/版本、建议箱均按当前库隔离。
 - 工作台/GOLD/题库等非本体数据的展示仍沿用原逻辑；涉及概念引用时以当前库为准。
-- GOLD/题库/Issue/KE 上传属于跨库工作流记录，目前没有 `library_id`；本轮隔离范围是本体对象、标注批次/版本/建议/体检，不改变这些历史工作流的表结构。
+- GOLD（成品/批次/抽检）、题库（questions/ke_tasks/ke_uploads）、Issue（issues 及子表）均已增加 `library_id`，按当前库读写。
+- 历史 GOLD 按生成来源回填：DataMaker `DM-*` 回填到对应 job 的库；NL2KE 回填到对应 run 的库；其余回默认业务库。
+- GOLD 草稿审查：`/gold/review`，支持来源筛选、校验筛选、批量复核/退回/删除。
 - Pilot v1/v2 只出现在 `pilot-yuer`；v1 apply 只写这个库。
 
 ## API

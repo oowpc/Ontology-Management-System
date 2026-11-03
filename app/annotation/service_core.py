@@ -23,6 +23,7 @@ from ..models import (AnnotationBatch, AnnotationCrossReview, AnnotationEvidence
                       CoMergeLog, Concept, ConceptParent, GoldKe, KeAnnotation,
                       OntologyIndividual, OntologyRule, OntologyVersion, Operator,
                       OperatorInput, QueryRun, User)
+from ..ke_docs import upsert as upsert_ke_document
 from ..paster import check_type_expr
 from ..services import (concept_parents_map, operator_inputs_map, operator_signature,
                         set_concept_parents, sync_operator_inputs)
@@ -260,6 +261,17 @@ def submit_ke(db: Session, unit: AnnotationUnit, side: str, data: dict, actor: d
     )
     db.add(ke)
     db.flush()
+    version = db.scalar(select(OntologyVersion).where(
+        OntologyVersion.batch_id == batch.id,
+        OntologyVersion.status.in_(["frozen", "released"])).order_by(OntologyVersion.id.desc()))
+    doc = upsert_ke_document(
+        db, source_type="annotation", source_ref=f"ke_annotation:{ke.id}",
+        question=unit.raw_text or "", ke_text=content, status="candidate",
+        actor=actor["username"], annotation_batch_id=batch.id,
+        ontology_version_id=version.id if version else None,
+        reason=f"ke annotation {side} v{ke.version}")
+    ke.ke_document_id = doc.id
+    db.flush()
     log_change(db, "ke_annotation", ke.id, "create", None, snapshot(ke), actor["username"])
     refresh_unit_status(db, unit)
     db.commit()
@@ -296,6 +308,17 @@ def submit_gold(db: Session, unit: AnnotationUnit, data: dict, actor: dict) -> G
         decided_by=actor["username"],
     )
     db.add(gold)
+    db.flush()
+    version = db.scalar(select(OntologyVersion).where(
+        OntologyVersion.batch_id == batch.id,
+        OntologyVersion.status.in_(["frozen", "released"])).order_by(OntologyVersion.id.desc()))
+    doc = upsert_ke_document(
+        db, source_type="annotation", source_ref=f"gold_ke:{gold.id}",
+        question=unit.raw_text or "", ke_text=gold.content, status="reviewed",
+        actor=actor["username"], annotation_batch_id=batch.id,
+        ontology_version_id=version.id if version else None,
+        reason=f"gold ke v{gold.version}")
+    gold.ke_document_id = doc.id
     db.flush()
     log_change(db, "gold_ke", gold.id, "create", None, snapshot(gold), actor["username"])
     refresh_unit_status(db, unit)
@@ -587,6 +610,11 @@ def create_version(db: Session, batch: AnnotationBatch, data: dict, actor: dict)
         note=str(data.get("note") or ""),
     )
     db.add(version)
+    db.flush()
+    from ..models import KeDocument
+    for doc in db.scalars(select(KeDocument).where(
+            KeDocument.annotation_batch_id == batch.id)).all():
+        doc.ontology_version_id = version.id
     db.flush()
     log_change(db, "ontology_version", version.id, "create", None,
                snapshot(version), actor["username"])
@@ -1007,12 +1035,18 @@ def apply_alignments(db: Session, batch: AnnotationBatch, actor: dict,
                 db.flush()
                 sync_operator_inputs(db, op, [subj_name])
                 db.flush()
+                from ..validation import run as validate
+                validate(db, "operator", op, stage="annotation_merge",
+                         actor=actor["username"])
                 log_change(db, "operator", op.id, "create", None, snapshot(op), actor["username"])
                 stats["operators_created"] += 1
             elif op.return_type != ret:
                 before = snapshot(op)
                 op.return_type = ret
                 sync_operator_inputs(db, op, op.param_types or [])
+                from ..validation import run as validate
+                validate(db, "operator", op, stage="annotation_merge",
+                         actor=actor["username"])
                 log_change(db, "operator", op.id, "import", before, snapshot(op),
                            actor["username"])
                 stats["operators_updated"] += 1

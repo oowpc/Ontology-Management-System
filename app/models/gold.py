@@ -21,6 +21,8 @@ class GoldArticle(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     code: Mapped[str] = mapped_column(String(32), unique=True)      # 篇1 … 篇13
     title: Mapped[str] = mapped_column(String(256))
     domain: Mapped[str] = mapped_column(String(64), index=True)     # 育儿/特困/金融/化学…
@@ -43,6 +45,8 @@ class GoldScheduleCell(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     day_index: Mapped[int] = mapped_column(Integer)
     slot: Mapped[str] = mapped_column(String(8))                    # 上午/下午
     group_name: Mapped[str] = mapped_column(String(16))             # A组/B组/C组
@@ -59,6 +63,8 @@ class GoldIssue(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     title: Mapped[str] = mapped_column(String(256))
     content: Mapped[str] = mapped_column(Text, default="")          # 思考过程（方案要求先独立思考）
     cluster: Mapped[str] = mapped_column(String(64), default="", index=True)  # 聚类标签（同类问题类推）
@@ -74,6 +80,8 @@ class GoldIssueComment(Base):
     __tablename__ = "gold_issue_comments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     issue_id: Mapped[int] = mapped_column(ForeignKey("gold_issues.id"), index=True)
     author: Mapped[str] = mapped_column(String(64))
     content: Mapped[str] = mapped_column(Text)
@@ -92,6 +100,8 @@ class GoldSample(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     sample_date: Mapped[str] = mapped_column(String(16))
     scope: Mapped[str] = mapped_column(String(128))                 # 如「育儿·一组·篇1」
     total: Mapped[int] = mapped_column(Integer, default=0)
@@ -113,6 +123,8 @@ class GoldSampleItem(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     sample_id: Mapped[int] = mapped_column(ForeignKey("gold_samples.id"), index=True)
     gold_item_id: Mapped[int] = mapped_column(ForeignKey("gold_items.id"), index=True)
     article_code: Mapped[str] = mapped_column(String(32), default="")   # 冗余展示
@@ -130,6 +142,8 @@ class GoldSampleReview(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     sample_id: Mapped[int] = mapped_column(ForeignKey("gold_samples.id"), index=True)
     gold_item_id: Mapped[int] = mapped_column(ForeignKey("gold_items.id"), index=True)
     reviewer: Mapped[str] = mapped_column(String(64))
@@ -146,6 +160,8 @@ class GoldItem(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     article_code: Mapped[str] = mapped_column(String(32), index=True)   # 篇编号
     ke_id: Mapped[str] = mapped_column(String(64))                      # KE 编号（=题目ID）
     group_name: Mapped[str] = mapped_column(String(64), index=True)
@@ -154,6 +170,7 @@ class GoldItem(Base):
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)  # draft→reviewed→gold
     version: Mapped[int] = mapped_column(Integer, default=1)
     validation: Mapped[Optional[dict]] = mapped_column(JSON)  # M20：KE 校验缓存（engine/ok/errors/warnings/validated_at）
+    ke_document_id: Mapped[Optional[int]] = mapped_column(ForeignKey("ke_documents.id"), index=True)
     created_by: Mapped[str] = mapped_column(String(64))
     updated_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

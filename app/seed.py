@@ -139,6 +139,9 @@ def seed_if_empty():
                 db.add(op)
                 db.flush()
                 sync_operator_inputs(db, op, params)
+                db.flush()
+                from .validation import run as validate
+                validate(db, "operator", op, stage="seed", actor="admin", enforce=False)
             for cname, cnt in DEMO_USAGE:
                 db.add(UsageStat(
                     concept_id=ids[cname], ke_count=cnt,

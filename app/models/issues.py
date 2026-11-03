@@ -22,6 +22,8 @@ class Issue(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     code: Mapped[str] = mapped_column(String(16), unique=True)      # IS-0001 全局递增
     domain: Mapped[str] = mapped_column(String(64), default="通用", index=True)
     group_name: Mapped[str] = mapped_column(String(64), default="")
@@ -54,6 +56,8 @@ class IssueCase(Base):
     __tablename__ = "issue_cases"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), index=True)
     seq: Mapped[int] = mapped_column(Integer, default=1)
     source: Mapped[str] = mapped_column(String(256), default="")    # 原文出处
@@ -68,6 +72,8 @@ class IssueQuestion(Base):
     __table_args__ = (CheckConstraint("source IN ('human','ai')", name="ck_iq_source"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), index=True)
     seq: Mapped[int] = mapped_column(Integer, default=1)
     text: Mapped[str] = mapped_column(Text)
@@ -78,6 +84,8 @@ class IssueViewpoint(Base):
     __tablename__ = "issue_viewpoints"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), index=True)
     person: Mapped[str] = mapped_column(String(64))
     stance: Mapped[str] = mapped_column(String(16), default="补充")  # 观点一/观点二/补充
@@ -89,6 +97,8 @@ class IssueComment(Base):
     __tablename__ = "issue_comments"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), index=True)
     author: Mapped[str] = mapped_column(String(64))
     body: Mapped[str] = mapped_column(Text)
@@ -103,6 +113,8 @@ class IssueLink(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), index=True)
     entity_type: Mapped[str] = mapped_column(String(16))
     entity_id: Mapped[int] = mapped_column(Integer, index=True)
@@ -116,6 +128,8 @@ class IssueImpact(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id"), index=True)
     entity_type: Mapped[str] = mapped_column(String(16))
     entity_id: Mapped[int] = mapped_column(Integer)

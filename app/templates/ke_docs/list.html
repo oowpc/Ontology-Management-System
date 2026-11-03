@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}KE 文档 · OMS{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>KE 文档 <span class="muted">（{{ total }}）</span></h1>
+  <a class="btn" href="/api/ke/documents">API</a>
+</div>
+<form class="filters" method="get" action="/ke/documents">
+  <select name="source_type">
+    <option value="">全部来源</option>
+    {% for k in ['gold','datamaker','nl2ke','annotation','manual'] %}
+    <option value="{{ k }}" {{ 'selected' if source_type == k }}>{{ k }}</option>{% endfor %}
+  </select>
+  <select name="status">
+    <option value="">全部状态</option>
+    {% for k in ['candidate','reviewed','gold','rejected'] %}
+    <option value="{{ k }}" {{ 'selected' if status == k }}>{{ k }}</option>{% endfor %}
+  </select>
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="问题 / KE / source_ref">
+  <button class="btn" type="submit">过滤</button>
+</form>
+<div class="table-wrap"><table class="data">
+  <thead><tr><th>ID</th><th>来源</th><th>问题</th><th>KE</th><th>状态</th><th>GOLD</th><th>更新时间</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.id }}</td>
+    <td><span class="badge">{{ r.source_type }}</span><br><span class="muted">{{ r.source_ref }}</span></td>
+    <td>{{ r.question|truncate(80) }}</td>
+    <td><code>{{ r.ke_text[:100] }}{{ '…' if r.ke_text|length > 100 }}</code></td>
+    <td><span class="badge {{ 'approved' if r.status == 'gold' else 'pending' }}">{{ r.status }}</span></td>
+    <td>{% if r.gold_item_id %}<a href="/gold/items/{{ r.gold_item_id }}">#{{ r.gold_item_id }}</a>{% else %}—{% endif %}</td>
+    <td>{{ r.updated_at|dt }}</td>
+  </tr>
+  {% else %}<tr><td colspan="7" class="empty">暂无 KE 文档；先运行 backfill_ke_documents.py</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+{% if pages > 1 %}
+<div class="pager">
+  {% if page > 1 %}<a class="btn" href="?page={{ page-1 }}&source_type={{ source_type or '' }}&status={{ status or '' }}&q={{ q or '' }}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ pages }} 页</span>
+  {% if page < pages %}<a class="btn" href="?page={{ page+1 }}&source_type={{ source_type or '' }}&status={{ status or '' }}&q={{ q or '' }}">下一页</a>{% endif %}
+</div>
+{% endif %}
+<p class="muted">统一 KE 文档是索引和版本层；原始 GOLD/JSONL/标注记录仍保留为来源。</p>
+{% endblock %}

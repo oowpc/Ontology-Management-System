@@ -113,6 +113,11 @@ DATAMAKER_TIMEOUT=7200
 - NLI paraphrase/neutral
 - tri identical / sem_eq / sem_diff
 - roundtrip/tri 仍只导入 `ke1.jsonl` 到草稿批次
+- 任务成功后默认同时把 `ke1.jsonl` 建成 GOLD 草稿（`DATAMAKER_AUTO_GOLD=1`）：
+  `article_code=DM-<job>`、`ke_id=DM-<job>-NNNN`、`status=draft`；只进入人工审查，
+  不自动 reviewed/gold；每条都走统一 `validate_ke` 并留校验记录
+- 任务页展示「GOLD 草稿 N」并跳到 `/gold/items?q=DM-<job>`
+- 历史任务回填：`.venv/bin/python scripts/backfill_datamaker_gold.py`
 
 安全处理：
 
@@ -136,3 +141,45 @@ DATAMAKER_TIMEOUT=7200
 - 执行期间定期刷新 heartbeat
 - worker 启动和每 60 秒清理 heartbeat 超时（默认 300 秒）的 `running`
 - 多 worker 不会同时执行同一任务；活跃 worker 的任务不会被误杀
+
+## GOLD 质量门禁
+
+DataMaker 任务成功后，OMS 会按以下顺序决定是否自动建 GOLD 草稿：
+
+1. `DATAMAKER_AUTO_GOLD=0`：跳过。
+2. `DATAMAKER_GOLD_GATE_MODE=auto`（默认）：
+   - 若 job workdir 存在 `gold_eval.json`，读取其 `gate`；
+   - `gate.passed=false` 时不建 GOLD 草稿，并把快照写入 `datamaker_jobs.gold_gate`。
+   - 没有报告时保持旧行为，允许建草稿。
+3. `require`：没有质量报告也阻断。
+4. `off`：完全跳过质量门禁。
+
+生成质量报告：
+
+```bash
+python eval_gold.py --ke <job>/ke1.jsonl --gold <gold>.jsonl \
+  --db <db> --ontology <ontology> --ke-path <ke2sql> \
+  -o <job>/gold_eval.json --min-exec-rate 0.9 --min-accuracy 0.8
+```
+
+任务页展示「质量门禁」和 `gold_eval.json` 的指标。
+
+## 成本摘要
+
+任务页/数据生成页汇总 `report.json` / `report_tri.json` 中的
+`cost.calls / prompt_tokens / completion_tokens / usd`。
+
+## 原生 Job API 模式
+
+OMS 设置以下变量后，新建 DataMaker 任务会提交到 DataMaker 自己的 API：
+
+```env
+DATAMAKER_NATIVE_API_URL=http://127.0.0.1:8093
+DATAMAKER_NATIVE_API_TOKEN=
+```
+
+- OMS 保存本地任务记录和 `native_job_id`
+- OMS worker 跳过 native 任务
+- OMS 页面/列表轮询原生 API，更新状态和进度
+- 原生产出成功后由 OMS 执行批次导入和 GOLD 门禁
+- DataMaker API/worker 独立运行，可启动多个 `datamaker-worker@N`

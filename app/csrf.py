@@ -45,7 +45,7 @@ class CSRFMiddleware:
             await self.app(scope, receive, send)
             return
         session = scope.get("session")
-        if scope.get("path") == "/api/auth/login":
+        if scope.get("path") in {"/api/auth/login", "/api/monitor/events"}:
             await self.app(scope, receive, send)
             return
         if scope["method"] in SAFE_METHODS:

@@ -20,6 +20,8 @@ class Question(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     ext_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)  # 原始题目编号（跨组重号消歧为 组/题号）
     domain: Mapped[str] = mapped_column(String(64), default="未分类", index=True)
     group_name: Mapped[str] = mapped_column(String(64), default="", index=True)
@@ -39,6 +41,8 @@ class QuestionConcept(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     question_id: Mapped[int] = mapped_column(ForeignKey("questions.id"), index=True)
     concept_id: Mapped[Optional[int]] = mapped_column(ForeignKey("concepts.id"), index=True)
     operator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("operators.id"), index=True)
@@ -50,6 +54,8 @@ class QuestionKeVersion(Base):
     __table_args__ = (UniqueConstraint("question_id", "version", name="uq_qkv_q_version"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     question_id: Mapped[int] = mapped_column(ForeignKey("questions.id"), index=True)
     content: Mapped[str] = mapped_column(Text, default="")
     version: Mapped[int] = mapped_column(Integer)
@@ -65,6 +71,8 @@ class QuestionIssue(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     question_id: Mapped[int] = mapped_column(ForeignKey("questions.id"), index=True)
     title: Mapped[str] = mapped_column(String(256))
     body: Mapped[str] = mapped_column(Text, default="")

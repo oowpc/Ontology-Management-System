@@ -13,6 +13,8 @@ from ..db import get_db
 from ..models import AnnotationBatch, AnnotationMember, AnnotationUnit, GoldItem, Nl2keRun, OntologySource
 from ..security import current_user
 from ..templating import templates
+from ..validation import run as validate
+from ..ke_docs import sync_nl2ke_run
 from .. import ke2sql as sql_bridge
 from .. import ke_matcher
 from .. import nl2ke as bridge
@@ -57,6 +59,12 @@ class BatchIn(BaseModel):
 
 class EquivalenceIn(BaseModel):
     reference_ke: str = Field(min_length=1, max_length=20000)
+    request_timeout_s: float = Field(60, ge=1, le=120)
+
+
+class EquivalenceBatchIn(BaseModel):
+    candidates: list[str] = Field(min_length=1, max_length=20)
+    reference_ke: str | None = Field(default=None, max_length=20000)
     request_timeout_s: float = Field(60, ge=1, le=120)
 
 
@@ -358,7 +366,9 @@ def accept_run(rid: int, request: Request, db: Session = Depends(get_db),
     )
     db.add(gold)
     db.flush()
+    validate(db, "gold_item", gold, stage="accept", actor=user["username"], enforce=False)
     run.gold_item_id = gold.id
+    doc = sync_nl2ke_run(db, run, actor=user["username"])
     run.status = "accepted"
     db.commit()
     db.refresh(run)
@@ -394,6 +404,28 @@ def run_detail(rid: int, request: Request, db: Session = Depends(get_db),
     if rec is None or rec.library_id != lib.id:
         raise HTTPException(404, "运行记录不存在")
     return _out(rec)
+
+
+@router.post("/api/nl2ke/runs/{rid}/equivalence/batch")
+def equivalence_batch(rid: int, body: EquivalenceBatchIn, request: Request,
+                      db: Session = Depends(get_db), user: dict = Depends(current_user)):
+    lib = _archer(request)
+    rec = db.get(Nl2keRun, rid)
+    if rec is None or rec.library_id != lib.id:
+        raise HTTPException(404, "运行记录不存在")
+    reference = (body.reference_ke or rec.ke or "").strip()
+    if not reference:
+        raise HTTPException(400, "没有参考 KE，无法做批量等价校验")
+    try:
+        result = ke_matcher.judge_many(reference, body.candidates,
+                                       request_timeout_s=body.request_timeout_s)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, str(e)[:1000]) from e
+    payload = dict(rec.result_payload or {})
+    payload["equivalence_batch"] = {"reference_ke": reference, **result}
+    rec.result_payload = payload
+    db.commit()
+    return {"run_id": rec.id, "batch": payload["equivalence_batch"]}
 
 
 @router.post("/api/nl2ke/runs/{rid}/equivalence")

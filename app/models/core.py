@@ -268,6 +268,8 @@ class KeUpload(Base):
     __tablename__ = "ke_uploads"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     group_name: Mapped[str] = mapped_column(String(64), index=True)
     filename: Mapped[str] = mapped_column(String(256))
     row_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -285,6 +287,8 @@ class KeTask(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    library_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ontology_libraries.id"), index=True)
     group_name: Mapped[str] = mapped_column(String(64), index=True)
     ke_id: Mapped[str] = mapped_column(String(64))            # 题目ID（组内唯一）
     domain: Mapped[str] = mapped_column(String(64), default="未分类")

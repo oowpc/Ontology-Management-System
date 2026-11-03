@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}GOLD 草稿审查{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>GOLD 草稿审查 <span class="muted">（{{ rows|length }}）</span></h1>
+  <div>
+    <a class="btn" href="/gold/items">成品库</a>
+    <a class="btn" href="/datamaker">DataMaker</a>
+    <a class="btn" href="/nl2ke">NL2KE</a>
+  </div>
+</div>
+<form class="filters" method="get" action="/gold/review">
+  <select name="source">
+    <option value="">全部来源</option>
+    {% for k, v in source_labels.items() %}<option value="{{ k }}" {{ 'selected' if source == k }}>{{ v }}</option>{% endfor %}
+  </select>
+  <select name="ok">
+    <option value="">全部校验状态</option>
+    <option value="1" {{ 'selected' if ok == '1' }}>校验通过</option>
+    <option value="0" {{ 'selected' if ok == '0' }}>有错误</option>
+  </select>
+  <input type="search" name="q" value="{{ q or '' }}" placeholder="KE 内容 / 编号">
+  <button class="btn" type="submit">过滤</button>
+</form>
+{% if user.role in edit_roles %}
+<form method="post" action="/gold/review/bulk" id="review-form">
+<table class="data">
+  <thead><tr><th><input type="checkbox" id="review-all" title="全选"></th><th>来源</th><th>篇 / 编号</th><th>KE 内容</th><th>校验</th><th>操作</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td><input type="checkbox" name="ids" value="{{ r.id }}"></td>
+    <td>{% set src = sources.get(r.id) %}{% if src and src.url %}<a href="{{ src.url }}">{{ src.label }}</a>{% else %}{{ src.label if src else '手工/上传' }}{% endif %}</td>
+    <td><code>{{ r.article_code }}</code><br><span class="muted">{{ r.ke_id }}</span></td>
+    <td>{{ r.ke_text[:180] }}{{ '…' if r.ke_text|length > 180 }}</td>
+    <td>
+      {% set v = r.validation %}
+      {% if not v %}<span class="badge draft">未校验</span>
+      {% elif not v.ok %}<span class="badge disabled" title="{{ v.errors[0].message if v.errors }}">✗ {{ v.error_count }}</span>
+      {% elif v.warning_count %}<span class="badge pending">⚠ {{ v.warning_count }}</span>
+      {% else %}<span class="badge approved">✓</span>{% endif %}
+    </td>
+    <td class="ops"><a href="/gold/items/{{ r.id }}/edit">查看/编辑</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="empty">当前库没有待审查 GOLD 草稿</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<div class="form-actions">
+  <button class="btn primary" type="submit" name="action" value="reviewed">批量复核通过</button>
+  <button class="btn" type="submit" name="action" value="draft">退回草稿</button>
+  <button class="btn danger" type="submit" name="action" value="delete" onclick="return confirm('删除选中的 GOLD 草稿？')">删除</button>
+</div>
+</form>
+{% else %}
+<p class="muted">仅审核员/管理员可批量处理。</p>
+{% endif %}
+<script>
+document.getElementById('review-all')?.addEventListener('change', function () {
+  document.querySelectorAll('input[name="ids"]').forEach(c => { c.checked = this.checked; });
+});
+</script>
+{% endblock %}

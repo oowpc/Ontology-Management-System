@@ -99,9 +99,20 @@ class Settings:
     gold_slots: list = _json_list("GOLD_SLOTS", DEFAULT_GOLD_SLOTS)     # 泳道时段
     # M20：定稿（→gold）强校验 KE 内容（结构错误阻断；词表 warning 不阻断）。0=关闭门槛
     gold_finalize_validate: bool = os.environ.get("GOLD_FINALIZE_VALIDATE", "1") == "1"
+    # 统一校验开关：0=只记录结果；1=error 阻断写入/定稿
+    validation_enforce: bool = os.environ.get("VALIDATION_ENFORCE", "0") == "1"
 
     # M25 · KEOL 桥接：政府本体库源目录（.md 权威源；sync_keol.py 默认取此）
     keol_src: str = os.environ.get("KEOL_SRC", "")
+    keol_ontology_path: str = os.environ.get("KEOL_ONTOLOGY_PATH", "")
+    keol_console_token: str = os.environ.get("KEOL_CONSOLE_TOKEN", "")
+    keol_sync_library: str = os.environ.get("KEOL_SYNC_LIBRARY", "keol-yuer")
+    keol_sync_cron: str = os.environ.get("KEOL_SYNC_CRON", "")
+    dataagent_monitor_url: str = os.environ.get(
+        "DATAAGENT_MONITOR_URL", "http://127.0.0.1:8765")
+    dataagent_monitor_timeout: float = _float("DATAAGENT_MONITOR_TIMEOUT", 8)
+    dataagent_monitor_webhook_token: str = os.environ.get(
+        "DATAAGENT_MONITOR_WEBHOOK_TOKEN", "")
     # KEOL 操控台地址（OMS 导航互链）
     keol_console_url: str = os.environ.get("KEOL_CONSOLE_URL", "http://192.168.120.3:8321")
 

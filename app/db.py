@@ -77,7 +77,15 @@ def _library_classes():
             models.CoAlignment, models.KeAnnotation, models.GoldKe,
             models.OntologyVersion, models.OntologySuggestion, models.CoMergeLog,
             models.AnnotationCrossReview, models.Nl2keRun, models.DatamakerJob, models.QueryRun, models.OntologyRule,
-            models.OntologyIndividual, models.HealthReport)
+            models.OntologyIndividual, models.HealthReport,
+            models.ValidationResult, models.KeolSyncRun, models.GoldArticle, models.GoldScheduleCell,
+            models.GoldIssue, models.GoldIssueComment, models.GoldSample,
+            models.GoldSampleItem, models.GoldSampleReview, models.GoldItem,
+            models.Question, models.QuestionConcept, models.QuestionKeVersion,
+            models.QuestionIssue, models.Issue, models.IssueCase, models.IssueQuestion,
+            models.IssueViewpoint, models.IssueComment, models.IssueLink,
+            models.IssueImpact, models.KeUpload, models.KeTask,
+            models.KeDocument, models.KeDocumentVersion)
 
 
 @event.listens_for(Session, "do_orm_execute")

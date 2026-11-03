@@ -195,6 +195,7 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
     updated_concept_ids: list[int] = []
     created_operator_ids: list[int] = []
     updated_operator_ids: list[int] = []
+    changed_rule_ids: list[int] = []
     existing = {c.name: c for c in db.scalars(select(Concept)).all()}
     pre_existing_names = set(existing.keys())
     touched: dict[str, dict] = {}  # name -> before 快照（仅既有概念）
@@ -424,6 +425,7 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
             db.add(r)
             db.flush()
             existing_rules[name] = r
+            changed_rule_ids.append(r.id)
             log_change(db, "rule", r.id, "create", None, snapshot(r), actor)
             stats["rules_created"] += 1
         else:
@@ -439,6 +441,7 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
                     changed = True
             if changed:
                 db.flush()
+                changed_rule_ids.append(r.id)
                 log_change(db, "rule", r.id, "import", before, snapshot(r), actor)
                 stats["rules_updated"] += 1
             else:
@@ -504,6 +507,18 @@ def import_payload(db: Session, payload: dict, actor: str, field_map: dict | Non
                 stats["individuals_updated"] += 1
             else:
                 stats["individuals_unchanged"] += 1
+
+    # 统一校验：算子/规则在导入事务内留下结果；enforce=1 时 error 阻断整批。
+    from .validation import run as validate
+    for oid in sorted(set(created_operator_ids + updated_operator_ids)):
+        o = db.get(Operator, oid)
+        if o is not None:
+            validate(db, "operator", o, stage="import", actor=actor)
+    for rid in sorted(set(changed_rule_ids)):
+        r = db.get(OntologyRule, rid)
+        if r is not None:
+            validate(db, "rule", r, stage="import", actor=actor,
+                     enforce=None if r.status != "draft" else False)
 
     if batch_id:
         db.add(ImportBatch(

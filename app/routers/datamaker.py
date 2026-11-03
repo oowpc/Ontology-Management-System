@@ -50,6 +50,10 @@ def page(request: Request, db: Session = Depends(get_db),
     lib = getattr(request.state, "library", None)
     if lib is None:
         raise HTTPException(400, "请先选择本体库")
+    try:
+        service.sync_native_jobs(db, lib.id)
+    except Exception:
+        pass
     jobs = db.scalars(select(DatamakerJob).where(DatamakerJob.library_id == lib.id)
                       .order_by(DatamakerJob.id.desc()).limit(50)).all()
     databases = []
@@ -76,6 +80,10 @@ def job_page(jid: int, request: Request, db: Session = Depends(get_db),
     lib = getattr(request.state, "library", None)
     if lib is None:
         raise HTTPException(400, "请先选择本体库")
+    try:
+        service.sync_native_jobs(db, lib.id)
+    except Exception:
+        pass
     job = _job_or_404(db, lib, jid)
     return templates.TemplateResponse(request=request, name="datamaker_job.html", context={
         "request": request, "user": user, "job": service.job_dict(job),
@@ -115,6 +123,10 @@ def list_jobs(request: Request, db: Session = Depends(get_db),
     lib = getattr(request.state, "library", None)
     if lib is None:
         raise HTTPException(400, "请先选择本体库")
+    try:
+        service.sync_native_jobs(db, lib.id)
+    except Exception:
+        pass
     rows = db.scalars(select(DatamakerJob).where(DatamakerJob.library_id == lib.id)
                       .order_by(DatamakerJob.id.desc()).limit(50)).all()
     return {"items": [service.job_dict(j) for j in rows]}
@@ -126,6 +138,10 @@ def job_json(jid: int, request: Request, db: Session = Depends(get_db),
     lib = getattr(request.state, "library", None)
     if lib is None:
         raise HTTPException(400, "请先选择本体库")
+    try:
+        service.sync_native_jobs(db, lib.id)
+    except Exception:
+        pass
     return service.job_dict(_job_or_404(db, lib, jid))
 
 

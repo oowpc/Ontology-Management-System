@@ -139,6 +139,12 @@ def test_import_results_creates_draft_batch(tmp_path):
                          .where(AnnotationUnit.batch_id == batch.id))
         assert unit.raw_text == 'How many?'
         assert unit.source_payload['ke'] == 'output=1;'
+        assert job.gold_count == 1
+        from app.models import GoldItem
+        g = db.scalar(__import__('sqlalchemy').select(GoldItem).where(
+            GoldItem.article_code == f'DM-{job.id}'))
+        assert g is not None and g.status == 'draft'
+        assert g.validation is not None
         db.close()
 
 
@@ -240,3 +246,95 @@ def test_generic_registry_and_worker_pickup(client):
         db.close()
     found = datamaker_worker.service.claim_next_job('test-worker')
     assert found == (job_id, lib_id)
+
+
+def test_gold_gate_blocks_auto_gold(tmp_path):
+    from app.db import SessionLocal
+    from app.library_context import library_scope
+    from app.models import DatamakerJob, GoldItem, OntologyLibrary
+    from app import datamaker
+    import json
+    import sqlalchemy as sa
+
+    (tmp_path / "ke1.jsonl").write_text(
+        '{"question":"q","ke":"output = 1;","type":"scalar"}\n', encoding="utf-8")
+    (tmp_path / "gold_eval.json").write_text(json.dumps({
+        "total": 1, "execution_accuracy": 0.0,
+        "gate": {"passed": False, "execution_rate": 0.0,
+                 "execution_accuracy": 0.0, "reason": "below threshold"},
+    }), encoding="utf-8")
+    with library_scope(None):
+        db = SessionLocal()
+        lib = db.scalar(sa.select(OntologyLibrary).where(OntologyLibrary.key == "co-baseline"))
+        job = DatamakerJob(library_id=lib.id, db_id="__ontology__", status="succeeded",
+                           model="m", n=1, workers=1, workdir=str(tmp_path),
+                           created_by="tester")
+        db.add(job); db.commit(); db.refresh(job)
+        lib_id, job_id = lib.id, job.id
+        db.close()
+    with library_scope(lib_id):
+        db = SessionLocal()
+        job = db.get(DatamakerJob, job_id)
+        datamaker._import_results(db, job)
+        assert job.gold_count == 0
+        assert job.gold_gate and job.gold_gate["passed"] is False
+        assert db.scalar(sa.select(GoldItem).where(GoldItem.article_code == f"DM-{job.id}")) is None
+        db.close()
+
+
+def test_native_job_sync(tmp_path, monkeypatch):
+    from app.db import SessionLocal
+    from app.library_context import library_scope
+    from app.models import DatamakerJob, OntologyLibrary
+    from app import datamaker
+    import sqlalchemy as sa
+    with library_scope(None):
+        db = SessionLocal()
+        lib = db.scalar(sa.select(OntologyLibrary).where(OntologyLibrary.key == "co-baseline"))
+        job = DatamakerJob(library_id=lib.id, db_id="__ontology__", status="running",
+                           model="m", n=1, workers=1, workdir=str(tmp_path),
+                           native_job_id="native-1", created_by="tester")
+        db.add(job); db.commit(); db.refresh(job)
+        lib_id, job_id = lib.id, job.id
+        db.close()
+    monkeypatch.setattr(datamaker, "NATIVE_API_URL", "http://127.0.0.1:8090")
+    monkeypatch.setattr(datamaker, "_native_call", lambda *a, **kw: {
+        "id": "native-1", "status": "succeeded", "progress": 1, "result_count": 1})
+    monkeypatch.setattr(datamaker, "_import_results", lambda db, job: None)
+    with library_scope(lib_id):
+        db = SessionLocal()
+        job = db.get(DatamakerJob, job_id)
+        datamaker.sync_native_jobs(db, lib_id)
+        assert job.status == "succeeded"
+        db.close()
+
+
+def test_start_native_job_records_external_id(client, monkeypatch):
+    from app.db import SessionLocal
+    from app.library_context import library_scope
+    from app.models import DatamakerJob, OntologyLibrary
+    from app import datamaker
+    import sqlalchemy as sa
+    with library_scope(None):
+        db = SessionLocal()
+        lib = db.scalar(sa.select(OntologyLibrary).where(OntologyLibrary.key == "co-baseline"))
+        lib_id = lib.id
+        db.close()
+    monkeypatch.setattr(datamaker, "NATIVE_API_URL", "http://127.0.0.1:8093")
+    monkeypatch.setattr(datamaker, "LLM_API_KEY", "test-key")
+    monkeypatch.setattr(datamaker, "LLM_BASE_URL", "http://127.0.0.1:1/v1")
+    monkeypatch.setattr(datamaker, "_native_call",
+                        lambda method, path, body=None: {"id": "native-test", "status": "queued"})
+    monkeypatch.setattr(datamaker, "active_count", lambda db, library_id: 0)
+    with library_scope(lib_id):
+        db = SessionLocal()
+        lib = db.get(OntologyLibrary, lib_id)
+        job = datamaker.start_job(db, library=lib, db_id="__ontology__",
+                                  model=datamaker.MODELS[0], n=1, workers=1,
+                                  ke_types="", resume=False, actor="tester")
+        assert job.native_job_id == "native-test"
+        assert job.status == "queued"
+        assert (job.params or {}).get("native_api") is True
+        db.delete(job)
+        db.commit()
+        db.close()

@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..audit import log_change, snapshot
+from ..config import settings
 from ..db import get_db
 from ..models import Concept, OntologyIndividual, OntologyRule
 from ..security import require_role
@@ -158,10 +159,20 @@ def create_rule(data: RuleCreate, db: Session = Depends(get_db),
                      created_by=user["username"], reviewed_by=user["username"])
     db.add(r)
     db.flush()
+    from ..validation import run as validate
+    validate(db, "rule", r, stage="create", actor=user["username"],
+             enforce=settings.validation_enforce and r.status != "draft")
     log_change(db, "rule", r.id, "create", None, snapshot(r), user["username"])
     db.commit()
     db.refresh(r)
     return _rule_out(r)
+
+
+@router.get("/rules/consistency")
+def rules_consistency(db: Session = Depends(get_db),
+                      user: dict = Depends(require_role())):
+    from ..rules_engine import check_rules
+    return check_rules(db)
 
 
 @router.get("/rules/{rid}")
@@ -191,6 +202,9 @@ def update_rule(rid: int, data: RulePatch, db: Session = Depends(get_db),
             setattr(r, attr, changes[attr])
     r.reviewed_by = user["username"]
     db.flush()
+    from ..validation import run as validate
+    validate(db, "rule", r, stage="update", actor=user["username"],
+             exclude_id=rid, enforce=settings.validation_enforce and r.status != "draft")
     log_change(db, "rule", r.id, "update", before, snapshot(r), user["username"])
     db.commit()
     db.refresh(r)

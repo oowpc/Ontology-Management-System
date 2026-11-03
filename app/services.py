@@ -456,6 +456,8 @@ def create_operator(db: Session, *, name, subject_concept_id, owner_concept_id,
         subject = get_concept_or_404(db, o.subject_concept_id)
         o.description = f"算子 {o.name}：{subject.name} → {o.return_type}"
     db.flush()
+    from .validation import run as validate
+    validate(db, "operator", o, stage="create", actor=actor)
     log_change(db, "operator", o.id, "create", None, snapshot(o), actor)
     db.commit()
     db.refresh(o)
@@ -498,6 +500,8 @@ def update_operator(db: Session, o: Operator, changes: dict, actor: str) -> Oper
     db.flush()
     sync_operator_inputs(db, o, o.param_types or [])
     db.flush()
+    from .validation import run as validate
+    validate(db, "operator", o, stage="update", actor=actor, exclude_id=o.id)
     log_change(db, "operator", o.id, "update", before, snapshot(o), actor)
     db.commit()
     db.refresh(o)

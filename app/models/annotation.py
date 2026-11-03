@@ -149,6 +149,8 @@ class CoAlignment(Base):
     differences: Mapped[Optional[list]] = mapped_column(JSON)
     reason: Mapped[str] = mapped_column(Text, default="")
     evidence_ids: Mapped[list] = mapped_column(JSON, default=list)
+    ke_document_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ke_documents.id"), index=True)
     decided_by: Mapped[str] = mapped_column(String(64))
     guide_version: Mapped[str] = mapped_column(String(64), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -172,6 +174,8 @@ class KeAnnotation(Base):
     evidence_ids: Mapped[list] = mapped_column(JSON, default=list)
     execution: Mapped[Optional[dict]] = mapped_column(JSON)   # SQL/LEAN/SPARQL 执行/编译结果
     self_check: Mapped[Optional[dict]] = mapped_column(JSON)
+    ke_document_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ke_documents.id"), index=True)
     annotator: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -191,6 +195,8 @@ class GoldKe(Base):
     differences: Mapped[Optional[list]] = mapped_column(JSON)
     reason: Mapped[str] = mapped_column(Text, default="")
     evidence_ids: Mapped[list] = mapped_column(JSON, default=list)
+    ke_document_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("ke_documents.id"), index=True)
     decided_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

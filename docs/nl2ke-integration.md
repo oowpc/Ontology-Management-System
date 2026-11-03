@@ -109,7 +109,12 @@ OMS 调 NL2KE 时固定发送 `debug: true`，BYOS 返回并保存 `trace`：
 - OMS 环境：`KE_MATCHER_BASE_URL`、`KE_MATCHER_KEVAL_PATH`、`KE_MATCHER_TIMEOUT`
 - 参考 KE 只发给 KE-matcher，不会写入 NL2KE 请求；校验结果保存在
   `nl2ke_runs.result_payload.equivalence`
-- 参考 KE 手工提供；不自动从 Archer 题库带出，也不做批量评测
+- 参考 KE 手工提供；不自动从 Archer 题库带出
+- 批量/多候选：`POST /api/nl2ke/runs/{id}/equivalence/batch`
+  `{"candidates": ["...KE..."], "request_timeout_s": 60}`；最多 20 条，
+  走 KE-matcher `POST /judge/batch`（S1 有界并发），结果存
+  `result_payload.equivalence_batch`
+- 单候选仍走 `/equivalence`；批量结果按 index 返回，单条失败不拖垮整批
 - 未配置 RA/Z3 registry 时，只能判表面等价，语义等价可能返回 `unknown`
 
 ## 当前限制

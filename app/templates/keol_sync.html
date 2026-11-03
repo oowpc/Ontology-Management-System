@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}KEOL 同步 · OMS{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>KEOL 本体同步</h1>
+  <div>
+    <form class="inline" method="post" action="/keol/sync/check"><button class="btn primary" type="submit">立即检查源 hash</button></form>
+    {% if can_apply and user.role in ['reviewer','admin'] %}<form class="inline" method="post" action="/keol/sync/apply"><button class="btn" type="submit" onclick="return confirm('向当前库提交 KEOL 建议包？')">提交建议推送</button></form>{% elif user.role in ['reviewer','admin'] %}<span class="muted">未配置 KEOL_CONSOLE_TOKEN，不能直接提交</span>{% endif %}
+  </div>
+</div>
+{% if not row %}
+<div class="empty">尚未检查。点击「立即检查源 hash」读取 KEOL 当前 ontology.json。</div>
+{% else %}
+<div class="dm-quality">
+  <div class="dm-quality-item"><small>状态</small><strong>{{ row.status }}</strong><span>{{ row.checked_at|dt }}</span></div>
+  <div class="dm-quality-item"><small>source hash</small><strong>{{ row.source_hash[:16] }}</strong><span>sha256</span></div>
+  <div class="dm-quality-item"><small>source</small><strong>{{ row.counts.source.concepts if row.counts else 0 }} / {{ row.counts.source.operators if row.counts else 0 }} / {{ row.counts.source.rules if row.counts else 0 }}</strong><span>概念 / 算子 / 规则</span></div>
+  <div class="dm-quality-item"><small>target</small><strong>{{ row.counts.target.concepts if row.counts else 0 }} / {{ row.counts.target.operators if row.counts else 0 }} / {{ row.counts.target.rules if row.counts else 0 }}</strong><span>当前库</span></div>
+</div>
+{% set d = row.diff or {} %}
+<h2>差异</h2>
+<table class="data">
+  <thead><tr><th>对象</th><th>新增</th><th>删除</th><th>变更</th></tr></thead>
+  <tbody>
+  {% for k,label in [('concepts','概念'),('operators','算子'),('rules','规则')] %}
+  {% set x = d.get(k, {}) %}
+  <tr><td>{{ label }}</td><td>{{ x.get('added_count',0) }}</td><td>{{ x.get('removed_count',0) }}</td><td>{{ x.get('changed_count',0) }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if d.get('rules',{}).get('added') %}<p class="muted">新增规则：{{ d.rules.added|join('、') }}</p>{% endif %}
+{% if d.get('rules',{}).get('removed') %}<p class="muted">源已删除规则：{{ d.rules.removed|join('、') }}</p>{% endif %}
+<p class="muted">检查只记录差异；「提交建议推送」由 KEOL 生成 OMS 建议包，仍需 OMS 审批，不直写正式规则。</p>
+{% endif %}
+{% endblock %}
